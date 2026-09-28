@@ -1,0 +1,18 @@
+# This file instructs Redocly's linter to ignore the rules contained for specific parts of your API.
+# See https://redocly.com/docs/cli/ for more information.
+openapi/common.yaml:
+  no-unused-components:
+    - '#/components/parameters/Limit'
+    - '#/components/parameters/Cursor'
+    - '#/components/schemas/Timestamp'
+    - '#/components/schemas/Money'
+    - '#/components/schemas/ShopRef'
+    - '#/components/responses/ValidationError'
+    - '#/components/responses/Unauthenticated'
+    - '#/components/responses/Forbidden'
+    - '#/components/responses/NotFound'
+    - '#/components/responses/Conflict'
+    - '#/components/responses/RateLimited'
+    - '#/components/responses/ServerError'
+    - '#/components/securitySchemes/bearerAuth'
+    - '#/components/securitySchemes/refreshCookie'

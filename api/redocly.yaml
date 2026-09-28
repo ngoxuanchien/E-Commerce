@@ -4,15 +4,8 @@ rules:
   # Portfolio project without a published license.
   info-license: off
   info-license-strict: off
-  # common.yaml is a components-only shared library (paths: {}) consumed via
-  # cross-file $ref from identity/catalog/order.yaml. Redocly lints each
-  # passed file independently with no cross-document usage analysis, so every
-  # schema/parameter/response/security scheme declared in common.yaml is
-  # reported as unused even though it is used. There is no fix that keeps the
-  # multi-file layout §2 requires without adding artificial "uses" of every
-  # component inside common.yaml itself.
-  no-unused-components: off
-  # Local-only project (deploy/docker-compose.yml); there is no production
-  # domain to advertise. http://localhost:8080 matches the gateway port in
-  # spec §3 and is genuinely how the API is reached in this repo.
+  # Deliberate choice, not a workaround: this is a local-only project
+  # (deploy/docker-compose.yml) with no production domain to advertise.
+  # http://localhost:8080 matches the gateway port in spec §3 and is
+  # genuinely how the API is reached in this repo, in every spec file.
   no-server-example.com: off
