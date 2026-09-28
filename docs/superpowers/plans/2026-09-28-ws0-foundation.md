@@ -1931,11 +1931,11 @@ git commit -m "feat(contracts): add order event JSON schemas and pkg/event"
 **Interfaces:**
 - Produces: `Setup(ctx context.Context, serviceName, endpoint string) (shutdown func(context.Context) error, err error)`; `HTTPHandler(h http.Handler, operation string) http.Handler`; `HTTPTransport(base http.RoundTripper) http.RoundTripper`.
 
-- [ ] **Step 1: Add dependencies**
+- [x] **Step 1: Add dependencies**
 
 Run: `cd pkg && go get go.opentelemetry.io/otel/sdk@v1.46.0 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc@v1.46.0 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp@v0.71.0`
 
-- [ ] **Step 2: Write failing tests** — `pkg/otelx/otelx_test.go`
+- [x] **Step 2: Write failing tests** — `pkg/otelx/otelx_test.go`
 
 ```go
 package otelx_test
@@ -2017,9 +2017,9 @@ func TestHTTPTransportInjectsTraceparent(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run to verify failure** — `cd pkg && go test ./otelx/` → FAIL, `undefined: otelx.Setup`.
+- [x] **Step 3: Run to verify failure** — `cd pkg && go test ./otelx/` → FAIL, `undefined: otelx.Setup`.
 
-- [ ] **Step 4: Implement `pkg/otelx/otelx.go`**
+- [x] **Step 4: Implement `pkg/otelx/otelx.go`**
 
 ```go
 // Package otelx configures OpenTelemetry tracing (OTLP gRPC exporter,
@@ -2076,9 +2076,9 @@ func HTTPTransport(base http.RoundTripper) http.RoundTripper {
 }
 ```
 
-- [ ] **Step 5: Run tests** — `cd pkg && go test ./otelx/` → PASS. If `resource.Merge` returns a schema-URL conflict error, replace `resource.Default()` with `resource.Empty()` and rerun.
+- [x] **Step 5: Run tests** — `cd pkg && go test ./otelx/` → PASS. If `resource.Merge` returns a schema-URL conflict error, replace `resource.Default()` with `resource.Empty()` and rerun.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pkg
@@ -2096,9 +2096,9 @@ git commit -m "feat(pkg/otelx): add OpenTelemetry setup and HTTP instrumentation
 - Consumes: `httpx.WriteJSON`.
 - Produces: `type Check func(ctx context.Context) error`; `Healthz() http.Handler`; `Readyz(checks map[string]Check) http.Handler`; `const ReadyTimeout = 2 * time.Second`; `Probe(url string) error`; `ReadyURL(httpAddr string) string`; `HealthcheckCommand(httpAddr string) int`; `type Config struct{HTTP *http.Server; GRPC *grpc.Server; GRPCAddr string; ShutdownTimeout time.Duration; Logger *slog.Logger}`; `Run(ctx context.Context, cfg Config) error`.
 
-- [ ] **Step 1: Add dependency** — `cd pkg && go get google.golang.org/grpc@v1.84.0`
+- [x] **Step 1: Add dependency** — `cd pkg && go get google.golang.org/grpc@v1.84.0`
 
-- [ ] **Step 2: Write failing health tests** — `pkg/server/health_test.go`
+- [x] **Step 2: Write failing health tests** — `pkg/server/health_test.go`
 
 ```go
 package server_test
@@ -2178,7 +2178,7 @@ func TestProbe(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Write failing Run tests** — `pkg/server/run_test.go`
+- [x] **Step 3: Write failing Run tests** — `pkg/server/run_test.go`
 
 ```go
 package server_test
@@ -2260,9 +2260,9 @@ func TestRunReturnsListenError(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Run to verify failure** — `cd pkg && go test ./server/` → FAIL, `undefined: server.Healthz`.
+- [x] **Step 4: Run to verify failure** — `cd pkg && go test ./server/` → FAIL, `undefined: server.Healthz`.
 
-- [ ] **Step 5: Implement `pkg/server/health.go`**
+- [x] **Step 5: Implement `pkg/server/health.go`**
 
 ```go
 // Package server runs a service's HTTP and gRPC servers with graceful
@@ -2374,7 +2374,7 @@ func HealthcheckCommand(httpAddr string) int {
 }
 ```
 
-- [ ] **Step 6: Implement `pkg/server/run.go`**
+- [x] **Step 6: Implement `pkg/server/run.go`**
 
 ```go
 package server
@@ -2459,9 +2459,9 @@ func Run(ctx context.Context, cfg Config) error {
 }
 ```
 
-- [ ] **Step 7: Run tests** — `cd pkg && go test -race ./server/` → PASS.
+- [x] **Step 7: Run tests** — `cd pkg && go test -race ./server/` → PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add pkg
@@ -2478,9 +2478,9 @@ git commit -m "feat(pkg/server): add health handlers and graceful HTTP/gRPC runn
 **Interfaces:**
 - Produces: `const DefaultTimeout = 5 * time.Second`; `NewServer(opts ...grpc.ServerOption) (*grpc.Server, *health.Server)`; `Dial(target string, opts ...grpc.DialOption) (*grpc.ClientConn, error)`; `DefaultTimeoutInterceptor(d time.Duration) grpc.UnaryClientInterceptor`.
 
-- [ ] **Step 1: Add dependency** — `cd pkg && go get go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc@v0.71.0`
+- [x] **Step 1: Add dependency** — `cd pkg && go get go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc@v0.71.0`
 
-- [ ] **Step 2: Write failing tests** — `pkg/grpcx/grpcx_test.go`
+- [x] **Step 2: Write failing tests** — `pkg/grpcx/grpcx_test.go`
 
 ```go
 package grpcx_test
@@ -2562,9 +2562,9 @@ func TestDefaultTimeoutInterceptorKeepsCallerDeadline(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run to verify failure** — `cd pkg && go test ./grpcx/` → FAIL, `undefined: grpcx.NewServer`.
+- [x] **Step 3: Run to verify failure** — `cd pkg && go test ./grpcx/` → FAIL, `undefined: grpcx.NewServer`.
 
-- [ ] **Step 4: Implement `pkg/grpcx/grpcx.go`**
+- [x] **Step 4: Implement `pkg/grpcx/grpcx.go`**
 
 ```go
 // Package grpcx builds gRPC servers and clients with the project defaults:
@@ -2648,9 +2648,9 @@ func recoverStream(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, h
 }
 ```
 
-- [ ] **Step 5: Run tests** — `cd pkg && go test -race ./grpcx/` → PASS.
+- [x] **Step 5: Run tests** — `cd pkg && go test -race ./grpcx/` → PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pkg
