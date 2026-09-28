@@ -67,7 +67,7 @@ type tokenBody struct {
 	User        userBody `json:"user"`
 }
 
-func assertCleared(t *testing.T, resp *http.Response) {
+func assertCleared(t *testing.T, resp *testsupport.Response) {
 	t.Helper()
 	c := testsupport.Cookie(resp, "refresh_token")
 	require.NotNil(t, c, "Set-Cookie clears refresh_token")

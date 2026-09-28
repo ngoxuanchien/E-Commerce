@@ -9,9 +9,19 @@ import (
 	"testing"
 )
 
+// Response is a fully read HTTP response; its body has already been closed.
+type Response struct {
+	StatusCode int
+	Header     http.Header
+	cookies    []*http.Cookie
+}
+
+// Cookies returns the cookies set by the response.
+func (r *Response) Cookies() []*http.Cookie { return r.cookies }
+
 // Call sends a request and returns the response with its fully read body.
 // A string body is sent verbatim; any other non-nil body is JSON-encoded.
-func Call(t testing.TB, c *http.Client, method, url string, body any, header http.Header) (*http.Response, []byte) {
+func Call(t testing.TB, c *http.Client, method, url string, body any, header http.Header) (*Response, []byte) {
 	t.Helper()
 	var rd io.Reader
 	switch b := body.(type) {
@@ -46,11 +56,11 @@ func Call(t testing.TB, c *http.Client, method, url string, body any, header htt
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
-	return resp, data
+	return &Response{StatusCode: resp.StatusCode, Header: resp.Header, cookies: resp.Cookies()}, data
 }
 
 // Cookie returns the Set-Cookie entry called name, or nil.
-func Cookie(resp *http.Response, name string) *http.Cookie {
+func Cookie(resp *Response, name string) *http.Cookie {
 	for _, c := range resp.Cookies() {
 		if c.Name == name {
 			return c
