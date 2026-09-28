@@ -6652,7 +6652,7 @@ git commit -m "feat(deploy): add docker compose stack for infra and service skel
 **Files:**
 - Create: `.github/workflows/ci.yml`
 
-- [ ] **Step 1: Write `.github/workflows/ci.yml`**
+- [x] **Step 1: Write `.github/workflows/ci.yml`**
 
 ```yaml
 name: ci
@@ -6752,9 +6752,9 @@ jobs:
         run: echo "web/ not present yet; skipping"
 ```
 
-- [ ] **Step 2: Validate the workflow** — `go run github.com/rhysd/actionlint/cmd/actionlint@latest .github/workflows/ci.yml` → no findings.
+- [x] **Step 2: Validate the workflow** — `go run github.com/rhysd/actionlint/cmd/actionlint@latest .github/workflows/ci.yml` → no findings.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add .github
