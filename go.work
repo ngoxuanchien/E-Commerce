@@ -3,4 +3,8 @@ go 1.27.1
 use (
 	./gen
 	./pkg
+	./services/catalog
+	./services/gateway
+	./services/identity
+	./services/order
 )
