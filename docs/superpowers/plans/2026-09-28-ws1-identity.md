@@ -837,7 +837,7 @@ git commit -m "feat(identity): add RS256 signer, JWKS and refresh token helpers"
   - `func postgres.NewStore(pool *pgxpool.Pool) *postgres.Store` implementing `app.Store` and `app.RoleStore`.
   - testsupport: `func Pool(t testing.TB) *pgxpool.Pool`, `func Email() string`.
 
-- [ ] **Step 1: Write the migration**
+- [x] **Step 1: Write the migration**
 
 `services/identity/migrations/000002_identity.up.sql`:
 
@@ -883,7 +883,7 @@ DROP TABLE IF EXISTS user_roles;
 DROP TABLE IF EXISTS users;
 ```
 
-- [ ] **Step 2: Configure sqlc type overrides**
+- [x] **Step 2: Configure sqlc type overrides**
 
 Replace `services/identity/sqlc.yaml` with:
 
@@ -917,7 +917,7 @@ sql:
               pointer: true
 ```
 
-- [ ] **Step 3: Write the queries**
+- [x] **Step 3: Write the queries**
 
 `services/identity/internal/adapter/postgres/queries/users.sql`:
 
@@ -978,12 +978,12 @@ SET revoked_at = @revoked_at
 WHERE token_hash = @token_hash AND revoked_at IS NULL;
 ```
 
-- [ ] **Step 4: Generate sqlc code**
+- [x] **Step 4: Generate sqlc code**
 
 Run: `make gen-sqlc` (from repo root)
 Expected: `sqlc generate services/identity`, creating `sqlcdb/{db.go,models.go,users.sql.go,refresh_tokens.sql.go}`. Check `grep -n "Email " services/identity/internal/adapter/postgres/sqlcdb/models.go` shows `Email string`; if sqlc emitted `interface{}` for citext, add an override `- db_type: citext` / `go_type: string` and regenerate. Confirm the generated signatures used in Step 8: `CreateUser(ctx, CreateUserParams) (time.Time, error)`, `AddUserRole(ctx, AddUserRoleParams) error`, `GetUserByEmail(ctx, string) (GetUserByEmailRow, error)`, `GetUserByID(ctx, uuid.UUID) (GetUserByIDRow, error)`, `ListUserRoles(ctx, uuid.UUID) ([]string, error)`, `CreateRefreshToken(ctx, CreateRefreshTokenParams) error`, `GetRefreshTokenForUpdate(ctx, []byte) (GetRefreshTokenForUpdateRow, error)`, `ReplaceRefreshToken(ctx, ReplaceRefreshTokenParams{RevokedAt *time.Time; ReplacedBy *uuid.UUID; ID uuid.UUID})`, `RevokeRefreshTokenFamily(ctx, RevokeRefreshTokenFamilyParams{RevokedAt *time.Time; FamilyID uuid.UUID})`, `RevokeRefreshToken(ctx, RevokeRefreshTokenParams{RevokedAt *time.Time; TokenHash []byte})`. Adjust the store code in Step 8 to the generated names if any differ.
 
-- [ ] **Step 5: Write the ports and test helpers**
+- [x] **Step 5: Write the ports and test helpers**
 
 `services/identity/internal/app/ports.go`:
 
@@ -1073,7 +1073,7 @@ func Email() string {
 }
 ```
 
-- [ ] **Step 6: Write the failing store test**
+- [x] **Step 6: Write the failing store test**
 
 `services/identity/internal/adapter/postgres/store_test.go`:
 
@@ -1244,12 +1244,12 @@ func TestStore(t *testing.T) {
 }
 ```
 
-- [ ] **Step 7: Run test to verify it fails**
+- [x] **Step 7: Run test to verify it fails**
 
 Run: `cd services/identity && go test ./internal/adapter/postgres/...`
 Expected: FAIL — build error `undefined: postgres.NewStore`.
 
-- [ ] **Step 8: Write the store**
+- [x] **Step 8: Write the store**
 
 `services/identity/internal/adapter/postgres/errors.go`:
 
@@ -1455,12 +1455,12 @@ func (r repo) RevokeRefreshToken(ctx context.Context, hash []byte, at time.Time)
 }
 ```
 
-- [ ] **Step 9: Run test to verify it passes**
+- [x] **Step 9: Run test to verify it passes**
 
 Run: `cd services/identity && go mod tidy && go test ./internal/adapter/postgres/... -v`
 Expected: PASS (Docker must be running; the Postgres container starts once for `TestStore`).
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add services/identity
