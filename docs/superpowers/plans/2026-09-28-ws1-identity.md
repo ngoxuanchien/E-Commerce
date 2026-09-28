@@ -1489,7 +1489,7 @@ git commit -m "feat(identity): add schema, sqlc queries and postgres store"
   - Test fixture (in `auth_test.go`, reused by Task 5): `newFixture(t) *fixture` with fields `store, signer, clock, logs, auth`; methods `register(t) (domain.User, string)`, `familyOf(t, raw) uuid.UUID`; const `refreshTTL = time.Hour`.
   - testsupport: `type Clock`; `func NewClock(t time.Time) *Clock`; `(*Clock).Now() time.Time`; `(*Clock).Advance(d time.Duration)`.
 
-- [ ] **Step 1: Add the bcrypt dependency and the test clock**
+- [x] **Step 1: Add the bcrypt dependency and the test clock**
 
 Run: `cd services/identity && go get golang.org/x/crypto/bcrypt`
 
@@ -1527,7 +1527,7 @@ func (c *Clock) Advance(d time.Duration) {
 }
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `services/identity/internal/app/auth_test.go`:
 
@@ -1696,12 +1696,12 @@ func TestRegisterLoginMe(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run: `cd services/identity && go test ./internal/app/...`
 Expected: FAIL — build error `undefined: app.NewAuthService`.
 
-- [ ] **Step 4: Write the implementation**
+- [x] **Step 4: Write the implementation**
 
 `services/identity/internal/app/auth.go`:
 
@@ -1855,12 +1855,12 @@ func roleNames(roles []domain.Role) []string {
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `cd services/identity && go mod tidy && go test ./internal/app/... -v`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add services/identity
