@@ -15,7 +15,9 @@ type InventoryService struct {
 }
 
 // NewInventoryService returns an InventoryService.
-func NewInventoryService(store InventoryStore) *InventoryService { return &InventoryService{store: store} }
+func NewInventoryService(store InventoryStore) *InventoryService {
+	return &InventoryService{store: store}
+}
 
 // GetSkus returns SKU data for up to domain.MaxSkuLookup ids (duplicates ignored).
 func (s *InventoryService) GetSkus(ctx context.Context, ids []uuid.UUID) ([]domain.SkuInfo, error) {
