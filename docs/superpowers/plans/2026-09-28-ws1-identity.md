@@ -360,12 +360,12 @@ git commit -m "feat(identity): add domain types and registration validation"
   - `func NewRefreshToken() (raw string, hash []byte, err error)`; `func HashRefreshToken(raw string) []byte`.
   - testsupport: `func RSAKey(t testing.TB) *rsa.PrivateKey`, `func PublicKey(t testing.TB, jwk token.JWK) *rsa.PublicKey`, `func ParseAccessToken(t testing.TB, raw string, jwks token.JWKS) *token.Claims`.
 
-- [ ] **Step 1: Add the JWT dependency**
+- [x] **Step 1: Add the JWT dependency**
 
 Run: `cd services/identity && go get github.com/golang-jwt/jwt/v5@v5.3.1`
 Expected: `go.mod` lists `github.com/golang-jwt/jwt/v5 v5.3.1`.
 
-- [ ] **Step 2: Write the test helpers**
+- [x] **Step 2: Write the test helpers**
 
 `services/identity/internal/testsupport/keys.go`:
 
@@ -430,7 +430,7 @@ func ParseAccessToken(t testing.TB, raw string, jwks token.JWKS) *token.Claims {
 }
 ```
 
-- [ ] **Step 3: Write the failing tests**
+- [x] **Step 3: Write the failing tests**
 
 `services/identity/internal/token/token_test.go`:
 
@@ -591,12 +591,12 @@ func decodeSegment(t *testing.T, raw string, i int) map[string]any {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they fail**
+- [x] **Step 4: Run tests to verify they fail**
 
 Run: `cd services/identity && go test ./internal/token/...`
 Expected: FAIL — build errors `undefined: token.NewSigner` etc.
 
-- [ ] **Step 5: Write the implementation**
+- [x] **Step 5: Write the implementation**
 
 `services/identity/internal/token/key.go`:
 
@@ -801,12 +801,12 @@ func HashRefreshToken(raw string) []byte {
 }
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `cd services/identity && go mod tidy && go test ./internal/token/... -v`
 Expected: PASS (all tests).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add services/identity/go.mod services/identity/go.sum services/identity/internal/token services/identity/internal/testsupport
