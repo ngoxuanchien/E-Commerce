@@ -1,0 +1,631 @@
+openapi: 3.1.0
+info:
+  title: Marketplace — order API
+  version: 1.0.0
+  description: Cart, checkout (one order per shop, COD) and the order lifecycle.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: cart
+    description: Shopping cart.
+  - name: orders
+    description: Buyer orders.
+  - name: seller
+    description: Seller order management (requires role seller).
+paths:
+  /api/cart:
+    get:
+      tags: [cart]
+      operationId: getCart
+      summary: The caller's cart.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Cart enriched with current catalog data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cart'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /api/cart/items/{sku_id}:
+    parameters:
+      - name: sku_id
+        in: path
+        required: true
+        schema:
+          $ref: 'common.yaml#/components/schemas/Id'
+    put:
+      tags: [cart]
+      operationId: setCartItem
+      summary: Set the quantity of a cart line (creates it if missing).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CartItemUpdate'
+      responses:
+        '200':
+          description: Updated cart.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cart'
+        '400':
+          $ref: 'common.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: 'common.yaml#/components/responses/Conflict'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+    delete:
+      tags: [cart]
+      operationId: removeCartItem
+      summary: Remove a cart line.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Updated cart.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cart'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /api/checkout:
+    post:
+      tags: [orders]
+      operationId: checkout
+      summary: Create one PENDING_CONFIRMATION order per shop, all-or-nothing, idempotent.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+      responses:
+        '201':
+          description: Orders created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutResponse'
+        '400':
+          $ref: 'common.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '409':
+          $ref: 'common.yaml#/components/responses/Conflict'
+        '422':
+          description: Idempotency-Key reused with a different body (IDEMPOTENCY_KEY_REUSED).
+          content:
+            application/json:
+              schema:
+                $ref: 'common.yaml#/components/schemas/Error'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /api/orders:
+    get:
+      tags: [orders]
+      operationId: listMyOrders
+      summary: The caller's orders, newest first.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: 'common.yaml#/components/parameters/Limit'
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: The buyer's orders, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPage'
+        '400':
+          $ref: 'common.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /api/orders/{id}:
+    get:
+      tags: [orders]
+      operationId: getOrder
+      summary: Visible to the buyer or the seller of the order.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /api/orders/{id}/cancel:
+    post:
+      tags: [orders]
+      operationId: cancelMyOrder
+      summary: Buyer cancels their own order (only while PENDING_CONFIRMATION or CONFIRMED).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/OrderResponse'
+        '400':
+          $ref: 'common.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: 'common.yaml#/components/responses/Conflict'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /api/orders/{id}/complete:
+    post:
+      tags: [orders]
+      operationId: completeMyOrder
+      summary: Buyer confirms receipt (DELIVERED → COMPLETED).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          $ref: '#/components/responses/OrderResponse'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: 'common.yaml#/components/responses/Conflict'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /api/seller/orders:
+    get:
+      tags: [seller]
+      operationId: listSellerOrders
+      summary: Orders of the caller's shop, newest first.
+      x-required-role: seller
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: 'common.yaml#/components/parameters/Limit'
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Orders of the seller's shop, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPage'
+        '400':
+          $ref: 'common.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /api/seller/orders/{id}/confirm:
+    post:
+      tags: [seller]
+      operationId: confirmSellerOrder
+      summary: PENDING_CONFIRMATION → CONFIRMED.
+      x-required-role: seller
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      requestBody:
+        $ref: '#/components/requestBodies/OptionalAction'
+      responses:
+        '200':
+          $ref: '#/components/responses/OrderResponse'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: 'common.yaml#/components/responses/Conflict'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /api/seller/orders/{id}/ship:
+    post:
+      tags: [seller]
+      operationId: shipSellerOrder
+      summary: CONFIRMED → SHIPPING.
+      x-required-role: seller
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      requestBody:
+        $ref: '#/components/requestBodies/OptionalAction'
+      responses:
+        '200':
+          $ref: '#/components/responses/OrderResponse'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: 'common.yaml#/components/responses/Conflict'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /api/seller/orders/{id}/deliver:
+    post:
+      tags: [seller]
+      operationId: deliverSellerOrder
+      summary: SHIPPING → DELIVERED.
+      x-required-role: seller
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      requestBody:
+        $ref: '#/components/requestBodies/OptionalAction'
+      responses:
+        '200':
+          $ref: '#/components/responses/OrderResponse'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: 'common.yaml#/components/responses/Conflict'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /api/seller/orders/{id}/cancel:
+    post:
+      tags: [seller]
+      operationId: cancelSellerOrder
+      summary: PENDING_CONFIRMATION or CONFIRMED → CANCELLED.
+      x-required-role: seller
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/OrderResponse'
+        '400':
+          $ref: 'common.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: 'common.yaml#/components/responses/Conflict'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: 'common.yaml#/components/securitySchemes/bearerAuth'
+  parameters:
+    OrderId:
+      name: id
+      in: path
+      required: true
+      schema:
+        $ref: 'common.yaml#/components/schemas/Id'
+    StatusFilter:
+      name: status
+      in: query
+      schema:
+        $ref: '#/components/schemas/OrderStatus'
+  requestBodies:
+    OptionalAction:
+      required: false
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OrderActionRequest'
+  responses:
+    OrderResponse:
+      description: The order after the transition.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Order'
+  schemas:
+    CartItem:
+      type: object
+      required: [sku_id, product_id, product_name, variant_name, image_url, unit_price, quantity, stock, available]
+      properties:
+        sku_id:
+          $ref: 'common.yaml#/components/schemas/Id'
+        product_id:
+          $ref: 'common.yaml#/components/schemas/Id'
+        product_name:
+          type: string
+        variant_name:
+          type: string
+        image_url:
+          type: [string, 'null']
+        unit_price:
+          $ref: 'common.yaml#/components/schemas/Money'
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 99
+        stock:
+          type: integer
+          minimum: 0
+        available:
+          type: boolean
+          description: False when the SKU/product is inactive or no longer exists.
+    CartShop:
+      type: object
+      required: [shop, items]
+      properties:
+        shop:
+          $ref: 'common.yaml#/components/schemas/ShopRef'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartItem'
+    Cart:
+      type: object
+      required: [shops, subtotal]
+      properties:
+        shops:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartShop'
+        subtotal:
+          allOf:
+            - $ref: 'common.yaml#/components/schemas/Money'
+          description: Sum over available lines only.
+    CartItemUpdate:
+      type: object
+      required: [quantity]
+      properties:
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 99
+    Address:
+      type: object
+      required: [full_name, phone, line1, ward, district, province]
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+        phone:
+          type: string
+          minLength: 1
+        line1:
+          type: string
+          minLength: 1
+        ward:
+          type: string
+          minLength: 1
+        district:
+          type: string
+          minLength: 1
+        province:
+          type: string
+          minLength: 1
+    CheckoutRequest:
+      type: object
+      required: [shipping_address, payment_method]
+      properties:
+        sku_ids:
+          type: array
+          minItems: 1
+          description: Cart lines to buy; defaults to the whole cart.
+          items:
+            $ref: 'common.yaml#/components/schemas/Id'
+        shipping_address:
+          $ref: '#/components/schemas/Address'
+        payment_method:
+          type: string
+          enum: [COD]
+    CheckoutResponse:
+      type: object
+      required: [checkout_id, orders]
+      properties:
+        checkout_id:
+          $ref: 'common.yaml#/components/schemas/Id'
+        orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/Order'
+    OrderStatus:
+      type: string
+      enum: [PENDING, PENDING_CONFIRMATION, CONFIRMED, SHIPPING, DELIVERED, COMPLETED, CANCELLED]
+    ActorRole:
+      type: string
+      enum: [buyer, seller, system]
+    OrderShop:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          $ref: 'common.yaml#/components/schemas/Id'
+        name:
+          type: string
+    OrderItem:
+      type: object
+      required: [sku_id, product_id, product_name, variant_name, image_url, unit_price, quantity, line_total]
+      properties:
+        sku_id:
+          $ref: 'common.yaml#/components/schemas/Id'
+        product_id:
+          $ref: 'common.yaml#/components/schemas/Id'
+        product_name:
+          type: string
+        variant_name:
+          type: string
+        image_url:
+          type: [string, 'null']
+        unit_price:
+          $ref: 'common.yaml#/components/schemas/Money'
+        quantity:
+          type: integer
+          minimum: 1
+        line_total:
+          $ref: 'common.yaml#/components/schemas/Money'
+    OrderHistoryEntry:
+      type: object
+      required: [from, to, actor_role, note, created_at]
+      properties:
+        from:
+          description: Null for the initial PENDING entry.
+          oneOf:
+            - $ref: '#/components/schemas/OrderStatus'
+            - type: 'null'
+        to:
+          $ref: '#/components/schemas/OrderStatus'
+        actor_role:
+          $ref: '#/components/schemas/ActorRole'
+        note:
+          type: [string, 'null']
+        created_at:
+          $ref: 'common.yaml#/components/schemas/Timestamp'
+    Order:
+      type: object
+      required: [id, checkout_id, status, buyer_id, shop, items, subtotal, shipping_fee, total, shipping_address, payment_method, cancel_reason, history, created_at, updated_at]
+      properties:
+        id:
+          $ref: 'common.yaml#/components/schemas/Id'
+        checkout_id:
+          $ref: 'common.yaml#/components/schemas/Id'
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        buyer_id:
+          $ref: 'common.yaml#/components/schemas/Id'
+        shop:
+          $ref: '#/components/schemas/OrderShop'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        subtotal:
+          $ref: 'common.yaml#/components/schemas/Money'
+        shipping_fee:
+          $ref: 'common.yaml#/components/schemas/Money'
+        total:
+          $ref: 'common.yaml#/components/schemas/Money'
+        shipping_address:
+          $ref: '#/components/schemas/Address'
+        payment_method:
+          type: string
+          enum: [COD]
+        cancel_reason:
+          type: [string, 'null']
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderHistoryEntry'
+        created_at:
+          $ref: 'common.yaml#/components/schemas/Timestamp'
+        updated_at:
+          $ref: 'common.yaml#/components/schemas/Timestamp'
+    OrderPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Order'
+        next_cursor:
+          type: [string, 'null']
+    CancelRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 200
+    OrderActionRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 200
+          description: Optional note stored in the order history.
