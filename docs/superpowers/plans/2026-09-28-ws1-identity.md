@@ -2979,7 +2979,7 @@ git commit -m "feat(identity): add REST handlers validated against identity.yaml
   - `type components struct { API http.Handler; GRPC *grpcapi.Server }`
   - `func newComponents(pool *pgxpool.Pool, key *rsa.PrivateKey, cfg Config, bcryptCost int, logger *slog.Logger) (components, error)`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `services/identity/cmd/server/config_test.go`:
 
@@ -3146,12 +3146,12 @@ func TestServiceWiring(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd services/identity && go test ./cmd/server/...`
 Expected: FAIL — build errors `undefined: newComponents`, `unknown field AccessTokenTTL`.
 
-- [ ] **Step 3: Write the wiring**
+- [x] **Step 3: Write the wiring**
 
 `services/identity/cmd/server/components.go`:
 
@@ -3245,12 +3245,12 @@ type Config struct {
 
 4. Add imports: `identityv1 "github.com/ngoxuanchien/e-commerce/gen/identity/v1"`, `"github.com/ngoxuanchien/e-commerce/services/identity/internal/app"`, `"github.com/ngoxuanchien/e-commerce/services/identity/internal/token"`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd services/identity && go mod tidy && go test -race ./cmd/server/... -v`
 Expected: PASS (including the pre-existing `handler_test.go` tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services/identity
