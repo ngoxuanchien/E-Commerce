@@ -1,0 +1,258 @@
+openapi: 3.1.0
+info:
+  title: Marketplace — identity API
+  version: 1.0.0
+  description: Accounts, sessions and JWKS. Public paths are served through the gateway.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: auth
+    description: Registration and sessions.
+  - name: users
+    description: Current user.
+  - name: internal
+    description: Not routed by the gateway.
+paths:
+  /api/auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      summary: Create an account (role buyer). Does not log in.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: 'common.yaml#/components/responses/ValidationError'
+        '409':
+          $ref: 'common.yaml#/components/responses/Conflict'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /api/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Log in; sets the refresh_token cookie.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Logged in.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/SetRefreshCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          $ref: 'common.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /api/auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refresh
+      summary: Rotate the refresh token and issue a new access token (roles re-read).
+      security:
+        - refreshCookie: []
+      responses:
+        '200':
+          description: Refreshed.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/SetRefreshCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Missing, expired, unknown or reused token; the cookie is cleared.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/ClearRefreshCookie'
+          content:
+            application/json:
+              schema:
+                $ref: 'common.yaml#/components/schemas/Error'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Revoke the current refresh token (if any) and clear the cookie. Always 204.
+      security:
+        - {}
+        - refreshCookie: []
+      responses:
+        '204':
+          description: Logged out.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/ClearRefreshCookie'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /api/users/me:
+    get:
+      tags: [users]
+      operationId: getMe
+      summary: Current user with roles read from the database.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The caller.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /.well-known/jwks.json:
+    get:
+      tags: [internal]
+      operationId: getJwks
+      summary: Public signing keys (internal network only; used by the gateway).
+      security: []
+      x-internal: true
+      responses:
+        '200':
+          description: JSON Web Key Set.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Jwks'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: 'common.yaml#/components/securitySchemes/bearerAuth'
+    refreshCookie:
+      $ref: 'common.yaml#/components/securitySchemes/refreshCookie'
+  headers:
+    SetRefreshCookie:
+      description: 'refresh_token=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/api/auth; Max-Age=2592000'
+      schema:
+        type: string
+    ClearRefreshCookie:
+      description: 'refresh_token=; HttpOnly; Secure; SameSite=Lax; Path=/api/auth; Max-Age=0'
+      schema:
+        type: string
+  schemas:
+    Role:
+      type: string
+      enum: [buyer, seller, admin]
+    User:
+      type: object
+      required: [id, email, full_name, roles, created_at]
+      properties:
+        id:
+          $ref: 'common.yaml#/components/schemas/Id'
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+        created_at:
+          $ref: 'common.yaml#/components/schemas/Timestamp'
+    RegisterRequest:
+      type: object
+      required: [email, password, full_name]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: Trimmed and lowercased by the server.
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 1
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in, user]
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          const: Bearer
+        expires_in:
+          type: integer
+          description: Access token lifetime in seconds.
+        user:
+          $ref: '#/components/schemas/User'
+    Jwks:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+            required: [kty, kid, use, alg, n, e]
+            properties:
+              kty:
+                type: string
+                const: RSA
+              kid:
+                type: string
+              use:
+                type: string
+                const: sig
+              alg:
+                type: string
+                const: RS256
+              n:
+                type: string
+              e:
+                type: string
