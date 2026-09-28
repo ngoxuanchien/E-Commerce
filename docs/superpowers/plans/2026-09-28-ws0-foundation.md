@@ -6768,7 +6768,7 @@ git commit -m "ci: add Go, contracts, images and web jobs"
 **Files:**
 - Modify: `docs/superpowers/specs/2026-09-28-marketplace-p1-ws0-foundation.md` (append §11)
 
-- [ ] **Step 1: Append §11 "Decisions made during implementation"** to the WS0 spec (add any workaround discovered in Tasks 14/17 as an extra item):
+- [x] **Step 1: Append §11 "Decisions made during implementation"** to the WS0 spec (add any workaround discovered in Tasks 14/17 as an extra item):
 
 ```markdown
 ## 11. Decisions made during implementation
@@ -6789,7 +6789,7 @@ Gaps in §2–§9 resolved with the simplest option:
 12. **Web in compose:** defined in `deploy/docker-compose.web.yml`, included by the Makefile only once `web/package.json` exists. WS5 must provide `web/Dockerfile` serving on :80 and proxying `/api` to `http://gateway:8080`; host port 3000.
 ```
 
-- [ ] **Step 2: Verify every WS0 §10 criterion with fresh command output** (use superpowers:verification-before-completion)
+- [x] **Step 2: Verify every WS0 §10 criterion with fresh command output** (use superpowers:verification-before-completion)
 
 | Criterion | Command | Pass condition |
 |---|---|---|
@@ -6800,11 +6800,11 @@ Gaps in §2–§9 resolved with the simplest option:
 | CI green | after push: `gh pr checks --watch` | all jobs green (checked in the finishing step) |
 | `.gitignore` coverage | `git check-ignore -v .DS_Store deploy/secrets/x .env node_modules/x bin/x x.test` | each path matched |
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add docs/superpowers/specs/2026-09-28-marketplace-p1-ws0-foundation.md
 git commit -m "docs(ws0): record implementation decisions"
 ```
 
-- [ ] **Step 4: Finish the branch** with superpowers:finishing-a-development-branch.
+- [x] **Step 4: Finish the branch** with superpowers:finishing-a-development-branch.
