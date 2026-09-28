@@ -68,3 +68,67 @@ func TestContractTransport(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "request violates contract")
 }
+
+// TestContractTransport_StrictFormatsAndStatus proves ContractTransport
+// rejects responses that satisfy the required-fields shape but violate a
+// declared string format (uuid, email), and rejects an undocumented status
+// code, while still accepting a fully valid response.
+func TestContractTransport_StrictFormatsAndStatus(t *testing.T) {
+	const validUser = `{"id":"0192a1b2-0000-7000-8000-000000000001","email":"a@example.test","full_name":"A","roles":["buyer"],"created_at":"2026-09-28T10:00:00Z"}`
+
+	tests := []struct {
+		name       string
+		respStatus int
+		respBody   string
+		wantErr    string
+	}{
+		{
+			name:       "valid response still passes",
+			respStatus: http.StatusOK,
+			respBody:   validUser,
+		},
+		{
+			name:       "invalid uuid id is rejected",
+			respStatus: http.StatusOK,
+			respBody:   `{"id":"not-a-uuid","email":"a@example.test","full_name":"A","roles":["buyer"],"created_at":"2026-09-28T10:00:00Z"}`,
+			wantErr:    "response violates contract",
+		},
+		{
+			name:       "invalid email is rejected",
+			respStatus: http.StatusOK,
+			respBody:   `{"id":"0192a1b2-0000-7000-8000-000000000001","email":"nope","full_name":"A","roles":["buyer"],"created_at":"2026-09-28T10:00:00Z"}`,
+			wantErr:    "response violates contract",
+		},
+		{
+			name:       "undocumented status is rejected",
+			respStatus: http.StatusTeapot,
+			respBody:   validUser,
+			wantErr:    "response violates contract",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.respStatus)
+				_, _ = io.WriteString(w, tc.respBody)
+			}))
+			defer srv.Close()
+			client := &http.Client{Transport: testutil.ContractTransport(t, filepath.Join(specDir, "identity.yaml"), nil)}
+
+			req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/users/me", nil)
+			req.Header.Set("Authorization", "Bearer x")
+			resp, err := client.Do(req)
+			if resp != nil {
+				_ = resp.Body.Close()
+			}
+			if tc.wantErr == "" {
+				assert.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}

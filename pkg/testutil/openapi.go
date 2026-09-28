@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -13,6 +14,16 @@ import (
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/gorillamux"
 )
+
+// registerStringFormats registers the "uuid" and "email" string format
+// validators once for the process. kin-openapi ships neither by default, so
+// without this a `format: uuid` / `format: email` field accepts any string.
+var registerStringFormats = sync.OnceFunc(func() {
+	// RFC 9562 (not RFC 4122) because §3 mandates UUIDv7 ids, and only
+	// RFC 9562's version range (1-8) covers version 7.
+	openapi3.DefineStringFormatValidator("uuid", openapi3.NewRegexpFormatValidator(openapi3.FormatOfStringForUUIDOfRFC9562))
+	openapi3.DefineStringFormatValidator("email", openapi3.NewRegexpFormatValidator(openapi3.FormatOfStringForEmail))
+})
 
 // LoadOpenAPI loads and validates an OpenAPI document (external $refs allowed).
 func LoadOpenAPI(t testing.TB, path string) *openapi3.T {
@@ -39,6 +50,7 @@ type contractTransport struct {
 // from RoundTrip. Security requirements are not checked (the gateway owns auth).
 func ContractTransport(t testing.TB, specPath string, base http.RoundTripper) http.RoundTripper {
 	t.Helper()
+	registerStringFormats()
 	doc := LoadOpenAPI(t, specPath)
 	doc.Servers = nil // match any host, e.g. httptest servers
 	router, err := gorillamux.NewRouter(doc)
@@ -85,7 +97,8 @@ func (c *contractTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	}
 	out := &openapi3filter.ResponseValidationInput{
 		RequestValidationInput: in, Status: resp.StatusCode, Header: resp.Header,
-		Body: io.NopCloser(bytes.NewReader(respBody)),
+		Body:    io.NopCloser(bytes.NewReader(respBody)),
+		Options: &openapi3filter.Options{IncludeResponseStatus: true},
 	}
 	if err := openapi3filter.ValidateResponse(context.Background(), out); err != nil {
 		return nil, fmt.Errorf("response violates contract: %s %s -> %d: %w", req.Method, req.URL.Path, resp.StatusCode, err)
