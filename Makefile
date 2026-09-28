@@ -12,6 +12,10 @@ PROTOC_GEN_GO_VERSION := v1.36.12
 PROTOC_GEN_GO_GRPC_VERSION := v1.6.2
 REDOCLY_VERSION := 2.54.3
 
+BUF := $(BIN)/buf
+SQLC := $(BIN)/sqlc
+GOLANGCI_LINT := $(BIN)/golangci-lint
+
 COMPOSE := docker compose -f deploy/docker-compose.yml $(if $(wildcard web/package.json),-f deploy/docker-compose.web.yml)
 
 # go_tool installs $(2)@$(3) as bin/$(1)-$(3) and points bin/$(1) at it,
@@ -41,25 +45,25 @@ tools: $(TOOLS) ## Install pinned dev tools into ./bin
 gen: gen-proto gen-sqlc ## Generate code (buf + sqlc)
 
 gen-proto: tools
-	buf generate proto --template proto/buf.gen.yaml
+	PATH="$(BIN):$$PATH" $(BUF) generate proto --template proto/buf.gen.yaml
 	cd gen && go mod tidy
 
 gen-sqlc: tools
 	@for f in services/*/sqlc.yaml; do \
 		d=$$(dirname $$f); \
 		if ls $$d/internal/adapter/postgres/queries/*.sql >/dev/null 2>&1; then \
-			echo "sqlc generate $$d"; (cd $$d && sqlc generate) || exit 1; \
+			echo "sqlc generate $$d"; (cd $$d && $(SQLC) generate) || exit 1; \
 		else echo "sqlc: skip $$d (no queries yet)"; fi; \
 	done
 
 lint: lint-go lint-proto lint-openapi ## Run all linters
 
 lint-go: tools
-	@for m in $(GO_MODULES); do echo "golangci-lint $$m"; (cd $$m && golangci-lint run ./...) || exit 1; done
+	@for m in $(GO_MODULES); do echo "golangci-lint $$m"; (cd $$m && $(GOLANGCI_LINT) run ./...) || exit 1; done
 
 lint-proto: tools
-	buf lint proto
-	buf format --diff --exit-code proto
+	$(BUF) lint proto
+	$(BUF) format --diff --exit-code proto
 
 lint-openapi:
 	npx --yes @redocly/cli@$(REDOCLY_VERSION) lint --config api/redocly.yaml api/openapi/*.yaml
