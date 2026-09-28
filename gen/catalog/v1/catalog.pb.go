@@ -124,6 +124,7 @@ type SkuInfo struct {
 	ShopId        string `protobuf:"bytes,9,opt,name=shop_id,json=shopId,proto3" json:"shop_id,omitempty"`
 	ShopName      string `protobuf:"bytes,10,opt,name=shop_name,json=shopName,proto3" json:"shop_name,omitempty"`
 	SellerUserId  string `protobuf:"bytes,11,opt,name=seller_user_id,json=sellerUserId,proto3" json:"seller_user_id,omitempty"`
+	ShopSlug      string `protobuf:"bytes,12,opt,name=shop_slug,json=shopSlug,proto3" json:"shop_slug,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -231,6 +232,13 @@ func (x *SkuInfo) GetShopName() string {
 func (x *SkuInfo) GetSellerUserId() string {
 	if x != nil {
 		return x.SellerUserId
+	}
+	return ""
+}
+
+func (x *SkuInfo) GetShopSlug() string {
+	if x != nil {
+		return x.ShopSlug
 	}
 	return ""
 }
@@ -570,7 +578,7 @@ const file_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x0eGetSkusRequest\x12\x17\n" +
 	"\asku_ids\x18\x01 \x03(\tR\x06skuIds\":\n" +
 	"\x0fGetSkusResponse\x12'\n" +
-	"\x04skus\x18\x01 \x03(\v2\x13.catalog.v1.SkuInfoR\x04skus\"\xc8\x02\n" +
+	"\x04skus\x18\x01 \x03(\v2\x13.catalog.v1.SkuInfoR\x04skus\"\xe5\x02\n" +
 	"\aSkuInfo\x12\x15\n" +
 	"\x06sku_id\x18\x01 \x01(\tR\x05skuId\x12\x1d\n" +
 	"\n" +
@@ -584,7 +592,8 @@ const file_catalog_v1_catalog_proto_rawDesc = "" +
 	"\ashop_id\x18\t \x01(\tR\x06shopId\x12\x1b\n" +
 	"\tshop_name\x18\n" +
 	" \x01(\tR\bshopName\x12$\n" +
-	"\x0eseller_user_id\x18\v \x01(\tR\fsellerUserId\">\n" +
+	"\x0eseller_user_id\x18\v \x01(\tR\fsellerUserId\x12\x1b\n" +
+	"\tshop_slug\x18\f \x01(\tR\bshopSlug\">\n" +
 	"\tStockItem\x12\x15\n" +
 	"\x06sku_id\x18\x01 \x01(\tR\x05skuId\x12\x1a\n" +
 	"\bquantity\x18\x02 \x01(\x05R\bquantity\"]\n" +

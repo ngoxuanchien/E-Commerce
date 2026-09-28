@@ -36,6 +36,8 @@ paths:
           $ref: 'common.yaml#/components/responses/ValidationError'
         '409':
           $ref: 'common.yaml#/components/responses/Conflict'
+        '413':
+          $ref: 'common.yaml#/components/responses/PayloadTooLarge'
         '429':
           $ref: 'common.yaml#/components/responses/RateLimited'
         5XX:
@@ -66,6 +68,8 @@ paths:
           $ref: 'common.yaml#/components/responses/ValidationError'
         '401':
           $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '413':
+          $ref: 'common.yaml#/components/responses/PayloadTooLarge'
         '429':
           $ref: 'common.yaml#/components/responses/RateLimited'
         5XX:

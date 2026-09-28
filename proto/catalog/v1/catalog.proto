@@ -37,6 +37,7 @@ message SkuInfo {
   string shop_id = 9;
   string shop_name = 10;
   string seller_user_id = 11;
+  string shop_slug = 12;
 }
 
 message StockItem {

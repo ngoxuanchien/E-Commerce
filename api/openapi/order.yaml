@@ -67,6 +67,8 @@ paths:
           $ref: 'common.yaml#/components/responses/NotFound'
         '409':
           $ref: 'common.yaml#/components/responses/Conflict'
+        '413':
+          $ref: 'common.yaml#/components/responses/PayloadTooLarge'
         '429':
           $ref: 'common.yaml#/components/responses/RateLimited'
         5XX:
@@ -124,6 +126,8 @@ paths:
           $ref: 'common.yaml#/components/responses/Unauthenticated'
         '409':
           $ref: 'common.yaml#/components/responses/Conflict'
+        '413':
+          $ref: 'common.yaml#/components/responses/PayloadTooLarge'
         '422':
           description: Idempotency-Key reused with a different body (IDEMPOTENCY_KEY_REUSED).
           content:
@@ -188,7 +192,7 @@ paths:
     post:
       tags: [orders]
       operationId: cancelMyOrder
-      summary: Buyer cancels their own order (only while PENDING_CONFIRMATION or CONFIRMED).
+      summary: Buyer cancels their own order (only while PENDING_CONFIRMATION).
       security:
         - bearerAuth: []
       parameters:
@@ -210,6 +214,8 @@ paths:
           $ref: 'common.yaml#/components/responses/NotFound'
         '409':
           $ref: 'common.yaml#/components/responses/Conflict'
+        '413':
+          $ref: 'common.yaml#/components/responses/PayloadTooLarge'
         '429':
           $ref: 'common.yaml#/components/responses/RateLimited'
         5XX:
@@ -288,6 +294,8 @@ paths:
           $ref: 'common.yaml#/components/responses/NotFound'
         '409':
           $ref: 'common.yaml#/components/responses/Conflict'
+        '413':
+          $ref: 'common.yaml#/components/responses/PayloadTooLarge'
         '429':
           $ref: 'common.yaml#/components/responses/RateLimited'
         5XX:
@@ -315,6 +323,8 @@ paths:
           $ref: 'common.yaml#/components/responses/NotFound'
         '409':
           $ref: 'common.yaml#/components/responses/Conflict'
+        '413':
+          $ref: 'common.yaml#/components/responses/PayloadTooLarge'
         '429':
           $ref: 'common.yaml#/components/responses/RateLimited'
         5XX:
@@ -342,6 +352,8 @@ paths:
           $ref: 'common.yaml#/components/responses/NotFound'
         '409':
           $ref: 'common.yaml#/components/responses/Conflict'
+        '413':
+          $ref: 'common.yaml#/components/responses/PayloadTooLarge'
         '429':
           $ref: 'common.yaml#/components/responses/RateLimited'
         5XX:
@@ -375,6 +387,8 @@ paths:
           $ref: 'common.yaml#/components/responses/NotFound'
         '409':
           $ref: 'common.yaml#/components/responses/Conflict'
+        '413':
+          $ref: 'common.yaml#/components/responses/PayloadTooLarge'
         '429':
           $ref: 'common.yaml#/components/responses/RateLimited'
         5XX:

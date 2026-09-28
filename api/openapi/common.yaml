@@ -59,6 +59,7 @@ components:
         - CONFLICT
         - OUT_OF_STOCK
         - INVALID_STATE_TRANSITION
+        - PAYLOAD_TOO_LARGE
         - IDEMPOTENCY_KEY_REUSED
         - RATE_LIMITED
         - INTERNAL
@@ -135,6 +136,12 @@ components:
             $ref: '#/components/schemas/Error'
     ServerError:
       description: INTERNAL (500) or UPSTREAM_UNAVAILABLE (503).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    PayloadTooLarge:
+      description: Request body exceeds 1 MB (PAYLOAD_TOO_LARGE); returned by the gateway.
       content:
         application/json:
           schema:

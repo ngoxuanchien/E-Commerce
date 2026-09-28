@@ -14,5 +14,6 @@ openapi/common.yaml:
     - '#/components/responses/Conflict'
     - '#/components/responses/RateLimited'
     - '#/components/responses/ServerError'
+    - '#/components/responses/PayloadTooLarge'
     - '#/components/securitySchemes/bearerAuth'
     - '#/components/securitySchemes/refreshCookie'

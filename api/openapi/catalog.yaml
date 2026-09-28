@@ -132,6 +132,8 @@ paths:
           $ref: 'common.yaml#/components/responses/Unauthenticated'
         '409':
           $ref: 'common.yaml#/components/responses/Conflict'
+        '413':
+          $ref: 'common.yaml#/components/responses/PayloadTooLarge'
         '429':
           $ref: 'common.yaml#/components/responses/RateLimited'
         5XX:
@@ -189,6 +191,8 @@ paths:
           $ref: 'common.yaml#/components/responses/Forbidden'
         '404':
           $ref: 'common.yaml#/components/responses/NotFound'
+        '413':
+          $ref: 'common.yaml#/components/responses/PayloadTooLarge'
         '429':
           $ref: 'common.yaml#/components/responses/RateLimited'
         5XX:
@@ -276,6 +280,8 @@ paths:
           $ref: 'common.yaml#/components/responses/Unauthenticated'
         '403':
           $ref: 'common.yaml#/components/responses/Forbidden'
+        '413':
+          $ref: 'common.yaml#/components/responses/PayloadTooLarge'
         '429':
           $ref: 'common.yaml#/components/responses/RateLimited'
         5XX:
@@ -311,6 +317,8 @@ paths:
           $ref: 'common.yaml#/components/responses/Forbidden'
         '404':
           $ref: 'common.yaml#/components/responses/NotFound'
+        '413':
+          $ref: 'common.yaml#/components/responses/PayloadTooLarge'
         '429':
           $ref: 'common.yaml#/components/responses/RateLimited'
         5XX:
@@ -364,6 +372,8 @@ paths:
           $ref: 'common.yaml#/components/responses/Unauthenticated'
         '403':
           $ref: 'common.yaml#/components/responses/Forbidden'
+        '413':
+          $ref: 'common.yaml#/components/responses/PayloadTooLarge'
         '429':
           $ref: 'common.yaml#/components/responses/RateLimited'
         5XX:
