@@ -126,7 +126,7 @@ func Decode(b []byte) (Envelope, error) {
 	if env.Version != Version {
 		return Envelope{}, fmt.Errorf("%w: %d", ErrUnsupportedVersion, env.Version)
 	}
-	if env.EventID == "" || env.EventType == "" || len(env.Data) == 0 || string(env.Data) == "null" {
+	if env.EventID == "" || env.EventType == "" || len(env.Data) == 0 || string(env.Data) == "null" || env.OccurredAt.IsZero() {
 		return Envelope{}, ErrInvalidEnvelope
 	}
 	return env, nil

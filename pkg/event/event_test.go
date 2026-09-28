@@ -132,6 +132,8 @@ func TestDecodeRejectsBadEnvelopes(t *testing.T) {
 	assert.ErrorIs(t, err, event.ErrInvalidEnvelope)
 	_, err = event.Decode(mutate("data", nil))
 	assert.ErrorIs(t, err, event.ErrInvalidEnvelope)
+	_, err = event.Decode(mutate("occurred_at", nil))
+	assert.ErrorIs(t, err, event.ErrInvalidEnvelope)
 	_, err = event.Decode([]byte("not json"))
 	assert.Error(t, err)
 }
