@@ -104,6 +104,34 @@ func TestProduceConsumeRetryAndCommit(t *testing.T) {
 	}
 }
 
+// TestRunReturnsWhenClosedWithoutCancel proves Run stops (instead of hot
+// looping on repeated ErrClientClosed fetches) when Close races Run: Close is
+// called without first cancelling the context Run is polling with.
+func TestRunReturnsWhenClosedWithoutCancel(t *testing.T) {
+	brokers := testutil.Kafka(t)
+	const topic = "kafkax-close-race"
+	testutil.CreateTopic(t, brokers, topic, 1)
+
+	c, err := kafkax.NewConsumer(kafkax.ConsumerConfig{
+		Brokers: brokers, Group: "close-race-group", Topics: []string{topic},
+		MinBackoff: 10 * time.Millisecond, MaxBackoff: 50 * time.Millisecond, Logger: discard,
+	}, func(context.Context, kafkax.Message) error { return nil })
+	require.NoError(t, err)
+
+	done := make(chan error, 1)
+	go func() { done <- c.Run(context.Background()) }()
+
+	time.Sleep(200 * time.Millisecond) // let Run reach PollFetches
+	c.Close()                          // races Run: ctx is NOT cancelled first
+
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after Close() raced it (hot loop on ErrClientClosed?)")
+	}
+}
+
 func TestUncommittedMessageIsRedelivered(t *testing.T) {
 	brokers := testutil.Kafka(t)
 	const topic = "kafkax-redeliver"

@@ -27,6 +27,7 @@ func TestStatusFor(t *testing.T) {
 		httpx.CodeRateLimited:            429,
 		httpx.CodeInternal:               500,
 		httpx.CodeUpstreamUnavailable:    503,
+		httpx.CodePayloadTooLarge:        413,
 		"SOMETHING_ELSE":                 500,
 	}
 	for code, want := range cases {
@@ -89,6 +90,15 @@ func TestAppErrorWrapKeepsCause(t *testing.T) {
 	err := httpx.NewError(httpx.CodeUpstreamUnavailable, "catalog unavailable").Wrap(cause)
 	assert.ErrorIs(t, err, cause)
 	assert.Equal(t, 503, err.Status)
+}
+
+func TestWriteErrorFallsBackToStatusForWhenStatusIsZero(t *testing.T) {
+	// An *AppError built by hand (not via NewError) may leave Status unset;
+	// WriteError must still derive the right HTTP status from Code.
+	err := &httpx.AppError{Code: httpx.CodeNotFound, Message: "order not found"}
+	rec, b := serveError(t, err)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Equal(t, "NOT_FOUND", b.Error.Code)
 }
 
 func TestValidationErrorDetails(t *testing.T) {

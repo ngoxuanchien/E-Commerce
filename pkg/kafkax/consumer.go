@@ -68,6 +68,12 @@ func (c *Consumer) Run(ctx context.Context) error {
 			c.client.AllowRebalance()
 			return nil
 		}
+		if fetches.IsClientClosed() {
+			// Close() raced Run() without ctx being cancelled first: the
+			// client is already gone, so stop instead of hot-looping on the
+			// same injected ErrClientClosed fetch forever.
+			return nil
+		}
 		fetches.EachError(func(topic string, partition int32, err error) {
 			c.cfg.Logger.ErrorContext(ctx, "kafka fetch error", "topic", topic, "partition", partition, "error", err)
 		})

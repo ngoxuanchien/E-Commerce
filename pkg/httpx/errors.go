@@ -19,6 +19,7 @@ const (
 	CodeInvalidStateTransition = "INVALID_STATE_TRANSITION"
 	CodeIdempotencyKeyReused   = "IDEMPOTENCY_KEY_REUSED"
 	CodeRateLimited            = "RATE_LIMITED"
+	CodePayloadTooLarge        = "PAYLOAD_TOO_LARGE"
 	CodeInternal               = "INTERNAL"
 	CodeUpstreamUnavailable    = "UPSTREAM_UNAVAILABLE"
 )
@@ -33,6 +34,7 @@ var codeStatus = map[string]int{
 	CodeInvalidStateTransition: http.StatusConflict,
 	CodeIdempotencyKeyReused:   http.StatusUnprocessableEntity,
 	CodeRateLimited:            http.StatusTooManyRequests,
+	CodePayloadTooLarge:        http.StatusRequestEntityTooLarge,
 	CodeInternal:               http.StatusInternalServerError,
 	CodeUpstreamUnavailable:    http.StatusServiceUnavailable,
 }
@@ -88,6 +90,13 @@ func (e *AppError) Wrap(err error) *AppError {
 	return &c
 }
 
+// withStatus returns a copy of e with status set.
+func (e *AppError) withStatus(status int) *AppError {
+	c := *e
+	c.Status = status
+	return &c
+}
+
 type errorBody struct {
 	Error errorPayload `json:"error"`
 }
@@ -105,8 +114,13 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	if !errors.As(err, &ae) {
 		slog.ErrorContext(r.Context(), "unhandled error", "error", err)
 		ae = NewError(CodeInternal, "internal server error")
-	} else if ae.Status >= http.StatusInternalServerError {
-		slog.ErrorContext(r.Context(), "server error", "code", ae.Code, "error", err)
+	} else {
+		if ae.Status == 0 {
+			ae = ae.withStatus(StatusFor(ae.Code))
+		}
+		if ae.Status >= http.StatusInternalServerError {
+			slog.ErrorContext(r.Context(), "server error", "code", ae.Code, "error", err)
+		}
 	}
 	WriteJSON(w, ae.Status, errorBody{Error: errorPayload{Code: ae.Code, Message: ae.Message, Details: ae.Details}})
 }
