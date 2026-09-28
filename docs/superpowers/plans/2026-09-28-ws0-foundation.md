@@ -81,7 +81,7 @@ Every task's tests use `github.com/stretchr/testify` (`require`/`assert`).
 **Interfaces:**
 - Produces: `make tools` (installs pinned tools into `./bin`), `make test`, `make lint-go`, variable `GO_MODULES` (overridable).
 
-- [ ] **Step 1: Create `pkg/go.mod`, `pkg/doc.go`, `gen/go.mod`**
+- [x] **Step 1: Create `pkg/go.mod`, `pkg/doc.go`, `gen/go.mod`**
 
 ```
 // pkg/go.mod
@@ -103,7 +103,7 @@ module github.com/ngoxuanchien/e-commerce/gen
 go 1.27.1
 ```
 
-- [ ] **Step 2: Create `go.work`** (services are added in Task 16)
+- [x] **Step 2: Create `go.work`** (services are added in Task 16)
 
 ```
 go 1.27.1
@@ -114,7 +114,7 @@ use (
 )
 ```
 
-- [ ] **Step 3: Create `.editorconfig`**
+- [x] **Step 3: Create `.editorconfig`**
 
 ```ini
 root = true
@@ -137,7 +137,7 @@ indent_style = tab
 trim_trailing_whitespace = false
 ```
 
-- [ ] **Step 4: Create `.golangci.yml`**
+- [x] **Step 4: Create `.golangci.yml`**
 
 ```yaml
 version: "2"
@@ -158,7 +158,7 @@ formatters:
         - github.com/ngoxuanchien/e-commerce
 ```
 
-- [ ] **Step 5: Create `.dockerignore`**
+- [x] **Step 5: Create `.dockerignore`**
 
 ```
 .git
@@ -169,7 +169,7 @@ deploy/secrets
 **/*.test
 ```
 
-- [ ] **Step 6: Create `Makefile`**
+- [x] **Step 6: Create `Makefile`**
 
 ```make
 SHELL := /bin/bash
@@ -271,14 +271,14 @@ e2e: ## Run end-to-end tests (implemented by WS6)
 
 Until Task 16 creates the services, run `make test GO_MODULES=pkg` / `make lint-go GO_MODULES=pkg`.
 
-- [ ] **Step 7: Edit `.gitignore`** — delete the `go.work.sum` line (the workspace sum file is committed for reproducible builds).
+- [x] **Step 7: Edit `.gitignore`** — delete the `go.work.sum` line (the workspace sum file is committed for reproducible builds).
 
-- [ ] **Step 8: Verify tools install and the empty module builds**
+- [x] **Step 8: Verify tools install and the empty module builds**
 
 Run: `make tools && ls bin && (cd pkg && go build ./...)`
 Expected: `bin/` contains `buf`, `sqlc`, `golangci-lint`, `protoc-gen-go`, `protoc-gen-go-grpc` symlinks; build exits 0.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add go.work pkg gen .editorconfig .golangci.yml .dockerignore Makefile .gitignore
@@ -296,11 +296,11 @@ git commit -m "chore: add Go workspace, pinned tooling and Makefile"
 - Produces (`logx`): `New(w io.Writer, level string) *slog.Logger`, `ParseLevel(string) slog.Level`, `WithRequestID(ctx, id string) context.Context`, `RequestID(ctx) string`.
 - Produces (`httpx`): code constants `CodeValidation … CodeUpstreamUnavailable`; `StatusFor(code string) int`; `type AppError struct{Code string; Status int; Message string; Details map[string]any; Err error}` with `Error()`, `Unwrap()`, `WithDetails(map[string]any) *AppError`, `Wrap(error) *AppError`; `NewError(code, message string) *AppError`; `ValidationError(fields map[string]string) *AppError`; `WriteJSON(w, status int, v any)`; `WriteError(w, r, err error)`; `Decode(r *http.Request, dst any) error`; `Validate(v any) error`; `const MaxBodyBytes = 1 << 20`.
 
-- [ ] **Step 1: Add dependencies**
+- [x] **Step 1: Add dependencies**
 
 Run: `cd pkg && go get github.com/stretchr/testify@v1.12.1 go.opentelemetry.io/otel@v1.46.0 github.com/go-playground/validator/v10@v10.30.5 github.com/google/uuid@v1.6.0`
 
-- [ ] **Step 2: Write the failing logx tests** — `pkg/logx/logger_test.go`
+- [x] **Step 2: Write the failing logx tests** — `pkg/logx/logger_test.go`
 
 ```go
 package logx_test
@@ -376,9 +376,9 @@ func TestRequestIDRoundTrip(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run to verify failure** — `cd pkg && go test ./logx/` → FAIL, `undefined: logx.New`.
+- [x] **Step 3: Run to verify failure** — `cd pkg && go test ./logx/` → FAIL, `undefined: logx.New`.
 
-- [ ] **Step 4: Implement `pkg/logx/logger.go`**
+- [x] **Step 4: Implement `pkg/logx/logger.go`**
 
 ```go
 // Package logx builds the JSON slog logger used by every service. Records
@@ -442,9 +442,9 @@ func (h contextHandler) WithGroup(name string) slog.Handler {
 }
 ```
 
-- [ ] **Step 5: Run logx tests** — `cd pkg && go test ./logx/` → PASS.
+- [x] **Step 5: Run logx tests** — `cd pkg && go test ./logx/` → PASS.
 
-- [ ] **Step 6: Write failing httpx error tests** — `pkg/httpx/errors_test.go`
+- [x] **Step 6: Write failing httpx error tests** — `pkg/httpx/errors_test.go`
 
 ```go
 package httpx_test
@@ -547,7 +547,7 @@ func TestValidationErrorDetails(t *testing.T) {
 }
 ```
 
-- [ ] **Step 7: Write failing Decode tests** — `pkg/httpx/json_test.go`
+- [x] **Step 7: Write failing Decode tests** — `pkg/httpx/json_test.go`
 
 ```go
 package httpx_test
@@ -642,9 +642,9 @@ func TestWriteJSONNilBody(t *testing.T) {
 }
 ```
 
-- [ ] **Step 8: Run to verify failure** — `cd pkg && go test ./httpx/` → FAIL, `undefined: httpx.CodeValidation`.
+- [x] **Step 8: Run to verify failure** — `cd pkg && go test ./httpx/` → FAIL, `undefined: httpx.CodeValidation`.
 
-- [ ] **Step 9: Implement `pkg/httpx/errors.go`**
+- [x] **Step 9: Implement `pkg/httpx/errors.go`**
 
 ```go
 // Package httpx holds the HTTP conventions shared by all services: the error
@@ -761,7 +761,7 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 }
 ```
 
-- [ ] **Step 10: Implement `pkg/httpx/json.go`**
+- [x] **Step 10: Implement `pkg/httpx/json.go`**
 
 ```go
 package httpx
@@ -885,9 +885,9 @@ func fieldMessage(fe validator.FieldError) string {
 }
 ```
 
-- [ ] **Step 11: Run tests** — `cd pkg && go test ./logx/ ./httpx/` → PASS.
+- [x] **Step 11: Run tests** — `cd pkg && go test ./logx/ ./httpx/` → PASS.
 
-- [ ] **Step 12: Commit**
+- [x] **Step 12: Commit**
 
 ```bash
 git add pkg
@@ -905,7 +905,7 @@ git commit -m "feat(pkg): add logx logger and httpx error model with JSON decodi
 - Consumes: `logx.WithRequestID`, `logx.RequestID`, `WriteError`, `NewError`.
 - Produces: `const HeaderRequestID = "X-Request-Id"`; `RequestID(next http.Handler) http.Handler`; `Recover(next http.Handler) http.Handler`; `AccessLog(logger *slog.Logger) func(http.Handler) http.Handler`; `NotFound() http.Handler`.
 
-- [ ] **Step 1: Write failing tests** — `pkg/httpx/middleware_test.go`
+- [x] **Step 1: Write failing tests** — `pkg/httpx/middleware_test.go`
 
 ```go
 package httpx_test
@@ -1026,9 +1026,9 @@ func TestNotFound(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure** — `cd pkg && go test ./httpx/` → FAIL, `undefined: httpx.RequestID`.
+- [x] **Step 2: Run to verify failure** — `cd pkg && go test ./httpx/` → FAIL, `undefined: httpx.RequestID`.
 
-- [ ] **Step 3: Implement `pkg/httpx/middleware.go`**
+- [x] **Step 3: Implement `pkg/httpx/middleware.go`**
 
 ```go
 package httpx
@@ -1145,9 +1145,9 @@ func NotFound() http.Handler {
 }
 ```
 
-- [ ] **Step 4: Run tests** — `cd pkg && go test ./httpx/` → PASS.
+- [x] **Step 4: Run tests** — `cd pkg && go test ./httpx/` → PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pkg/httpx
@@ -1165,7 +1165,7 @@ git commit -m "feat(pkg/httpx): add request ID, recover and access log middlewar
 - Consumes: `httpx.WriteError`, `httpx.NewError`, `httpx.CodeUnauthenticated`, `httpx.CodeForbidden`.
 - Produces: `HeaderUserID`, `HeaderUserRoles`, `RoleBuyer`, `RoleSeller`, `RoleAdmin`; `type Identity struct{UserID string; Roles []string}`; `WithIdentity(ctx, Identity) context.Context`; `FromContext(ctx) (Identity, bool)`; `UserID(ctx) string`; `HasRole(ctx, role string) bool`; `ParseRoles(string) []string`; `Middleware(http.Handler) http.Handler`; `RequireUser(http.Handler) http.Handler`; `RequireRole(role string) func(http.Handler) http.Handler`.
 
-- [ ] **Step 1: Write failing tests** — `pkg/authctx/authctx_test.go`
+- [x] **Step 1: Write failing tests** — `pkg/authctx/authctx_test.go`
 
 ```go
 package authctx_test
@@ -1258,9 +1258,9 @@ func TestRequireRole(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure** — `cd pkg && go test ./authctx/` → FAIL, `undefined: authctx.ParseRoles`.
+- [x] **Step 2: Run to verify failure** — `cd pkg && go test ./authctx/` → FAIL, `undefined: authctx.ParseRoles`.
 
-- [ ] **Step 3: Implement `pkg/authctx/authctx.go`**
+- [x] **Step 3: Implement `pkg/authctx/authctx.go`**
 
 ```go
 // Package authctx carries the caller identity injected by the gateway
@@ -1366,9 +1366,9 @@ func RequireRole(role string) func(http.Handler) http.Handler {
 }
 ```
 
-- [ ] **Step 4: Run tests** — `cd pkg && go test ./authctx/` → PASS.
+- [x] **Step 4: Run tests** — `cd pkg && go test ./authctx/` → PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pkg/authctx
@@ -1385,9 +1385,9 @@ git commit -m "feat(pkg/authctx): add identity context and auth middleware"
 **Interfaces:**
 - Produces: `type Base struct{ServiceName, HTTPAddr, GRPCAddr, DatabaseURL, RedisURL string; KafkaBrokers []string; OTLPEndpoint, LogLevel string; ShutdownTimeout time.Duration}`; `Load[T any]() (T, error)`.
 
-- [ ] **Step 1: Add dependency** — `cd pkg && go get github.com/caarlos0/env/v11@v11.4.1`
+- [x] **Step 1: Add dependency** — `cd pkg && go get github.com/caarlos0/env/v11@v11.4.1`
 
-- [ ] **Step 2: Write failing tests** — `pkg/config/config_test.go`
+- [x] **Step 2: Write failing tests** — `pkg/config/config_test.go`
 
 ```go
 package config_test
@@ -1449,9 +1449,9 @@ func TestLoadRejectsBadDuration(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run to verify failure** — `cd pkg && go test ./config/` → FAIL, `undefined: config.Base`.
+- [x] **Step 3: Run to verify failure** — `cd pkg && go test ./config/` → FAIL, `undefined: config.Base`.
 
-- [ ] **Step 4: Implement `pkg/config/config.go`**
+- [x] **Step 4: Implement `pkg/config/config.go`**
 
 ```go
 // Package config loads service configuration from environment variables.
@@ -1488,9 +1488,9 @@ func Load[T any]() (T, error) {
 }
 ```
 
-- [ ] **Step 5: Run tests** — `cd pkg && go test ./config/` → PASS.
+- [x] **Step 5: Run tests** — `cd pkg && go test ./config/` → PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pkg
