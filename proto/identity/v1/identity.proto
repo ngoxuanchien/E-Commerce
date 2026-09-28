@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package identity.v1;
+
+option go_package = "github.com/ngoxuanchien/e-commerce/gen/identity/v1;identityv1";
+
+// IdentityInternal is identity-svc's service-to-service API (not exposed publicly).
+service IdentityInternal {
+  // GrantRole adds a role to a user. Idempotent: granting an existing role succeeds.
+  // Errors: NOT_FOUND (unknown user), INVALID_ARGUMENT (role other than "seller").
+  rpc GrantRole(GrantRoleRequest) returns (GrantRoleResponse);
+}
+
+message GrantRoleRequest {
+  string user_id = 1;
+  // Only "seller" is accepted in P1.
+  string role = 2;
+}
+
+message GrantRoleResponse {}

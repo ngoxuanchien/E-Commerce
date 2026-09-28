@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package catalog.v1;
+
+option go_package = "github.com/ngoxuanchien/e-commerce/gen/catalog/v1;catalogv1";
+
+// CatalogInternal is catalog-svc's service-to-service API (not exposed publicly).
+service CatalogInternal {
+  // GetSkus returns current SKU data. Unknown SKUs are omitted. Max 100 ids.
+  rpc GetSkus(GetSkusRequest) returns (GetSkusResponse);
+  // ReserveStock atomically reserves stock for an order. Idempotent per order_id.
+  // Insufficient stock: FAILED_PRECONDITION with an InsufficientStock detail.
+  rpc ReserveStock(ReserveStockRequest) returns (ReserveStockResponse);
+  // ReleaseStock returns an order's reserved stock. Idempotent; no-op if nothing is reserved.
+  rpc ReleaseStock(ReleaseStockRequest) returns (ReleaseStockResponse);
+}
+
+message GetSkusRequest {
+  repeated string sku_ids = 1;
+}
+
+message GetSkusResponse {
+  repeated SkuInfo skus = 1;
+}
+
+message SkuInfo {
+  string sku_id = 1;
+  string product_id = 2;
+  string product_name = 3;
+  string variant_name = 4;
+  string image_url = 5;
+  // VND.
+  int64 price = 6;
+  int32 stock = 7;
+  // sku.active && product.status == active.
+  bool available = 8;
+  string shop_id = 9;
+  string shop_name = 10;
+  string seller_user_id = 11;
+}
+
+message StockItem {
+  string sku_id = 1;
+  int32 quantity = 2;
+}
+
+message ReserveStockRequest {
+  string order_id = 1;
+  repeated StockItem items = 2;
+}
+
+message ReserveStockResponse {}
+
+message ReleaseStockRequest {
+  string order_id = 1;
+}
+
+message ReleaseStockResponse {}
+
+// InsufficientStock is attached as a status detail to FAILED_PRECONDITION
+// errors from ReserveStock.
+message InsufficientStock {
+  repeated StockShortage shortages = 1;
+}
+
+message StockShortage {
+  string sku_id = 1;
+  int32 requested = 2;
+  int32 available = 3;
+}
