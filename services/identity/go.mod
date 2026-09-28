@@ -3,6 +3,7 @@ module github.com/ngoxuanchien/e-commerce/services/identity
 go 1.27.1
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/ngoxuanchien/e-commerce/pkg v0.0.0
 	github.com/stretchr/testify v1.12.1
 )
@@ -19,7 +20,6 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.30.5 // indirect
 	github.com/golang-migrate/migrate/v4 v4.20.1 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

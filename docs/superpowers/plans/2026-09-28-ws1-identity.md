@@ -78,12 +78,12 @@ services/identity/
   - `func NormalizeEmail(s string) string`
   - `type Registration struct { Email, Password, FullName string }`; `func NewRegistration(email, password, fullName string) (Registration, error)` — error is `*ValidationError`.
 
-- [ ] **Step 1: Add the uuid dependency**
+- [x] **Step 1: Add the uuid dependency**
 
 Run: `cd services/identity && go get github.com/google/uuid@v1.6.0`
 Expected: `go.mod` lists `github.com/google/uuid v1.6.0` (may stay `// indirect` until code imports it; `go mod tidy` in Step 5 fixes that).
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `services/identity/internal/domain/validation_test.go`:
 
@@ -160,12 +160,12 @@ func TestNormalizeEmail(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `cd services/identity && go test ./internal/domain/...`
 Expected: FAIL — build error, `undefined: domain.NewRegistration`.
 
-- [ ] **Step 4: Write the implementation**
+- [x] **Step 4: Write the implementation**
 
 `services/identity/internal/domain/user.go`:
 
@@ -326,12 +326,12 @@ func fullNameProblem(n string) string {
 }
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `cd services/identity && go mod tidy && go test ./internal/domain/... -v`
 Expected: PASS for all subtests. If `two at signs` unexpectedly passes validation, add an explicit `strings.Count(e, "@") != 1` check to `emailProblem` and re-run.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add services/identity/go.mod services/identity/go.sum services/identity/internal/domain
