@@ -2119,12 +2119,12 @@ git commit -m "feat(identity): rotate refresh tokens with family reuse detection
   - `func app.NewRoleService(store RoleStore) *RoleService`; `(*RoleService).Grant(ctx, userID, role string) error`
   - `func grpcapi.NewServer(roles *app.RoleService, logger *slog.Logger) *grpcapi.Server` (implements `identityv1.IdentityInternalServer`).
 
-- [ ] **Step 1: Add gen and grpc dependencies**
+- [x] **Step 1: Add gen and grpc dependencies**
 
 Run: `cd services/identity && go get github.com/ngoxuanchien/e-commerce/gen@v0.0.0 google.golang.org/grpc`
 Expected: `go.mod` requires `github.com/ngoxuanchien/e-commerce/gen v0.0.0` (resolved through the existing `replace`).
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `services/identity/internal/adapter/grpc/server_test.go`:
 
@@ -2213,12 +2213,12 @@ func startServer(t *testing.T, store *postgres.Store) identityv1.IdentityInterna
 }
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `cd services/identity && go test ./internal/adapter/grpc/...`
 Expected: FAIL — build error `undefined: grpcapi.NewServer` / `app.NewRoleService`.
 
-- [ ] **Step 4: Write the implementation**
+- [x] **Step 4: Write the implementation**
 
 `services/identity/internal/app/roles.go`:
 
@@ -2308,12 +2308,12 @@ func (s *Server) GrantRole(ctx context.Context, req *identityv1.GrantRoleRequest
 }
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `cd services/identity && go mod tidy && go test ./internal/adapter/grpc/... -v`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add services/identity

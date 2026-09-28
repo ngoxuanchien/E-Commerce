@@ -7,9 +7,11 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa
 	github.com/jackc/pgx/v5 v5.11.0
+	github.com/ngoxuanchien/e-commerce/gen v0.0.0
 	github.com/ngoxuanchien/e-commerce/pkg v0.0.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/crypto v0.57.0
+	google.golang.org/grpc v1.84.0
 )
 
 require (
@@ -97,7 +99,6 @@ require (
 	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260825221802-da73d73af1c5 // indirect
-	google.golang.org/grpc v1.84.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
 
