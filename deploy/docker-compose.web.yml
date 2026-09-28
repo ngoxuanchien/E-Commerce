@@ -6,7 +6,7 @@ services:
     build:
       context: ../web
     ports:
-      - "3000:80"
+      - "127.0.0.1:3000:80"
     depends_on:
       gateway:
         condition: service_healthy

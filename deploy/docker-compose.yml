@@ -76,8 +76,8 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - miniodata:/data
 
@@ -96,7 +96,7 @@ services:
   jaeger:
     image: jaegertracing/jaeger:2.21.0
     ports:
-      - "16686:16686"
+      - "127.0.0.1:16686:16686"
 
   identity:
     <<: *go-service
@@ -187,7 +187,7 @@ services:
       UPSTREAM_TIMEOUT: 10s
       TRUSTED_PROXIES: ""
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       identity:
         condition: service_healthy

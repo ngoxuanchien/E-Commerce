@@ -67,7 +67,12 @@ jobs:
       - name: generated code is up to date
         run: |
           make gen
-          git diff --exit-code -- gen services
+          status="$(git status --porcelain -- gen services)"
+          if [ -n "$status" ]; then
+            echo "$status"
+            echo "gen/ or services/ differ from what 'make gen' produces (tracked changes or untracked files); run 'make gen' locally and commit the result." >&2
+            exit 1
+          fi
 
   images:
     runs-on: ubuntu-latest
