@@ -3846,7 +3846,7 @@ git commit -m "feat(pkg/outbox): add transactional outbox writer and Kafka relay
 **Interfaces:**
 - Produces: Go packages `github.com/ngoxuanchien/e-commerce/gen/identity/v1` (`identityv1`: `IdentityInternalServer`, `IdentityInternalClient`, `NewIdentityInternalClient`, `RegisterIdentityInternalServer`, `UnimplementedIdentityInternalServer`, `GrantRoleRequest`, `GrantRoleResponse`) and `.../gen/catalog/v1` (`catalogv1`: `CatalogInternalServer/Client`, `GetSkusRequest/Response`, `SkuInfo`, `StockItem`, `ReserveStockRequest/Response`, `ReleaseStockRequest/Response`, `InsufficientStock`, `StockShortage`).
 
-- [ ] **Step 1: Write the failing compile test** — `gen/gen_test.go`
+- [x] **Step 1: Write the failing compile test** — `gen/gen_test.go`
 
 ```go
 package gen_test
@@ -3912,9 +3912,9 @@ func TestGeneratedStubsRoundTrip(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure** — `cd gen && go test ./...` → FAIL, cannot find package `.../gen/catalog/v1`.
+- [x] **Step 2: Run to verify failure** — `cd gen && go test ./...` → FAIL, cannot find package `.../gen/catalog/v1`.
 
-- [ ] **Step 3: Write `proto/buf.yaml` and `proto/buf.gen.yaml`**
+- [x] **Step 3: Write `proto/buf.yaml` and `proto/buf.gen.yaml`**
 
 ```yaml
 # proto/buf.yaml
@@ -3942,7 +3942,7 @@ plugins:
     opt: paths=source_relative
 ```
 
-- [ ] **Step 4: Write `proto/identity/v1/identity.proto`**
+- [x] **Step 4: Write `proto/identity/v1/identity.proto`**
 
 ```proto
 syntax = "proto3";
@@ -3967,7 +3967,7 @@ message GrantRoleRequest {
 message GrantRoleResponse {}
 ```
 
-- [ ] **Step 5: Write `proto/catalog/v1/catalog.proto`**
+- [x] **Step 5: Write `proto/catalog/v1/catalog.proto`**
 
 ```proto
 syntax = "proto3";
@@ -4042,12 +4042,12 @@ message StockShortage {
 }
 ```
 
-- [ ] **Step 6: Generate, lint, test**
+- [x] **Step 6: Generate, lint, test**
 
 Run: `make gen-proto && make lint-proto && (cd gen && go test ./...)`
 Expected: `gen/identity/v1/identity.pb.go`, `identity_grpc.pb.go`, `gen/catalog/v1/catalog.pb.go`, `catalog_grpc.pb.go` exist; `buf lint` and `buf format` print nothing; test PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add proto gen
