@@ -2339,11 +2339,11 @@ git commit -m "feat(identity): add GrantRole gRPC server"
   - `func httpapi.NewRouter(auth *app.AuthService, jwks token.JWKS, cfg Config) http.Handler` — expects `authctx.Middleware` in front of it (the WS0 `newHandler` provides it).
   - testsupport: `func Call(t testing.TB, c *http.Client, method, url string, body any, header http.Header) (*http.Response, []byte)`; `func Cookie(resp *http.Response, name string) *http.Cookie`; `func ErrorCode(t testing.TB, body []byte) string`.
 
-- [ ] **Step 1: Add chi**
+- [x] **Step 1: Add chi**
 
 Run: `cd services/identity && go get github.com/go-chi/chi/v5@v5.3.2`
 
-- [ ] **Step 2: Write the HTTP test helpers**
+- [x] **Step 2: Write the HTTP test helpers**
 
 `services/identity/internal/testsupport/http.go`:
 
@@ -2424,7 +2424,7 @@ func ErrorCode(t testing.TB, body []byte) string {
 }
 ```
 
-- [ ] **Step 3: Write the failing tests**
+- [x] **Step 3: Write the failing tests**
 
 `services/identity/internal/adapter/http/router_test.go`:
 
@@ -2688,12 +2688,12 @@ func TestErrorsAndEdgeCases(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they fail**
+- [x] **Step 4: Run tests to verify they fail**
 
 Run: `cd services/identity && go test ./internal/adapter/http/...`
 Expected: FAIL — build error `undefined: httpapi.NewRouter`.
 
-- [ ] **Step 5: Write the implementation**
+- [x] **Step 5: Write the implementation**
 
 `services/identity/internal/adapter/http/router.go`:
 
@@ -2950,12 +2950,12 @@ func (h *handler) clearRefreshCookie(w http.ResponseWriter) {
 }
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `cd services/identity && go mod tidy && go test ./internal/adapter/http/... -v`
 Expected: PASS. A contract violation surfaces as `request violates contract` / `response violates contract` from `testsupport.Call` — fix the handler, never the spec.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add services/identity
