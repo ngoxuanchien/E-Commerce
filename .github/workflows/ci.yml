@@ -1,0 +1,95 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: go (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [pkg, gen, services/gateway, services/identity, services/catalog, services/order]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: '**/go.sum'
+      - uses: actions/cache@v4
+        with:
+          path: bin
+          key: tools-${{ runner.os }}-${{ hashFiles('Makefile') }}
+      - run: make tools
+      - name: lint
+        working-directory: ${{ matrix.module }}
+        run: $GITHUB_WORKSPACE/bin/golangci-lint run ./...
+      - name: test
+        working-directory: ${{ matrix.module }}
+        run: go test -race -count=1 ./...
+
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: gen/go.mod
+          cache-dependency-path: '**/go.sum'
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: actions/cache@v4
+        with:
+          path: bin
+          key: tools-${{ runner.os }}-${{ hashFiles('Makefile') }}
+      - run: make tools
+      - run: make lint-proto lint-openapi
+      - name: buf breaking
+        run: |
+          if git cat-file -e origin/main:proto/buf.yaml 2>/dev/null; then
+            bin/buf breaking proto --against ".git#ref=refs/remotes/origin/main,subdir=proto"
+          else
+            echo "proto/ not on main yet; skipping breaking check"
+          fi
+      - name: generated code is up to date
+        run: |
+          make gen
+          git diff --exit-code -- gen services
+
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker compose -f deploy/docker-compose.yml --profile app build
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - id: detect
+        run: |
+          if [ -f web/package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.detect.outputs.present == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - if: steps.detect.outputs.present == 'true'
+        working-directory: web
+        run: npm ci && npm run lint && npm test
+      - if: steps.detect.outputs.present != 'true'
+        run: echo "web/ not present yet; skipping"
