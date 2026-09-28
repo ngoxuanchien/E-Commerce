@@ -1,0 +1,201 @@
+name: marketplace
+
+x-go-service: &go-service
+  profiles: [app]
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "/server", "healthcheck"]
+    interval: 5s
+    timeout: 3s
+    retries: 20
+    start_period: 5s
+
+x-common-env: &common-env
+  LOG_LEVEL: info
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: marketplace
+      POSTGRES_PASSWORD: marketplace
+      POSTGRES_DB: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marketplace -d order_db"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  kafka:
+    image: apache/kafka:4.3.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  kafka-init:
+    image: apache/kafka:4.3.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic order.events --partitions 3 --replication-factor 1
+    restart: "no"
+
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+
+  minio-init:
+    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
+    depends_on:
+      - minio
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until mc alias set local http://minio:9000 minioadmin minioadmin >/dev/null 2>&1; do sleep 1; done
+        mc mb --ignore-existing local/product-images
+        mc anonymous set download local/product-images
+    restart: "no"
+
+  jaeger:
+    image: jaegertracing/jaeger:2.21.0
+    ports:
+      - "16686:16686"
+
+  identity:
+    <<: *go-service
+    build:
+      context: ..
+      dockerfile: services/identity/Dockerfile
+    environment:
+      <<: *common-env
+      SERVICE_NAME: identity
+      HTTP_ADDR: ":8081"
+      GRPC_ADDR: ":9081"
+      DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/identity_db?sslmode=disable
+      JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private.pem
+      ACCESS_TOKEN_TTL: 15m
+      REFRESH_TOKEN_TTL: 720h
+      COOKIE_SECURE: "false"
+    volumes:
+      - ./secrets/jwt_private.pem:/run/secrets/jwt_private.pem:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  catalog:
+    <<: *go-service
+    build:
+      context: ..
+      dockerfile: services/catalog/Dockerfile
+    environment:
+      <<: *common-env
+      SERVICE_NAME: catalog
+      HTTP_ADDR: ":8082"
+      GRPC_ADDR: ":9082"
+      DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/catalog_db?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      IDENTITY_GRPC_ADDR: identity:9081
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: product-images
+      PUBLIC_ASSET_BASE_URL: http://localhost:9000/product-images
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+
+  order:
+    <<: *go-service
+    build:
+      context: ..
+      dockerfile: services/order/Dockerfile
+    environment:
+      <<: *common-env
+      SERVICE_NAME: order
+      HTTP_ADDR: ":8083"
+      GRPC_ADDR: ":9083"
+      DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/order_db?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      KAFKA_BROKERS: kafka:9092
+      CATALOG_GRPC_ADDR: catalog:9082
+      SHIPPING_FEE_FLAT: "30000"
+      SWEEPER_INTERVAL: 60s
+      PENDING_TIMEOUT: 2m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+
+  gateway:
+    <<: *go-service
+    build:
+      context: ..
+      dockerfile: services/gateway/Dockerfile
+    environment:
+      <<: *common-env
+      SERVICE_NAME: gateway
+      HTTP_ADDR: ":8080"
+      IDENTITY_URL: http://identity:8081
+      CATALOG_URL: http://catalog:8082
+      ORDER_URL: http://order:8083
+      IDENTITY_JWKS_URL: http://identity:8081/.well-known/jwks.json
+      CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:5173
+      UPSTREAM_TIMEOUT: 10s
+      TRUSTED_PROXIES: ""
+    ports:
+      - "8080:8080"
+    depends_on:
+      identity:
+        condition: service_healthy
+      catalog:
+        condition: service_healthy
+      order:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  miniodata:

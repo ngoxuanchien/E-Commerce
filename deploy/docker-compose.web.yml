@@ -1,0 +1,12 @@
+# Added by the Makefile once WS5 has created web/.
+# Contract: web/Dockerfile serves the SPA on :80 and proxies /api to http://gateway:8080.
+services:
+  web:
+    profiles: [app]
+    build:
+      context: ../web
+    ports:
+      - "3000:80"
+    depends_on:
+      gateway:
+        condition: service_healthy
