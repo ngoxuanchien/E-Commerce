@@ -3263,27 +3263,27 @@ git commit -m "feat(identity): wire REST, gRPC and config into the server"
 
 **Files:** none created; fix anything the checks surface in the owning task's files and commit with `fix(identity): ...`.
 
-- [ ] **Step 1: Whole-module tests with the race detector**
+- [x] **Step 1: Whole-module tests with the race detector**
 
 Run: `cd services/identity && go test -race -count=1 ./...`
 Expected: every package `ok`. (Covers AC1 contract validation, AC2 log/response checks, AC3 reuse detection.)
 
-- [ ] **Step 2: Lint and vet**
+- [x] **Step 2: Lint and vet**
 
 Run: `cd services/identity && ../../bin/golangci-lint run ./... && go vet ./...`
 Expected: `0 issues.` and no vet output.
 
-- [ ] **Step 3: Generated code is up to date and module is tidy**
+- [x] **Step 3: Generated code is up to date and module is tidy**
 
 Run: `make gen-sqlc && (cd services/identity && go mod tidy) && git status --porcelain services/identity`
 Expected: empty output (no diff after regeneration/tidy).
 
-- [ ] **Step 4: Nothing outside the owned paths changed**
+- [x] **Step 4: Nothing outside the owned paths changed**
 
 Run: `git diff --name-only main...HEAD | grep -vE '^(services/identity/|docs/superpowers/plans/2026-09-28-ws1-identity.md)' || echo "only owned paths"`
 Expected: `only owned paths`.
 
-- [ ] **Step 5: Service is healthy in compose (AC4)**
+- [x] **Step 5: Service is healthy in compose (AC4)**
 
 Run:
 
@@ -3297,7 +3297,7 @@ docker run --rm --network container:$ID curlimages/curl -s -w '\n%{http_code}\n'
 
 Expected: `ps` shows `(healthy)`; curl prints a JSON body and `200`.
 
-- [ ] **Step 6: Smoke the real container (register → login → JWKS) and scan its logs**
+- [x] **Step 6: Smoke the real container (register → login → JWKS) and scan its logs**
 
 Run:
 
@@ -3311,10 +3311,10 @@ docker compose -f deploy/docker-compose.yml logs identity | grep -ciE 'smoke-sec
 
 Expected: register `201` (or `409` on a re-run), login `HTTP/1.1 200` with `Set-Cookie: refresh_token=...; Path=/api/auth; Max-Age=2592000; HttpOnly; SameSite=Lax` (no `Secure`: compose sets `COOKIE_SECURE=false`), JWKS with one RS256 key, log grep count `0`.
 
-- [ ] **Step 7: Tear down**
+- [x] **Step 7: Tear down**
 
 Run: `make down`
 
-- [ ] **Step 8: Report the acceptance criteria**
+- [x] **Step 8: Report the acceptance criteria**
 
 Map outputs to WS1 §6: endpoints + OpenAPI (Steps 1, 6); no secrets logged / no `password_hash` returned (Steps 1, 6); reuse detection (Step 1: `TestRefreshAndLogout`, `TestAuthFlow`, `TestServiceWiring`); `go test` + lint + `/readyz` 200 (Steps 1, 2, 5). Then hand off to superpowers:finishing-a-development-branch.
