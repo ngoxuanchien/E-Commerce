@@ -3,8 +3,12 @@ module github.com/ngoxuanchien/e-commerce/services/order
 go 1.27.1
 
 require (
+	github.com/google/uuid v1.6.0
+	github.com/ngoxuanchien/e-commerce/gen v0.0.0
 	github.com/ngoxuanchien/e-commerce/pkg v0.0.0
 	github.com/stretchr/testify v1.12.1
+	google.golang.org/grpc v1.84.0
+	google.golang.org/protobuf v1.36.12
 )
 
 require (
@@ -19,7 +23,6 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.30.5 // indirect
 	github.com/golang-migrate/migrate/v4 v4.20.1 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -45,8 +48,6 @@ require (
 	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260825221802-da73d73af1c5 // indirect
-	google.golang.org/grpc v1.84.0 // indirect
-	google.golang.org/protobuf v1.36.12 // indirect
 )
 
 replace (
