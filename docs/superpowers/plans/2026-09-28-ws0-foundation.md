@@ -1507,7 +1507,7 @@ git commit -m "feat(pkg/config): add env-based config loader"
 **Interfaces:**
 - Produces: `const TopicOrderEvents = "order.events"`, `const Version = 1`; `type Type string` with `TypeOrderCreated`, `TypeOrderStatusChanged`, `TypeOrderCancelled`; `type Payload interface{ EventType() Type }`; `type Envelope struct{EventID string; EventType Type; Version int; OccurredAt time.Time; Data json.RawMessage}`; `type OrderItem struct{SkuID string; Quantity int32; UnitPrice int64}`; `type OrderCreated struct{OrderID, CheckoutID, BuyerID, ShopID, SellerUserID string; Total int64; Items []OrderItem}`; `type OrderStatusChanged struct{OrderID, From, To, ActorID, ActorRole string}`; `type OrderCancelled struct{OrderID, Reason, CancelledBy string}`; `CancelledByBuyer/Seller/System`; `New(p Payload, occurredAt time.Time) (Envelope, error)`; `Encode(p Payload, occurredAt time.Time) ([]byte, error)`; `Decode(b []byte) (Envelope, error)`; `DecodeData[T Payload](e Envelope) (T, error)`; errors `ErrUnsupportedVersion`, `ErrInvalidEnvelope`, `ErrTypeMismatch`.
 
-- [ ] **Step 1: Write the JSON Schemas**
+- [x] **Step 1: Write the JSON Schemas**
 
 `api/events/envelope.schema.json`:
 ```json
@@ -1616,9 +1616,9 @@ git commit -m "feat(pkg/config): add env-based config loader"
 }
 ```
 
-- [ ] **Step 2: Add dependency** — `cd pkg && go get github.com/santhosh-tekuri/jsonschema/v6@v6.0.3`
+- [x] **Step 2: Add dependency** — `cd pkg && go get github.com/santhosh-tekuri/jsonschema/v6@v6.0.3`
 
-- [ ] **Step 3: Write failing tests** — `pkg/event/event_test.go`
+- [x] **Step 3: Write failing tests** — `pkg/event/event_test.go`
 
 ```go
 package event_test
@@ -1760,9 +1760,9 @@ func TestDecodeRejectsBadEnvelopes(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Run to verify failure** — `cd pkg && go test ./event/` → FAIL, `undefined: event.OrderCreated`.
+- [x] **Step 4: Run to verify failure** — `cd pkg && go test ./event/` → FAIL, `undefined: event.OrderCreated`.
 
-- [ ] **Step 5: Implement `pkg/event/event.go`**
+- [x] **Step 5: Implement `pkg/event/event.go`**
 
 ```go
 // Package event defines the Kafka event contract (api/events/*.schema.json):
@@ -1912,9 +1912,9 @@ func DecodeData[T Payload](env Envelope) (T, error) {
 }
 ```
 
-- [ ] **Step 6: Run tests** — `cd pkg && go test ./event/` → PASS.
+- [x] **Step 6: Run tests** — `cd pkg && go test ./event/` → PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add api/events pkg
