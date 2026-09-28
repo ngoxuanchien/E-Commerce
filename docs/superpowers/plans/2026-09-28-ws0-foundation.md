@@ -2668,11 +2668,11 @@ git commit -m "feat(pkg/grpcx): add instrumented gRPC server and client construc
 - Produces (`testutil`): image constants `PostgresImage = "postgres:17-alpine"`, `RedisImage = "redis:7-alpine"`, `KafkaImage = "confluentinc/confluent-local:7.9.10"`, `MinIOImage = "pgsty/minio:RELEASE.2026-08-04T00-00-00Z"`; `Postgres(t testing.TB) string` (DSN); `Redis(t testing.TB) string` (`redis://host:port`); `Kafka(t testing.TB) []string`; `CreateTopic(t testing.TB, brokers []string, topic string, partitions int32)`; `type MinIOInfo struct{Endpoint, AccessKey, SecretKey string}`; `MinIO(t testing.TB) MinIOInfo`. All skip under `go test -short`.
 - Produces (`pgxx`): `NewPool(ctx, url string) (*pgxpool.Pool, error)`; `Migrate(databaseURL string, migrations fs.FS) error`; `WithTx(ctx, pool *pgxpool.Pool, fn func(pgx.Tx) error) error`.
 
-- [ ] **Step 1: Add dependencies**
+- [x] **Step 1: Add dependencies**
 
 Run: `cd pkg && go get github.com/testcontainers/testcontainers-go@v0.44.0 github.com/testcontainers/testcontainers-go/modules/postgres@v0.44.0 github.com/testcontainers/testcontainers-go/modules/redis@v0.44.0 github.com/testcontainers/testcontainers-go/modules/kafka@v0.44.0 github.com/testcontainers/testcontainers-go/modules/minio@v0.44.0 github.com/twmb/franz-go@v1.22.1 github.com/twmb/franz-go/pkg/kadm@v1.19.0 github.com/jackc/pgx/v5@v5.11.0 github.com/golang-migrate/migrate/v4@v4.20.1`
 
-- [ ] **Step 2: Write failing container tests** — `pkg/testutil/containers_test.go` (Postgres and Kafka are exercised by the pgxx/kafkax/outbox tests)
+- [x] **Step 2: Write failing container tests** — `pkg/testutil/containers_test.go` (Postgres and Kafka are exercised by the pgxx/kafkax/outbox tests)
 
 ```go
 package testutil_test
@@ -2720,9 +2720,9 @@ func TestMinIOIsLive(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run to verify failure** — `cd pkg && go test ./testutil/` → FAIL, `undefined: testutil.Redis`.
+- [x] **Step 3: Run to verify failure** — `cd pkg && go test ./testutil/` → FAIL, `undefined: testutil.Redis`.
 
-- [ ] **Step 4: Implement `pkg/testutil/containers.go`**
+- [x] **Step 4: Implement `pkg/testutil/containers.go`**
 
 ```go
 // Package testutil starts throwaway infrastructure for integration tests
@@ -2848,9 +2848,9 @@ func MinIO(t testing.TB) MinIOInfo {
 }
 ```
 
-- [ ] **Step 5: Run container tests** — requires Docker running. `cd pkg && go test ./testutil/` → PASS.
+- [x] **Step 5: Run container tests** — requires Docker running. `cd pkg && go test ./testutil/` → PASS.
 
-- [ ] **Step 6: Write failing pgxx tests** — `pkg/pgxx/pgxx_test.go`
+- [x] **Step 6: Write failing pgxx tests** — `pkg/pgxx/pgxx_test.go`
 
 ```go
 package pgxx_test
@@ -2929,9 +2929,9 @@ func TestNewPoolFailsFastOnBadURL(t *testing.T) {
 }
 ```
 
-- [ ] **Step 7: Run to verify failure** — `cd pkg && go test ./pgxx/` → FAIL, `undefined: pgxx.Migrate`.
+- [x] **Step 7: Run to verify failure** — `cd pkg && go test ./pgxx/` → FAIL, `undefined: pgxx.Migrate`.
 
-- [ ] **Step 8: Implement `pkg/pgxx/pgxx.go`**
+- [x] **Step 8: Implement `pkg/pgxx/pgxx.go`**
 
 ```go
 // Package pgxx wraps pgx pool creation, embedded golang-migrate migrations
@@ -3014,9 +3014,9 @@ func WithTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx) error) erro
 }
 ```
 
-- [ ] **Step 9: Run tests** — `cd pkg && go test ./pgxx/ ./testutil/` → PASS.
+- [x] **Step 9: Run tests** — `cd pkg && go test ./pgxx/ ./testutil/` → PASS.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add pkg
