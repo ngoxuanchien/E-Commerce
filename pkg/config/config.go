@@ -3,8 +3,6 @@ package config
 
 import (
 	"fmt"
-	"reflect"
-	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v11"
@@ -28,32 +26,7 @@ type Base struct {
 func Load[T any]() (T, error) {
 	var cfg T
 	if err := env.Parse(&cfg); err != nil {
-		return cfg, fmt.Errorf("load config: %w", enhanceParseError(err, cfg))
+		return cfg, fmt.Errorf("load config: %w", err)
 	}
 	return cfg, nil
-}
-
-func enhanceParseError(err error, cfg interface{}) error {
-	errMsg := err.Error()
-
-	// Get the type of the config
-	t := reflect.TypeOf(cfg)
-
-	// Try to find which field had the error
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		if strings.Contains(errMsg, field.Name) {
-			// Found the field that had the error
-			if envTag, ok := field.Tag.Lookup("env"); ok {
-				parts := strings.Split(envTag, ",")
-				envVar := parts[0]
-				// Include env var name in error if not already there
-				if !strings.Contains(errMsg, envVar) {
-					return fmt.Errorf("%s (env: %s): %w", field.Name, envVar, err)
-				}
-			}
-		}
-	}
-
-	return err
 }
