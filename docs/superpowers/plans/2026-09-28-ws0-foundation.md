@@ -5954,7 +5954,7 @@ git commit -m "feat(contracts): add catalog and order OpenAPI specs"
 - Consumes: `config.Base`, `config.Load`, `logx.New`, `otelx.Setup`, `otelx.HTTPHandler`, `httpx.RequestID/Recover/AccessLog/NotFound`, `authctx.Middleware`, `server.Healthz/Readyz/Run/HealthcheckCommand`, `pgxx.Migrate/NewPool`, `grpcx.NewServer`.
 - Produces: in each `cmd/server`: `newHandler(logger *slog.Logger, checks map[string]server.Check, api http.Handler) http.Handler` — health endpoints outside middleware; `api` mounted at `/` behind RequestID → Recover → AccessLog (→ authctx for non-gateway). Workstreams pass their router as `api`. `migrations.FS embed.FS`.
 
-- [ ] **Step 1: Create each `go.mod`** (identity shown; substitute the module path per table)
+- [x] **Step 1: Create each `go.mod`** (identity shown; substitute the module path per table)
 
 ```
 module github.com/ngoxuanchien/e-commerce/services/identity
@@ -5969,7 +5969,7 @@ replace (
 )
 ```
 
-- [ ] **Step 2: Update `go.work`**
+- [x] **Step 2: Update `go.work`**
 
 ```
 go 1.27.1
@@ -5984,7 +5984,7 @@ use (
 )
 ```
 
-- [ ] **Step 3: Write failing handler tests** — `services/identity/cmd/server/handler_test.go` (identical file in catalog and order)
+- [x] **Step 3: Write failing handler tests** — `services/identity/cmd/server/handler_test.go` (identical file in catalog and order)
 
 ```go
 package main
@@ -6094,9 +6094,9 @@ func TestUnknownRouteIsJSON404WithRequestID(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Run to verify failure** — `cd services/identity && go mod tidy; go test ./...` → FAIL, `undefined: newHandler` (repeat for each service).
+- [x] **Step 4: Run to verify failure** — `cd services/identity && go mod tidy; go test ./...` → FAIL, `undefined: newHandler` (repeat for each service).
 
-- [ ] **Step 5: Implement `handler.go`** — identity/catalog/order:
+- [x] **Step 5: Implement `handler.go`** — identity/catalog/order:
 
 ```go
 package main
@@ -6152,7 +6152,7 @@ func newHandler(logger *slog.Logger, checks map[string]server.Check, api http.Ha
 }
 ```
 
-- [ ] **Step 6: Implement `main.go`** — identity (catalog/order: change the doc comment to `catalog-svc` / `order-svc` and the migrations import path to `.../services/catalog/migrations` / `.../services/order/migrations`):
+- [x] **Step 6: Implement `main.go`** — identity (catalog/order: change the doc comment to `catalog-svc` / `order-svc` and the migrations import path to `.../services/catalog/migrations` / `.../services/order/migrations`):
 
 ```go
 // Command server runs identity-svc.
@@ -6300,7 +6300,7 @@ func run() error {
 }
 ```
 
-- [ ] **Step 7: Migrations package** (identity/catalog/order; the doc comment names the service)
+- [x] **Step 7: Migrations package** (identity/catalog/order; the doc comment names the service)
 
 `services/identity/migrations/migrations.go`:
 ```go
@@ -6327,7 +6327,7 @@ SELECT 1;
 SELECT 1;
 ```
 
-- [ ] **Step 8: `sqlc.yaml`** (identity/catalog/order) + empty `internal/adapter/postgres/queries/.gitkeep`
+- [x] **Step 8: `sqlc.yaml`** (identity/catalog/order) + empty `internal/adapter/postgres/queries/.gitkeep`
 
 ```yaml
 version: "2"
@@ -6342,7 +6342,7 @@ sql:
         sql_package: pgx/v5
 ```
 
-- [ ] **Step 9: `Dockerfile`** (identity shown; replace `identity` with the service directory)
+- [x] **Step 9: `Dockerfile`** (identity shown; replace `identity` with the service directory)
 
 ```dockerfile
 # syntax=docker/dockerfile:1
@@ -6366,19 +6366,19 @@ USER nonroot:nonroot
 ENTRYPOINT ["/server"]
 ```
 
-- [ ] **Step 10: Create `.gitkeep` files** for `internal/domain`, `internal/app`, `internal/adapter` in all four services.
+- [x] **Step 10: Create `.gitkeep` files** for `internal/domain`, `internal/app`, `internal/adapter` in all four services.
 
-- [ ] **Step 11: Tidy, test, lint**
+- [x] **Step 11: Tidy, test, lint**
 
 Run: `make tidy && for s in gateway identity catalog order; do (cd services/$s && go test ./... && go vet ./...) || break; done && make lint-go`
 Expected: all PASS; golangci-lint reports `0 issues` per module.
 
-- [ ] **Step 12: Build images**
+- [x] **Step 12: Build images**
 
 Run: `for s in gateway identity catalog order; do docker build -f services/$s/Dockerfile -t marketplace/$s:dev . || break; done`
 Expected: four images built.
 
-- [ ] **Step 13: Commit**
+- [x] **Step 13: Commit**
 
 ```bash
 git add go.work go.work.sum services
