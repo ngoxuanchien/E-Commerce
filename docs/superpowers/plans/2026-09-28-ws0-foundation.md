@@ -6395,7 +6395,7 @@ git commit -m "feat(services): add gateway, identity, catalog and order skeleton
 **Interfaces:**
 - Produces: compose service names `postgres`, `redis`, `kafka`, `kafka-init`, `minio`, `minio-init`, `jaeger`, `gateway`, `identity`, `catalog`, `order`, `web`; host ports 8080 (gateway), 3000 (web), 16686 (Jaeger UI), 9000/9001 (MinIO); secret mount `/run/secrets/jwt_private.pem` in identity. Contract for WS5: `web/Dockerfile` must serve the SPA on port 80 and proxy `/api` to `http://gateway:8080`.
 
-- [ ] **Step 1: Write `deploy/postgres/init.sql`**
+- [x] **Step 1: Write `deploy/postgres/init.sql`**
 
 ```sql
 -- One Postgres instance, one database per service (no cross-service access).
@@ -6404,7 +6404,7 @@ CREATE DATABASE catalog_db;
 CREATE DATABASE order_db;
 ```
 
-- [ ] **Step 2: Write `deploy/docker-compose.yml`**
+- [x] **Step 2: Write `deploy/docker-compose.yml`**
 
 ```yaml
 name: marketplace
@@ -6610,7 +6610,7 @@ volumes:
   miniodata:
 ```
 
-- [ ] **Step 3: Write `deploy/docker-compose.web.yml`** (the Makefile includes it only when `web/package.json` exists)
+- [x] **Step 3: Write `deploy/docker-compose.web.yml`** (the Makefile includes it only when `web/package.json` exists)
 
 ```yaml
 # Added by the Makefile once WS5 has created web/.
@@ -6627,18 +6627,18 @@ services:
         condition: service_healthy
 ```
 
-- [ ] **Step 4: Validate compose syntax** — `docker compose -f deploy/docker-compose.yml --profile app config --quiet` → exit 0.
+- [x] **Step 4: Validate compose syntax** — `docker compose -f deploy/docker-compose.yml --profile app config --quiet` → exit 0.
 
-- [ ] **Step 5: Bring the stack up (acceptance check)** — requires Docker.
+- [x] **Step 5: Bring the stack up (acceptance check)** — requires Docker.
 
 Run: `make up-app && curl -fsS localhost:8080/readyz; echo; docker compose -f deploy/docker-compose.yml --profile app ps -a --format '{{.Service}} {{.State}} {{.Health}}'`
 Expected: `{"status":"ok","checks":{}}` from the gateway; `identity`, `catalog`, `order`, `gateway` all `running healthy` (each healthcheck is `/server healthcheck` → own `/readyz`); `kafka-init`/`minio-init` `exited`.
 Then: `docker compose -f deploy/docker-compose.yml exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic order.events` → `PartitionCount: 3`; and `curl -fsS -o /dev/null -w '%{http_code}\n' localhost:16686` → `200`.
 If `up --wait` rejects the exited one-shot init containers, record the workaround in the spec decisions (Task 19).
 
-- [ ] **Step 6: Tear down** — `make down`.
+- [x] **Step 6: Tear down** — `make down`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add deploy
