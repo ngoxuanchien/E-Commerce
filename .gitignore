@@ -21,7 +21,6 @@ dist/
 *.test
 *.out
 coverage.*
-go.work.sum
 vendor/
 
 # Node / web
