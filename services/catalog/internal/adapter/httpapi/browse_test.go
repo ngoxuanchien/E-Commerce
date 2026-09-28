@@ -77,15 +77,15 @@ func TestSearchProductsOddQueriesAreNotErrors(t *testing.T) {
 func TestSearchProductsRejectsBadParams(t *testing.T) {
 	h := newHarness(t)
 	cases := map[string]string{
-		"limit=0":                         "limit",
-		"limit=101":                       "limit",
-		"limit=abc":                       "limit",
-		"min_price=-1":                    "min_price",
-		"min_price=abc":                   "min_price",
-		"max_price=1.5":                   "max_price",
-		"min_price=10&max_price=5":        "min_price",
-		"sort=cheapest":                   "sort",
-		"cursor=garbage":                  "cursor",
+		"limit=0":                  "limit",
+		"limit=101":                "limit",
+		"limit=abc":                "limit",
+		"min_price=-1":             "min_price",
+		"min_price=abc":            "min_price",
+		"max_price=1.5":            "max_price",
+		"min_price=10&max_price=5": "min_price",
+		"sort=cheapest":            "sort",
+		"cursor=garbage":           "cursor",
 	}
 	newestCursor, err := domain.EncodeCursor("newest", "2026-09-28T10:00:00Z", uuid.Must(uuid.NewV7()))
 	require.NoError(t, err)
