@@ -3033,7 +3033,7 @@ git commit -m "feat(pkg): add testcontainers helpers and pgxx pool/migrate/tx"
 **Interfaces:**
 - Produces: `type Message struct{Topic string; Key, Value []byte; Headers map[string]string}`; `NewProducer(brokers []string, opts ...kgo.Opt) (*Producer, error)`; `(*Producer) Publish(ctx, msgs ...Message) error`; `(*Producer) Ping(ctx) error`; `(*Producer) Close()`; `type Handler func(ctx context.Context, m Message) error`; `type ConsumerConfig struct{Brokers []string; Group string; Topics []string; MinBackoff, MaxBackoff time.Duration; Logger *slog.Logger}`; `NewConsumer(cfg ConsumerConfig, h Handler, opts ...kgo.Opt) (*Consumer, error)`; `(*Consumer) Run(ctx) error`; `(*Consumer) Close()`.
 
-- [ ] **Step 1: Write failing tests** — `pkg/kafkax/kafkax_test.go`
+- [x] **Step 1: Write failing tests** — `pkg/kafkax/kafkax_test.go`
 
 ```go
 package kafkax_test
@@ -3179,9 +3179,9 @@ func TestUncommittedMessageIsRedelivered(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure** — `cd pkg && go test ./kafkax/` → FAIL, `undefined: kafkax.NewProducer`.
+- [x] **Step 2: Run to verify failure** — `cd pkg && go test ./kafkax/` → FAIL, `undefined: kafkax.NewProducer`.
 
-- [ ] **Step 3: Implement `pkg/kafkax/producer.go`**
+- [x] **Step 3: Implement `pkg/kafkax/producer.go`**
 
 ```go
 // Package kafkax wraps franz-go with the project conventions: synchronous
@@ -3270,7 +3270,7 @@ func fromKgoHeaders(hs []kgo.RecordHeader) map[string]string {
 }
 ```
 
-- [ ] **Step 4: Implement `pkg/kafkax/consumer.go`**
+- [x] **Step 4: Implement `pkg/kafkax/consumer.go`**
 
 ```go
 package kafkax
@@ -3394,9 +3394,9 @@ func (c *Consumer) handle(ctx context.Context, r *kgo.Record) error {
 func (c *Consumer) Close() { c.client.Close() }
 ```
 
-- [ ] **Step 5: Run tests** — `cd pkg && go test -race ./kafkax/` → PASS.
+- [x] **Step 5: Run tests** — `cd pkg && go test -race ./kafkax/` → PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pkg/kafkax
@@ -3414,7 +3414,7 @@ git commit -m "feat(pkg/kafkax): add producer and at-least-once consumer with tr
 - Consumes: `kafkax.Message`, `kafkax.Producer` (satisfies `Publisher`), `pgxx.WithTx`, `testutil.Postgres/Kafka/CreateTopic`.
 - Produces: `var SchemaSQL string` (embedded `schema.sql`; services copy it into a migration); `type Message struct{Topic, Key string; Payload []byte; Headers map[string]string}`; `type Execer interface{ Exec(ctx, sql string, args ...any) (pgconn.CommandTag, error) }`; `Write(ctx, tx Execer, m Message) error`; `type Publisher interface{ Publish(ctx, msgs ...kafkax.Message) error }`; `type RelayConfig struct{BatchSize int; Interval time.Duration; Logger *slog.Logger}` (defaults 100, 500ms); `NewRelay(pool *pgxpool.Pool, pub Publisher, cfg RelayConfig) *Relay`; `(*Relay) ProcessBatch(ctx) (int, error)`; `(*Relay) Run(ctx) error`.
 
-- [ ] **Step 1: Write `pkg/outbox/schema.sql`**
+- [x] **Step 1: Write `pkg/outbox/schema.sql`**
 
 ```sql
 -- Transactional outbox table (pkg/outbox). Services that publish events copy
@@ -3434,7 +3434,7 @@ CREATE INDEX IF NOT EXISTS outbox_unpublished_idx
     WHERE published_at IS NULL;
 ```
 
-- [ ] **Step 2: Write failing tests** — `pkg/outbox/outbox_test.go`
+- [x] **Step 2: Write failing tests** — `pkg/outbox/outbox_test.go`
 
 ```go
 package outbox_test
@@ -3633,9 +3633,9 @@ func TestRunDrainsUntilCancelled(t *testing.T) {
 
 `TestRunDrainsUntilCancelled` observes progress only via the DB, so there is no data race with the relay goroutine.
 
-- [ ] **Step 3: Run to verify failure** — `cd pkg && go test ./outbox/` → FAIL, `undefined: outbox.SchemaSQL`.
+- [x] **Step 3: Run to verify failure** — `cd pkg && go test ./outbox/` → FAIL, `undefined: outbox.SchemaSQL`.
 
-- [ ] **Step 4: Implement `pkg/outbox/outbox.go`**
+- [x] **Step 4: Implement `pkg/outbox/outbox.go`**
 
 ```go
 // Package outbox implements the transactional outbox: Write inserts a message
@@ -3700,7 +3700,7 @@ func Write(ctx context.Context, tx Execer, m Message) error {
 }
 ```
 
-- [ ] **Step 5: Implement `pkg/outbox/relay.go`**
+- [x] **Step 5: Implement `pkg/outbox/relay.go`**
 
 ```go
 package outbox
@@ -3826,9 +3826,9 @@ func (r *Relay) ProcessBatch(ctx context.Context) (int, error) {
 }
 ```
 
-- [ ] **Step 6: Run tests** — `cd pkg && go test -race ./outbox/` → PASS.
+- [x] **Step 6: Run tests** — `cd pkg && go test -race ./outbox/` → PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add pkg
