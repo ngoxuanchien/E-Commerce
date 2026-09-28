@@ -36,7 +36,7 @@ Root module path: `github.com/ngoxuanchien/e-commerce/<dir>`. Go: latest stable 
 | Ports | gateway 8080; identity 8081/9081; catalog 8082/9082; order 8083/9083 (HTTP/gRPC) |
 | Env | `SERVICE_NAME`, `HTTP_ADDR`, `GRPC_ADDR`, `DATABASE_URL`, `REDIS_URL`, `KAFKA_BROKERS`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `LOG_LEVEL` + service-specific vars |
 
-**Error codes:** `VALIDATION_ERROR` 400 · `UNAUTHENTICATED` 401 · `FORBIDDEN` 403 · `NOT_FOUND` 404 · `CONFLICT` 409 · `OUT_OF_STOCK` 409 · `INVALID_STATE_TRANSITION` 409 · `IDEMPOTENCY_KEY_REUSED` 422 · `RATE_LIMITED` 429 · `INTERNAL` 500 · `UPSTREAM_UNAVAILABLE` 503.
+**Error codes:** `VALIDATION_ERROR` 400 · `UNAUTHENTICATED` 401 · `FORBIDDEN` 403 · `NOT_FOUND` 404 · `CONFLICT` 409 · `OUT_OF_STOCK` 409 · `INVALID_STATE_TRANSITION` 409 · `PAYLOAD_TOO_LARGE` 413 · `IDEMPOTENCY_KEY_REUSED` 422 · `RATE_LIMITED` 429 · `INTERNAL` 500 · `UPSTREAM_UNAVAILABLE` 503.
 
 ## 4. REST contract (OpenAPI 3.1 in `api/openapi/`)
 
@@ -110,7 +110,7 @@ message GetSkusResponse { repeated SkuInfo skus = 1; }   // unknown SKUs are omi
 message SkuInfo {
   string sku_id = 1; string product_id = 2; string product_name = 3; string variant_name = 4;
   string image_url = 5; int64 price = 6; int32 stock = 7; bool available = 8; // sku.active && product.active
-  string shop_id = 9; string shop_name = 10; string seller_user_id = 11;
+  string shop_id = 9; string shop_name = 10; string seller_user_id = 11; string shop_slug = 12;
 }
 message StockItem { string sku_id = 1; int32 quantity = 2; }
 message ReserveStockRequest { string order_id = 1; repeated StockItem items = 2; }
@@ -194,3 +194,5 @@ Gaps in §2–§9 resolved with the simplest option:
 15. **Config errors:** `pkg/config.Load` uses `caarlos0/env`, which names the Go struct field (e.g. `PendingTimeout`) in parse-error messages and the environment variable name (e.g. `SERVICE_NAME`) in `required`/`notEmpty` error messages; `config.Load` wraps the error (`fmt.Errorf("load config: %w", ...)`) but does not rewrite or normalize the underlying message.
 16. **Event envelope validation:** `event.Decode` rejects an envelope missing `occurred_at` (`OccurredAt.IsZero()`), in addition to the existing checks for `event_id`, `event_type`, and `data`.
 17. **Known gaps left for owning workstreams:** MinIO and Jaeger have no compose `healthcheck:` (`minio-init` retries `mc alias set` until MinIO answers; nothing in the compose file gates a service's startup on MinIO's health, since it has none to gate on). Similarly, `pkg/otelx`'s own tests only confirm OTLP export doesn't hang when nothing is listening on `:4317` — actually exercising the OTLP-to-Jaeger export path end-to-end (a span appearing in the Jaeger UI) is left to WS6's trace test.
+18. **`SkuInfo` carries `shop_slug`** (field 12) so the cart can return `ShopRef` without a second call.
+19. **`PAYLOAD_TOO_LARGE` (413) is emitted by the gateway's 1 MB body limit;** services' `httpx.Decode` still answers 400 `VALIDATION_ERROR` because the gateway limit triggers first. Ports published to the host by `deploy/docker-compose.yml` / `deploy/docker-compose.web.yml` (gateway, MinIO, Jaeger UI, web) bind to `127.0.0.1` only, not `0.0.0.0`.
