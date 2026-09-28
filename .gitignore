@@ -1,0 +1,47 @@
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+deploy/secrets/
+*.pem
+*.key
+
+# Go
+bin/
+dist/
+*.exe
+*.test
+*.out
+coverage.*
+go.work.sum
+vendor/
+
+# Node / web
+node_modules/
+web/dist/
+web/coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Misc
+tmp/
+*.log
