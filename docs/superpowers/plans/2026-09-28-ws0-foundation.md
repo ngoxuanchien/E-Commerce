@@ -4064,9 +4064,9 @@ git commit -m "feat(contracts): add identity and catalog gRPC contracts with gen
 **Interfaces:**
 - Produces: `testutil.LoadOpenAPI(t testing.TB, path string) *openapi3.T`; `testutil.ContractTransport(t testing.TB, specPath string, base http.RoundTripper) http.RoundTripper` — `RoundTrip` returns an error when the request or response violates the spec. Shared component names in `common.yaml`: schemas `Id`, `Timestamp`, `Money`, `ErrorCode`, `Error`, `ShopRef`; parameters `Limit`, `Cursor`; responses `ValidationError`, `Unauthenticated`, `Forbidden`, `NotFound`, `Conflict`, `RateLimited`, `ServerError`; security schemes `bearerAuth`, `refreshCookie`.
 
-- [ ] **Step 1: Add dependency** — `cd pkg && go get github.com/getkin/kin-openapi@v0.149.0`
+- [x] **Step 1: Add dependency** — `cd pkg && go get github.com/getkin/kin-openapi@v0.149.0`
 
-- [ ] **Step 2: Write failing test** — `pkg/testutil/openapi_test.go`
+- [x] **Step 2: Write failing test** — `pkg/testutil/openapi_test.go`
 
 ```go
 package testutil_test
@@ -4138,9 +4138,9 @@ func TestContractTransport(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run to verify failure** — `cd pkg && go test -short ./testutil/` → FAIL, `undefined: testutil.LoadOpenAPI`.
+- [x] **Step 3: Run to verify failure** — `cd pkg && go test -short ./testutil/` → FAIL, `undefined: testutil.LoadOpenAPI`.
 
-- [ ] **Step 4: Implement `pkg/testutil/openapi.go`**
+- [x] **Step 4: Implement `pkg/testutil/openapi.go`**
 
 ```go
 package testutil
@@ -4240,7 +4240,7 @@ func (c *contractTransport) RoundTrip(req *http.Request) (*http.Response, error)
 }
 ```
 
-- [ ] **Step 5: Write `api/redocly.yaml`**
+- [x] **Step 5: Write `api/redocly.yaml`**
 
 ```yaml
 extends:
@@ -4251,7 +4251,7 @@ rules:
   info-license-strict: off
 ```
 
-- [ ] **Step 6: Write `api/openapi/common.yaml`**
+- [x] **Step 6: Write `api/openapi/common.yaml`**
 
 ```yaml
 openapi: 3.1.0
@@ -4397,7 +4397,7 @@ components:
             $ref: '#/components/schemas/Error'
 ```
 
-- [ ] **Step 7: Write `api/openapi/identity.yaml`**
+- [x] **Step 7: Write `api/openapi/identity.yaml`**
 
 ```yaml
 openapi: 3.1.0
@@ -4655,13 +4655,13 @@ components:
                 type: string
 ```
 
-- [ ] **Step 8: Lint and test**
+- [x] **Step 8: Lint and test**
 
 Run: `npx --yes @redocly/cli@2.54.3 lint --config api/redocly.yaml api/openapi/common.yaml api/openapi/identity.yaml && (cd pkg && go test -short ./testutil/)`
 Expected: redocly reports both files valid; Go tests PASS (catalog/order skip).
 If redocly reports a rule violation, fix the YAML rather than disabling the rule; any rule that must be turned off is recorded in the spec decisions (Task 19).
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add api pkg
@@ -4679,9 +4679,9 @@ git commit -m "feat(contracts): add common and identity OpenAPI specs with contr
 - Consumes: `common.yaml` components from Task 14.
 - Produces: component schema names WS2/WS3/WS5 rely on — catalog: `Category`, `Shop`, `ShopCreate`, `ShopUpdate`, `Sku`, `SkuInput`, `ProductImage`, `Product`, `ProductSummary`, `ProductPage`, `ProductSummaryPage`, `ProductStatus`, `ProductPatch`, `ProductInput`, `UploadRequest`, `UploadResponse`; order: `Cart`, `CartShop`, `CartItem`, `CartItemUpdate`, `Address`, `CheckoutRequest`, `CheckoutResponse`, `OrderStatus`, `ActorRole`, `OrderShop`, `OrderItem`, `OrderHistoryEntry`, `Order`, `OrderPage`, `CancelRequest`, `OrderActionRequest`.
 
-- [ ] **Step 1: Confirm the contract test currently skips them** — `cd pkg && go test -short -run TestContractsLoad -v ./testutil/` → `catalog.yaml not written yet` / `order.yaml not written yet` (SKIP).
+- [x] **Step 1: Confirm the contract test currently skips them** — `cd pkg && go test -short -run TestContractsLoad -v ./testutil/` → `catalog.yaml not written yet` / `order.yaml not written yet` (SKIP).
 
-- [ ] **Step 2: Write `api/openapi/catalog.yaml`**
+- [x] **Step 2: Write `api/openapi/catalog.yaml`**
 
 ```yaml
 openapi: 3.1.0
@@ -5292,7 +5292,7 @@ components:
           format: uri
 ```
 
-- [ ] **Step 3: Write `api/openapi/order.yaml`**
+- [x] **Step 3: Write `api/openapi/order.yaml`**
 
 ```yaml
 openapi: 3.1.0
@@ -5920,12 +5920,12 @@ components:
           description: Optional note stored in the order history.
 ```
 
-- [ ] **Step 4: Lint and run the contract test**
+- [x] **Step 4: Lint and run the contract test**
 
 Run: `make lint-openapi && (cd pkg && go test -short -run TestContractsLoad -v ./testutil/)`
 Expected: redocly valid for all four files; `TestContractsLoad/catalog.yaml` and `/order.yaml` PASS (no longer skipped).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add api/openapi
