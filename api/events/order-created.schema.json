@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OrderCreated",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "event_type": { "const": "OrderCreated" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["order_id", "checkout_id", "buyer_id", "shop_id", "seller_user_id", "total", "items"],
+      "properties": {
+        "order_id": { "type": "string", "format": "uuid" },
+        "checkout_id": { "type": "string", "format": "uuid" },
+        "buyer_id": { "type": "string", "format": "uuid" },
+        "shop_id": { "type": "string", "format": "uuid" },
+        "seller_user_id": { "type": "string", "format": "uuid" },
+        "total": { "type": "integer", "minimum": 0 },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sku_id", "quantity", "unit_price"],
+            "properties": {
+              "sku_id": { "type": "string", "format": "uuid" },
+              "quantity": { "type": "integer", "minimum": 1 },
+              "unit_price": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

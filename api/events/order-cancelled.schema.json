@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OrderCancelled",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "event_type": { "const": "OrderCancelled" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["order_id", "reason", "cancelled_by"],
+      "properties": {
+        "order_id": { "type": "string", "format": "uuid" },
+        "reason": { "type": "string", "minLength": 1 },
+        "cancelled_by": { "enum": ["buyer", "seller", "system"] }
+      }
+    }
+  }
+}

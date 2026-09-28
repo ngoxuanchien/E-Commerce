@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OrderStatusChanged",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "$defs": {
+    "status": { "enum": ["PENDING", "PENDING_CONFIRMATION", "CONFIRMED", "SHIPPING", "DELIVERED", "COMPLETED", "CANCELLED"] }
+  },
+  "properties": {
+    "event_type": { "const": "OrderStatusChanged" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["order_id", "from", "to", "actor_role"],
+      "properties": {
+        "order_id": { "type": "string", "format": "uuid" },
+        "from": { "$ref": "#/$defs/status" },
+        "to": { "$ref": "#/$defs/status" },
+        "actor_id": { "type": "string", "format": "uuid", "description": "Absent when actor_role is system." },
+        "actor_role": { "enum": ["buyer", "seller", "system"] }
+      }
+    }
+  }
+}

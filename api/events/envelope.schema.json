@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EventEnvelope",
+  "description": "Envelope of every message on Kafka topic order.events (key = order_id).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "event_type", "version", "occurred_at", "data"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid", "description": "UUIDv7; consumers deduplicate on it." },
+    "event_type": { "enum": ["OrderCreated", "OrderStatusChanged", "OrderCancelled"] },
+    "version": { "const": 1 },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "data": { "type": "object" }
+  }
+}
