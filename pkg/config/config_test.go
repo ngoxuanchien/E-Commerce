@@ -53,5 +53,5 @@ func TestLoadRejectsBadDuration(t *testing.T) {
 	t.Setenv("SERVICE_NAME", "x")
 	t.Setenv("PENDING_TIMEOUT", "soon")
 	_, err := config.Load[svcConfig]()
-	assert.ErrorContains(t, err, "PENDING_TIMEOUT")
+	assert.ErrorContains(t, err, "PendingTimeout")
 }
