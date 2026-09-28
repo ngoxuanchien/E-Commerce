@@ -112,6 +112,72 @@ func (s *AuthService) Me(ctx context.Context, userID string) (domain.User, error
 	return s.store.UserByID(ctx, id)
 }
 
+// Refresh rotates the refresh token raw: the old token is revoked and replaced
+// by a new one in the same family, and the access token carries roles re-read
+// from the database. Presenting an already revoked token revokes the whole
+// family (theft detection) and returns domain.ErrRefreshTokenReused.
+func (s *AuthService) Refresh(ctx context.Context, raw string) (Session, error) {
+	if raw == "" {
+		return Session{}, domain.ErrInvalidRefreshToken
+	}
+	var (
+		sess   Session
+		reused *domain.RefreshToken
+	)
+	err := s.store.InTx(ctx, func(tx Tx) error {
+		old, err := tx.RefreshTokenForUpdate(ctx, token.HashRefreshToken(raw))
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.ErrInvalidRefreshToken
+		}
+		if err != nil {
+			return err
+		}
+		now := s.cfg.Now()
+		if old.RevokedAt != nil {
+			// Commit the family revocation; the error is reported after the transaction.
+			reused = &old
+			return tx.RevokeRefreshFamily(ctx, old.FamilyID, now)
+		}
+		if !now.Before(old.ExpiresAt) {
+			return domain.ErrInvalidRefreshToken
+		}
+		u, err := tx.UserByID(ctx, old.UserID)
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.ErrInvalidRefreshToken
+		}
+		if err != nil {
+			return err
+		}
+		next, rt, err := s.newSession(ctx, tx, u, old.FamilyID)
+		if err != nil {
+			return err
+		}
+		if err := tx.ReplaceRefreshToken(ctx, old.ID, rt.ID, now); err != nil {
+			return err
+		}
+		sess = next
+		return nil
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	if reused != nil {
+		s.cfg.Logger.WarnContext(ctx, "refresh token reuse detected; token family revoked",
+			"user_id", reused.UserID.String(), "family_id", reused.FamilyID.String())
+		return Session{}, domain.ErrRefreshTokenReused
+	}
+	return sess, nil
+}
+
+// Logout revokes the refresh token raw if it is active. Missing or unknown
+// tokens are not an error.
+func (s *AuthService) Logout(ctx context.Context, raw string) error {
+	if raw == "" {
+		return nil
+	}
+	return s.store.RevokeRefreshToken(ctx, token.HashRefreshToken(raw), s.cfg.Now())
+}
+
 type refreshTokenWriter interface {
 	CreateRefreshToken(ctx context.Context, t domain.RefreshToken) error
 }

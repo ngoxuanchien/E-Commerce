@@ -1881,7 +1881,7 @@ git commit -m "feat(identity): add register, login and me use cases"
   - `(*AuthService).Refresh(ctx, raw string) (Session, error)` — `domain.ErrInvalidRefreshToken` (missing/unknown/expired) or `domain.ErrRefreshTokenReused` (revoked token presented; whole family revoked).
   - `(*AuthService).Logout(ctx, raw string) error` — nil for empty/unknown tokens.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `services/identity/internal/app/refresh_test.go`:
 
@@ -2015,12 +2015,12 @@ func TestRefreshAndLogout(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd services/identity && go test ./internal/app/...`
 Expected: FAIL — build error `f.auth.Refresh undefined`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Append to `services/identity/internal/app/auth.go`:
 
@@ -2092,12 +2092,12 @@ func (s *AuthService) Logout(ctx context.Context, raw string) error {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd services/identity && go test -race ./internal/app/... -v`
 Expected: PASS, no race reports.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services/identity/internal/app
