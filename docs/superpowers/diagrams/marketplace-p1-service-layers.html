@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>pkg/ is a stack, not a toolbox</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;   /* white-smoke */
+      --color-ink:     #2d3142;   /* jet-black */
+      --color-muted:   #4f5d75;   /* blue-slate */
+      --color-accent:  #eb6c36;   /* atomic-tangerine */
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif', 'Noto Serif KR', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1200px; width: 100%; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+
+    svg { width: 100%; min-width: 900px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Layer stack · Diagram Design</p>
+    <h1>pkg/ is a stack, not a toolbox</h1>
+
+    <svg viewBox="0 0 1000 736" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="marketplace-p1-service-layers-title marketplace-p1-service-layers-desc">
+      <title id="marketplace-p1-service-layers-title">pkg/ is a stack, not a toolbox</title>
+      <desc id="marketplace-p1-service-layers-desc">The shared Go libraries form five layers: the process layer runs servers and tests, the wire layer speaks gRPC and Kafka, the reliability layer carries the outbox pattern, the edge layer handles HTTP and auth context, and the foundation layer supplies config, logging, tracing, errors and database access.</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <!-- Direction indicator, left margin -->
+      <path d="M40 540 L40 156" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <text x="28" y="348" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.14em" text-transform="uppercase" transform="rotate(-90 28 348)">ABSTRACTION INCREASES UPWARD</text>
+
+      <!-- ── L5 · process (focal) ─────────────────────────────────── -->
+      <rect x="80" y="80" width="820" height="88" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <rect x="92" y="88" width="84" height="13" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="134" y="97" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em" text-anchor="middle">L5 · PROCESS</text>
+      <text x="200" y="124" fill="#2d3142" font-size="15" font-family="'Geist', sans-serif" font-weight="600">server · testutil</text>
+      <text x="888" y="110" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">http + gRPC on one port</text>
+      <text x="888" y="128" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">graceful shutdown on signal</text>
+      <text x="888" y="150" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">testcontainers: pg · redis · kafka · minio</text>
+
+      <!-- ── L4 · wire ────────────────────────────────────────────── -->
+      <rect x="80" y="180" width="820" height="88" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <rect x="92" y="188" width="72" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.35)" stroke-width="0.8"/>
+      <text x="128" y="197" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em" text-anchor="middle">L4 · WIRE</text>
+      <text x="200" y="224" fill="#2d3142" font-size="15" font-family="'Geist', sans-serif" font-weight="600">grpcx · kafkax · event</text>
+      <text x="888" y="210" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">otel interceptors · default timeouts</text>
+      <text x="888" y="228" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">franz-go · consumer groups · backoff</text>
+      <text x="888" y="250" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">envelope + the three event structs</text>
+
+      <!-- ── L3 · reliability (the one that decides consistency) ──── -->
+      <rect x="80" y="280" width="820" height="88" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <rect x="92" y="288" width="92" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.35)" stroke-width="0.8"/>
+      <text x="138" y="297" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em" text-anchor="middle">L3 · RELIABILITY</text>
+      <text x="200" y="324" fill="#2d3142" font-size="15" font-family="'Geist', sans-serif" font-weight="600">outbox</text>
+      <text x="888" y="310" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">Write(ctx, tx, msg) — takes a transaction, not a db</text>
+      <text x="888" y="328" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">Relay: SKIP LOCKED · 100 / 500ms · acks=all</text>
+      <text x="888" y="350" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">at-least-once, so the consumer must dedup</text>
+
+      <!-- ── L2 · edge ────────────────────────────────────────────── -->
+      <rect x="80" y="380" width="820" height="88" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <rect x="92" y="388" width="72" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.35)" stroke-width="0.8"/>
+      <text x="128" y="397" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em" text-anchor="middle">L2 · EDGE</text>
+      <text x="200" y="424" fill="#2d3142" font-size="15" font-family="'Geist', sans-serif" font-weight="600">httpx · authctx</text>
+      <text x="888" y="410" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">AppError{Code, Status, Message, Details}</text>
+      <text x="888" y="428" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">RequestID · Recover · AccessLog</text>
+      <text x="888" y="450" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">UserID(ctx) · HasRole(ctx) — never X-User-Id</text>
+
+      <!-- ── L1 · foundation ──────────────────────────────────────── -->
+      <rect x="80" y="480" width="820" height="88" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <rect x="92" y="488" width="92" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.35)" stroke-width="0.8"/>
+      <text x="138" y="497" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em" text-anchor="middle">L1 · FOUNDATION</text>
+      <text x="200" y="524" fill="#2d3142" font-size="15" font-family="'Geist', sans-serif" font-weight="600">config · logx · otelx · pgxx</text>
+      <text x="888" y="510" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">slog attaches request_id + trace_id from ctx</text>
+      <text x="888" y="528" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">migrations from embed.FS · WithTx helper</text>
+      <text x="888" y="550" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">nothing here knows a service exists</text>
+
+      <!-- Silhouette outline -->
+      <rect x="80" y="80" width="820" height="488" fill="none" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+
+      <!-- Division hairlines inside the stack -->
+      <line x1="80" y1="180" x2="900" y2="180" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+      <line x1="80" y1="280" x2="900" y2="280" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+      <line x1="80" y1="380" x2="900" y2="380" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+      <line x1="80" y1="480" x2="900" y2="480" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+
+      <!-- ── The dependency rule, stated once ─────────────────────── -->
+      <text x="80" y="600" fill="#2d3142" font-size="14" font-family="'Instrument Serif', serif" font-style="italic">No layer imports the one above it. That is the whole reason the outbox pattern can be trusted</text>
+      <text x="80" y="620" fill="#2d3142" font-size="14" font-family="'Instrument Serif', serif" font-style="italic">to be the same in identity, catalog and order — including in tests that fake the wire.</text>
+
+      <!-- Free-standing notes -->
+      <text x="80" y="648" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">pkg/ is a separate Go module: services depend on it at v0.0.0 with a replace, so GOWORK=off builds still work</text>
+      <text x="80" y="664" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">gateway carries no database — no pgxx, no migrations, no gRPC port</text>
+
+      <!-- ── Legend ───────────────────────────────────────────────── -->
+      <line x1="80" y1="684" x2="980" y2="684" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+      <text x="80" y="706" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.18em" text-transform="uppercase">LEGEND</text>
+      <rect x="160" y="696" width="14" height="10" rx="2" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <text x="182" y="704" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">shared layer</text>
+      <rect x="300" y="696" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="322" y="704" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">focal — the layer that carries the correctness argument</text>
+      <text x="80" y="676" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">five layers · twelve packages · zero business rules</text>
+    </svg>
+  </div>
+</body>
+</html>

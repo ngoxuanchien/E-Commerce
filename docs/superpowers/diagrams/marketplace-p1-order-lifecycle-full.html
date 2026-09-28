@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order lifecycle — Marketplace P1</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Tokens ─────────────────────────────────────────────────── */
+    :root {
+      --color-paper:       #f5f5f5;
+      --color-paper-2:     #ececec;
+      --color-ink:         #2d3142;
+      --color-muted:       #4f5d75;
+      --color-soft:        #7a8399;
+      --color-rule:        rgba(45,49,66,0.12);
+      --color-rule-solid:  rgba(79,93,117,0.25);
+      --color-accent:      #eb6c36;
+      --color-accent-tint: rgba(235,108,54,0.08);
+      --color-link:        #2e5aa8;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Noto Serif', 'Noto Serif KR', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      min-height: 100vh;
+      padding: 3rem 2rem;
+      color: var(--color-ink);
+    }
+
+    .container { max-width: 1200px; margin: 0 auto; }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    .header { margin-bottom: 2.5rem; }
+
+    .header-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      color: var(--color-ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-family: var(--font-sans);
+      font-size: 1rem;
+      line-height: 1.55;
+      color: var(--color-muted);
+      max-width: 52ch;
+    }
+
+    /* ── Diagram container ────────────────────────────────────────── */
+    /* Default: clean, borderless — diagram sits directly on the page paper.
+       For the framed/boxed variant, uncomment the background/border/padding below. */
+    .diagram-container {
+      background: transparent;
+      border: none;
+      padding: 0;
+      overflow-x: auto;
+      /* background: var(--color-paper-2); */
+      /* border: 1px solid var(--color-rule); */
+      /* border-radius: 8px; */
+      /* padding: 1.5rem; */
+    }
+
+    svg { width: 100%; min-width: 900px; display: block; }
+
+    /* ── Info cards ───────────────────────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr 0.9fr;
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid var(--color-rule);
+      padding: 1.25rem;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.875rem;
+      padding-bottom: 0.875rem;
+      border-bottom: 1px solid rgba(45,49,66,0.08);
+    }
+
+    .card-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .card-dot.ink    { background: var(--color-ink); }
+    .card-dot.muted  { background: var(--color-muted); }
+    .card-dot.coral  { background: var(--color-accent); }
+    .card-dot.link   { background: var(--color-link); }
+    .card-dot.soft   { background: var(--color-soft); }
+
+    .card h3 {
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--color-ink);
+      letter-spacing: -0.005em;
+    }
+
+    .card ul {
+      list-style: none;
+      color: var(--color-muted);
+      font-size: 0.8125rem;
+      line-height: 1.55;
+    }
+
+    .card li {
+      margin-bottom: 0.3rem;
+      padding-left: 0.875rem;
+      position: relative;
+    }
+
+    .card li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: rgba(45,49,66,0.25);
+      font-size: 0.75rem;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────── */
+    .footer {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(45,49,66,0.10);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      color: var(--color-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <div class="header">
+      <p class="header-eyebrow">State Machine · 2026-09-28</p>
+      <h1>Order lifecycle</h1>
+      <p class="subtitle">One order moves from a reserved PENDING state to completion, with cancellation reachable from three earlier phases by a different actor each time.</p>
+    </div>
+
+    <!-- Main Diagram -->
+    <div class="diagram-container">
+      <!-- Replace [diagram-slug] with a unique slug for this diagram before export. -->
+      <svg viewBox="0 0 1000 690" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="marketplace-p1-order-lifecycle-full-title marketplace-p1-order-lifecycle-full-desc">
+      <title id="marketplace-p1-order-lifecycle-full-title">Order lifecycle</title>
+      <desc id="marketplace-p1-order-lifecycle-full-desc">Order status machine: checkout moves an order from pending to pending confirmation, the seller confirms, ships and delivers, the buyer completes it, and cancellation is reachable from pending, pending confirmation and confirmed.</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+      </defs>
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <!-- zone -->
+      <rect x="56" y="384" width="888" height="128" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.12)" stroke-width="1" stroke-dasharray="4,4"/>
+      <rect x="68" y="388" width="100" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="118" y="397" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">TERMINAL OUTCOMES</text>
+
+
+      <!-- transitions (painted before states) -->
+      <circle cx="68" cy="272" r="6" fill="#2d3142"/>
+
+      <line x1="74" y1="272" x2="92" y2="272" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="220" y1="272" x2="268" y2="272" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="396" y1="272" x2="444" y2="272" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="572" y1="272" x2="620" y2="272" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="748" y1="272" x2="796" y2="272" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="860" y1="312" x2="860" y2="416" stroke="#eb6c36" stroke-width="1.6" marker-end="url(#arrow-accent)"/>
+      <path d="M 156 312 V 416" fill="none" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <path d="M 332 312 V 348 Q 332 356 324 356 H 236 Q 228 356 228 364 V 416" fill="none" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <path d="M 508 312 V 380 Q 508 388 500 388 H 300 Q 292 388 292 396 V 416" fill="none" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+
+      <!-- labels -->
+      <rect x="222" y="218" width="44" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="244" y="227" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SYSTEM</text>
+
+      <rect x="222" y="232" width="44" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="244" y="241" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CHECKOUT</text>
+
+      <rect x="398" y="218" width="44" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="420" y="227" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SELLER</text>
+
+      <rect x="398" y="232" width="44" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="420" y="241" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">/CONFIRM</text>
+
+      <rect x="574" y="218" width="44" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="596" y="227" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SELLER</text>
+
+      <rect x="574" y="232" width="44" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="596" y="241" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">/SHIP</text>
+
+      <rect x="750" y="218" width="44" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="772" y="227" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SELLER</text>
+
+      <rect x="750" y="232" width="44" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="772" y="241" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">/DELIVER</text>
+
+      <rect x="867" y="334" width="40" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="887" y="343" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">BUYER</text>
+
+      <rect x="867" y="354" width="62" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="898" y="363" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">/COMPLETE</text>
+
+      <rect x="103" y="360" width="46" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="126" y="369" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SYSTEM</text>
+
+      <rect x="97" y="378" width="52" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="123" y="387" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SWEEPER</text>
+
+      <rect x="238" y="336" width="76" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="276" y="345" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">BUYER|SELLER</text>
+
+      <rect x="375" y="368" width="46" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="398" y="377" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SELLER</text>
+
+
+      <!-- states -->
+      <rect x="92" y="232" width="128" height="80" rx="8" fill="#f5f5f5"/>
+      <rect x="92" y="232" width="128" height="80" rx="8" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="156" y="268" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">PENDING</text>
+      <text x="156" y="300" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">reserve window</text>
+      <rect x="268" y="232" width="128" height="80" rx="8" fill="#f5f5f5"/>
+      <rect x="268" y="232" width="128" height="80" rx="8" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="332" y="268" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">PENDING_</text>
+      <text x="332" y="284" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">CONFIRMATION</text>
+      <text x="332" y="300" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">seller confirms</text>
+      <rect x="444" y="232" width="128" height="80" rx="8" fill="#f5f5f5"/>
+      <rect x="444" y="232" width="128" height="80" rx="8" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="508" y="268" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">CONFIRMED</text>
+      <text x="508" y="300" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">seller ships</text>
+      <rect x="620" y="232" width="128" height="80" rx="8" fill="#f5f5f5"/>
+      <rect x="620" y="232" width="128" height="80" rx="8" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="684" y="268" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">SHIPPING</text>
+      <text x="684" y="300" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">in transit</text>
+      <rect x="796" y="232" width="128" height="80" rx="8" fill="#f5f5f5"/>
+      <rect x="796" y="232" width="128" height="80" rx="8" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="860" y="268" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">DELIVERED</text>
+      <text x="860" y="300" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">buyer confirms</text>
+      <rect x="92" y="416" width="240" height="80" rx="8" fill="#f5f5f5"/>
+      <rect x="92" y="416" width="240" height="80" rx="8" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,4"/>
+      <rect x="100" y="422" width="47" height="12" rx="2" fill="transparent" stroke="#4f5d75" stroke-width="0.8"/>
+      <text x="123" y="431" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TERMINAL</text>
+      <text x="212" y="452" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">CANCELLED</text>
+      <text x="212" y="484" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">stock released</text>
+      <rect x="752" y="416" width="200" height="80" rx="8" fill="#f5f5f5"/>
+      <rect x="752" y="416" width="200" height="80" rx="8" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <rect x="760" y="422" width="47" height="12" rx="2" fill="transparent" stroke="#eb6c36" stroke-width="0.8"/>
+      <text x="783" y="431" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TERMINAL</text>
+      <text x="852" y="452" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">COMPLETED</text>
+      <text x="852" y="484" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">COD settled</text>
+      <circle cx="774" cy="438" r="8" fill="none" stroke="#eb6c36" stroke-width="1.2"/>
+      <circle cx="774" cy="438" r="5" fill="#eb6c36"/>
+
+
+      <!-- annotation -->
+      <line x1="40" y1="528" x2="40" y2="602" stroke="rgba(45,49,66,0.25)" stroke-width="0.8"/>
+      <text x="50" y="540" fill="#4f5d75" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="start">Optimistic locking: UPDATE orders SET … WHERE id = $1 AND version = $2.</text>
+      <text x="50" y="558" fill="#4f5d75" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="start">A lost race retries once, then returns 409 INVALID_STATE_TRANSITION.</text>
+      <text x="50" y="576" fill="#4f5d75" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="start">Transition(order, action, actor) is a pure function; every move writes a</text>
+      <text x="50" y="594" fill="#4f5d75" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="start">history row and an OrderStatusChanged outbox message inside the same tx.</text>
+
+
+      <!-- legend -->
+      <line x1="40" y1="612" x2="960" y2="612" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="628" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+      <rect x="148" y="633" width="16" height="12" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="186" y="647" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Active phase</text>
+      <rect x="316" y="633" width="16" height="12" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="354" y="647" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Happy completion</text>
+      <rect x="484" y="633" width="16" height="12" rx="2" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="522" y="647" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Terminal (cancelled)</text>
+      <line x1="652" y1="639" x2="682" y2="639" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+      <text x="690" y="647" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Terminal happy path</text>
+      <line x1="820" y1="639" x2="850" y2="639" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <text x="858" y="647" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Cancellation</text>
+    </svg>
+    </div>
+
+    <!-- Info Cards -->
+    <div class="cards">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot coral"></span>
+          <h3>Cancelling is always someone else's call</h3>
+        </div>
+        <ul>
+          <li><code>PENDING → CANCELLED</code> is the system only: sweeper at 2 min, or a failed reservation.</li>
+          <li><code>PENDING_CONFIRMATION</code> cancels by buyer or seller; <code>CONFIRMED</code> by seller alone.</li>
+          <li>Once shipping, the only way out is forward to <code>COMPLETED</code>.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot ink"></span>
+          <h3>The machine is a pure function</h3>
+        </div>
+        <ul>
+          <li><code>Transition(order, action, actor) → (event, error)</code> — no I/O, fully testable.</li>
+          <li>Illegal moves short-circuit: 409 <code>INVALID_STATE_TRANSITION</code>, nothing written.</li>
+          <li>Optimistic lock on <code>version</code>; a lost race retries once, then 409.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot muted"></span>
+          <h3>Every transition writes twice</h3>
+        </div>
+        <ul>
+          <li>A <code>order_status_history</code> row and an <code>OrderStatusChanged</code> outbox message, same transaction.</li>
+          <li>Cancellations add <code>OrderCancelled</code>; catalog releases stock asynchronously.</li>
+          <li>Authorization: buyer must match <code>buyer_id</code>, seller <code>seller_user_id</code> — else 404, not 403.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <span>MARKETPLACE P1 · ORDER LIFECYCLE</span>
+      <span>STATES 7 · TRANSITIONS 9 · CORAL 2</span>
+    </div>
+
+  </div>
+</body>
+</html>

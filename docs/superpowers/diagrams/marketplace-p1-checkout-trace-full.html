@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marketplace P1 · Checkout Trace</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Tokens ─────────────────────────────────────────────────── */
+    :root {
+      --color-paper:       #f5f5f5;
+      --color-paper-2:     #ececec;
+      --color-ink:         #2d3142;
+      --color-muted:       #4f5d75;
+      --color-soft:        #7a8399;
+      --color-rule:        rgba(45,49,66,0.12);
+      --color-rule-solid:  rgba(79,93,117,0.25);
+      --color-accent:      #eb6c36;
+      --color-accent-tint: rgba(235,108,54,0.08);
+      --color-link:        #2e5aa8;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Noto Serif', 'Noto Serif KR', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      min-height: 100vh;
+      padding: 3rem 2rem;
+      color: var(--color-ink);
+    }
+
+    .container { max-width: 1200px; margin: 0 auto; }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    .header { margin-bottom: 2.5rem; }
+
+    .header-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      color: var(--color-ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-family: var(--font-sans);
+      font-size: 1rem;
+      line-height: 1.55;
+      color: var(--color-muted);
+      max-width: 52ch;
+    }
+
+    /* ── Diagram container ────────────────────────────────────────── */
+    /* Default: clean, borderless — diagram sits directly on the page paper.
+       For the framed/boxed variant, uncomment the background/border/padding below. */
+    .diagram-container {
+      background: transparent;
+      border: none;
+      padding: 0;
+      overflow-x: auto;
+      /* background: var(--color-paper-2); */
+      /* border: 1px solid var(--color-rule); */
+      /* border-radius: 8px; */
+      /* padding: 1.5rem; */
+    }
+
+    svg { width: 100%; min-width: 900px; display: block; }
+
+    /* ── Info cards ───────────────────────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: 1.25fr 1fr 0.85fr;
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid var(--color-rule);
+      padding: 1.25rem;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.875rem;
+      padding-bottom: 0.875rem;
+      border-bottom: 1px solid rgba(45,49,66,0.08);
+    }
+
+    .card-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .card-dot.ink    { background: var(--color-ink); }
+    .card-dot.muted  { background: var(--color-muted); }
+    .card-dot.coral  { background: var(--color-accent); }
+    .card-dot.link   { background: var(--color-link); }
+    .card-dot.soft   { background: var(--color-soft); }
+
+    .card h3 {
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--color-ink);
+      letter-spacing: -0.005em;
+    }
+
+    .card ul {
+      list-style: none;
+      color: var(--color-muted);
+      font-size: 0.8125rem;
+      line-height: 1.55;
+    }
+
+    .card li {
+      margin-bottom: 0.3rem;
+      padding-left: 0.875rem;
+      position: relative;
+    }
+
+    .card li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: rgba(45,49,66,0.25);
+      font-size: 0.75rem;
+    }
+
+    .card code {
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: var(--color-ink);
+      background: rgba(45,49,66,0.05);
+      border-radius: 3px;
+      padding: 0 0.25rem;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────── */
+    .footer {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(45,49,66,0.10);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      color: var(--color-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <div class="header">
+      <p class="header-eyebrow">Sequence · 2026-09-28</p>
+      <h1>One checkout, one trace</h1>
+      <p class="subtitle">P1 success criterion 6, drawn as a span timeline: gateway, order and catalog in one trace, and the Kafka leg deliberately not in it.</p>
+    </div>
+
+    <!-- Main Diagram -->
+    <div class="diagram-container">
+    <svg viewBox="0 0 1000 830" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="marketplace-p1-checkout-trace-full-title marketplace-p1-checkout-trace-full-desc">
+      <title id="marketplace-p1-checkout-trace-full-title">One checkout, one trace</title>
+      <desc id="marketplace-p1-checkout-trace-full-desc">Sequence diagram of a single checkout request as an OpenTelemetry span timeline: the browser calls the gateway, which opens a server span and propagates traceparent to order-svc, which calls catalog-svc over gRPC to reserve stock, with the async OrderCreated publish to Kafka carrying traceparent in its headers so the later stock release lands in a linked span.</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+        <marker id="arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline points="0 0, 8 3, 0 6" fill="none" stroke="#4f5d75" stroke-width="1.2"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <!-- =================================================================
+           LIFELINES — dashed, behind everything. Centres: 112, 300, 500, 700, 880
+           ================================================================= -->
+      <line x1="112" y1="152" x2="112" y2="720" stroke="rgba(45,49,66,0.22)" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="300" y1="152" x2="300" y2="720" stroke="rgba(45,49,66,0.22)" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="500" y1="152" x2="500" y2="720" stroke="rgba(45,49,66,0.22)" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="700" y1="152" x2="700" y2="720" stroke="rgba(45,49,66,0.22)" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="880" y1="152" x2="880" y2="720" stroke="rgba(45,49,66,0.22)" stroke-width="1" stroke-dasharray="3,3"/>
+
+      <!-- =================================================================
+           ACTIVATION BARS — w=8, spanning exactly the control interval.
+           gateway and order close when the 201 is on the wire (y=572);
+           catalog closes when ReserveStock returns (y=500).
+           ================================================================= -->
+      <rect x="296" y="196" width="8" height="376" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+      <rect x="496" y="252" width="8" height="320" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+      <rect x="696" y="336" width="8" height="164" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+
+      <!-- =================================================================
+           THE ONE COMBINED FRAGMENT — the async leg only. Tx C and the 201
+           happen before it, so they sit outside: the outbox row is written
+           inside the request, only the relay publish outlives it.
+           ================================================================= -->
+      <rect x="472" y="608" width="396" height="108" rx="4" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+      <rect x="472" y="608" width="40" height="16" rx="2" fill="#f5f5f5" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+      <text x="492" y="620" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">OPT</text>
+      <text x="520" y="620" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">[after the 201 — linked span, not a child]</text>
+
+      <!-- =================================================================
+           MESSAGES — time flows top → down. Span names in the labels.
+           ================================================================= -->
+
+      <!-- M1: browser → gateway (HTTP request) -->
+      <line x1="112" y1="204" x2="296" y2="204" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+
+      <!-- M2: gateway → order-svc (HTTP, traceparent propagated) -->
+      <line x1="304" y1="260" x2="496" y2="260" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+
+      <!-- M3: order → catalog (gRPC client span ReserveStock) -->
+      <line x1="504" y1="332" x2="696" y2="332" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+      <!-- M4: catalog self-message (SQL span: UPDATE skus …) -->
+      <path d="M 704 388 L 726 388 L 726 420 L 704 420" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+      <!-- M5: catalog → order (gRPC return) -->
+      <line x1="696" y1="468" x2="504" y2="468" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+
+      <!-- M6: order self-message (Tx C: PENDING → PENDING_CONFIRMATION + outbox row) -->
+      <path d="M 504 500 L 526 500 L 526 532 L 504 532" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+      <!-- M7: order → browser (headline success, coral) -->
+      <line x1="496" y1="568" x2="116" y2="568" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+
+      <!-- M8 (inside the fragment): relay publishes — async, open head, traceparent header -->
+      <line x1="504" y1="648" x2="876" y2="648" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow-open)"/>
+
+      <!-- M9 (inside the fragment): consumer releases the stock on cancellation -->
+      <line x1="876" y1="692" x2="704" y2="692" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow-open)"/>
+
+      <!-- =================================================================
+           MESSAGE LABELS — each mask 6–10px above its own stroke, and placed
+           in a gap between lifelines so no label sits on a lifeline or bar.
+           ================================================================= -->
+      <rect x="140" y="184" width="128" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="204" y="193" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">POST /API/CHECKOUT</text>
+
+      <rect x="326" y="240" width="148" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="400" y="249" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">SPAN: HTTP SERVER · TRACEPARENT</text>
+
+      <rect x="512" y="312" width="176" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="600" y="321" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">gRPC CLIENT: RESERVESTOCK</text>
+
+      <rect x="738" y="396" width="120" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="798" y="405" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">SQL: UPDATE SKUS</text>
+
+      <rect x="536" y="448" width="128" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="600" y="457" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">RETURN: OK, IDEMPOTENT</text>
+
+      <rect x="538" y="508" width="92" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="584" y="517" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">TX C · OUTBOX</text>
+
+      <rect x="148" y="548" width="116" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="206" y="557" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">201 · CHECKOUT_ID</text>
+
+      <rect x="524" y="628" width="132" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="590" y="637" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">ORDER.EVENTS + TRACEPARENT</text>
+
+      <rect x="732" y="672" width="116" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="790" y="681" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">CONSUME · RELEASE</text>
+
+      <!-- =================================================================
+           ACTOR BOXES — drawn after arrows and labels
+           ================================================================= -->
+
+      <!-- browser -->
+      <rect x="40" y="80" width="144" height="56" rx="6" fill="#f5f5f5"/>
+      <rect x="40" y="80" width="144" height="56" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+      <rect x="48" y="88" width="28" height="12" rx="2" fill="transparent" stroke="rgba(122,131,153,0.40)" stroke-width="0.8"/>
+      <text x="62" y="97" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+      <text x="112" y="112" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Browser</text>
+      <text x="112" y="127" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">web · :3000</text>
+
+      <!-- gateway -->
+      <rect x="232" y="80" width="136" height="56" rx="6" fill="#f5f5f5"/>
+      <rect x="232" y="80" width="136" height="56" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <rect x="240" y="88" width="32" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="256" y="97" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SPAN</text>
+      <text x="300" y="112" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">gateway</text>
+      <text x="300" y="127" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">:8080</text>
+
+      <!-- order-svc -->
+      <rect x="432" y="80" width="136" height="56" rx="6" fill="#f5f5f5"/>
+      <rect x="432" y="80" width="136" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="440" y="88" width="32" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="456" y="97" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SPAN</text>
+      <text x="500" y="112" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">order-svc</text>
+      <text x="500" y="127" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">:8083 · gRPC :9083</text>
+
+      <!-- catalog-svc -->
+      <rect x="632" y="80" width="136" height="56" rx="6" fill="#f5f5f5"/>
+      <rect x="632" y="80" width="136" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="640" y="88" width="32" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="656" y="97" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SPAN</text>
+      <text x="700" y="112" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">catalog-svc</text>
+      <text x="700" y="127" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">gRPC :9082</text>
+
+      <!-- Kafka -->
+      <rect x="812" y="80" width="136" height="56" rx="6" fill="#f5f5f5"/>
+      <rect x="812" y="80" width="136" height="56" rx="6" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.22)" stroke-width="1" stroke-dasharray="4,3"/>
+      <rect x="820" y="88" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+      <text x="834" y="97" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ASY</text>
+      <text x="880" y="112" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Kafka</text>
+      <text x="880" y="127" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">order.events</text>
+
+      <!-- =================================================================
+           ANNOTATIONS + LEGEND
+           ================================================================= -->
+      <text x="40" y="760" fill="#2d3142" font-size="14" font-style="italic" font-family="'Instrument Serif', serif">The E2E test asserts one trace holds spans from gateway, order AND catalog — the gRPC call included.</text>
+      <text x="40" y="780" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">LOGX PUTS REQUEST_ID AND TRACE_ID ON EVERY LINE · THE KAFKA LEG IS A LINKED SPAN, NOT ONE CONTINUOUS TRACE</text>
+
+      <line x1="40" y1="798" x2="960" y2="798" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="814" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+
+      <rect x="180" y="809" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="200" y="817" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Span owner</text>
+
+      <rect x="300" y="809" width="4" height="10" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+      <text x="312" y="817" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Activation</text>
+
+      <line x1="420" y1="815" x2="448" y2="815" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <text x="456" y="817" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">HTTP call</text>
+
+      <line x1="560" y1="815" x2="588" y2="815" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+      <text x="596" y="817" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Return</text>
+
+      <line x1="660" y1="815" x2="688" y2="815" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow-open)"/>
+      <text x="696" y="817" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Async event</text>
+
+      <line x1="800" y1="815" x2="828" y2="815" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <text x="836" y="817" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Headline response</text>
+    </svg>
+    </div>
+
+    <!-- Info Cards -->
+    <div class="cards">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot coral"></span>
+          <h3>What the test actually asserts</h3>
+        </div>
+        <ul>
+          <li>Drive a real checkout through the stack, then query Jaeger for that checkout’s <code>trace_id</code> — found via the <code>request_id</code> the gateway echoes back in <code>X-Request-Id</code>.</li>
+          <li>Assert the returned trace contains spans attributed to <strong>three</strong> services: gateway, order, and catalog. Missing any one of them fails the test.</li>
+          <li>Assert the gRPC <code>ReserveStock</code> call is among them — the criterion is the cross-service hop, not merely “the request has a trace”.</li>
+          <li>This is why the gateway opens its server span at step 2 of the auth pipeline, before anything else, and propagates <code>traceparent</code> on the proxy hop.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot muted"></span>
+          <h3>The async leg, honestly</h3>
+        </div>
+        <ul>
+          <li>A Kafka publish outlives the request, so it <strong>cannot</strong> be one continuous trace. The <code>opt</code> frame is the honest representation: the 201 has already been returned.</li>
+          <li>Note where the frame starts. Tx C — the status flip and the outbox row — happens <em>inside</em> the request and is a child of the checkout span. Only the relay’s publish and the consumer’s span sit after it.</li>
+          <li>What survives is the causal link. The writer’s context goes into the outbox row’s <code>headers</code> JSON, the relay publishes it, and <code>traceparent</code> rides as a Kafka header; the consumer extracts it and opens a <code>SpanKindConsumer</code> span named <code>consume order.events</code>.</li>
+          <li>So the <code>OrderCreated</code> publish and the later <code>OrderCancelled</code> release land as linked spans, joinable by trace id — but they are not children of the checkout span.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot ink"></span>
+          <h3>When the trace is thin</h3>
+        </div>
+        <ul>
+          <li><code>logx</code> appends <code>request_id</code>, <code>trace_id</code> and <code>span_id</code> from the context to every line, so a log search works even when the span is not sampled.</li>
+          <li>The access log records method, path without query string, status, bytes and duration — never headers or bodies.</li>
+          <li><code>otelx</code> installs the OTLP batcher only when the endpoint is non-empty; spans are still created and propagated either way, so a misconfigured exporter degrades to logs, not to silence.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <span>MARKETPLACE P1 · CHECKOUT TRACE</span>
+      <span>LIFELINES 5 · MESSAGES 9 · FRAGMENTS 1</span>
+    </div>
+
+  </div>
+</body>
+</html>

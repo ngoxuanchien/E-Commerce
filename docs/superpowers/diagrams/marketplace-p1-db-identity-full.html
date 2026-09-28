@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marketplace P1 · identity_db</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Tokens ─────────────────────────────────────────────────── */
+    :root {
+      --color-paper:       #f5f5f5;
+      --color-paper-2:     #ececec;
+      --color-ink:         #2d3142;
+      --color-muted:       #4f5d75;
+      --color-soft:        #7a8399;
+      --color-rule:        rgba(45,49,66,0.12);
+      --color-rule-solid:  rgba(79,93,117,0.25);
+      --color-accent:      #eb6c36;
+      --color-accent-tint: rgba(235,108,54,0.08);
+      --color-link:        #2e5aa8;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Noto Serif', 'Noto Serif KR', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      min-height: 100vh;
+      padding: 3rem 2rem;
+      color: var(--color-ink);
+    }
+
+    .container { max-width: 1200px; margin: 0 auto; }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    .header { margin-bottom: 2.5rem; }
+
+    .header-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      color: var(--color-ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-family: var(--font-sans);
+      font-size: 1rem;
+      line-height: 1.55;
+      color: var(--color-muted);
+      max-width: 52ch;
+    }
+
+    /* ── Diagram container ────────────────────────────────────────── */
+    .diagram-container {
+      background: transparent;
+      border: none;
+      padding: 0;
+      overflow-x: auto;
+    }
+
+    svg { width: 100%; min-width: 900px; display: block; }
+
+    /* ── Info cards ───────────────────────────────────────────────── */
+    .cards {
+      display: grid;
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid var(--color-rule);
+      padding: 1.25rem;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.875rem;
+      padding-bottom: 0.875rem;
+      border-bottom: 1px solid rgba(45,49,66,0.08);
+    }
+
+    .card-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .card-dot.ink    { background: var(--color-ink); }
+    .card-dot.muted  { background: var(--color-muted); }
+    .card-dot.coral  { background: var(--color-accent); }
+    .card-dot.link   { background: var(--color-link); }
+    .card-dot.soft   { background: var(--color-soft); }
+
+    .card h3 {
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--color-ink);
+      letter-spacing: -0.005em;
+    }
+
+    .card ul {
+      list-style: none;
+      color: var(--color-muted);
+      font-size: 0.8125rem;
+      line-height: 1.55;
+    }
+
+    .card li {
+      margin-bottom: 0.3rem;
+      padding-left: 0.875rem;
+      position: relative;
+    }
+
+    .card li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: rgba(45,49,66,0.25);
+      font-size: 0.75rem;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────── */
+    .footer {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(45,49,66,0.10);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      color: var(--color-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <div class="header">
+      <p class="header-eyebrow">Database schema · 2026-09-28</p>
+      <h1>identity_db</h1>
+      <p class="subtitle">Three tables: accounts, roles, and refresh rotation.</p>
+    </div>
+
+    <!-- Main Diagram -->
+    <div class="diagram-container">
+      <svg viewBox="0 0 1000 640" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="marketplace-p1-db-identity-full-title marketplace-p1-db-identity-full-desc">
+      <title id="marketplace-p1-db-identity-full-title">identity_db: users, user_roles, and refresh-token rotation</title>
+      <desc id="marketplace-p1-db-identity-full-desc">Three identity tables whose refresh-token columns implement refresh rotation and reuse/theft detection.</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+      </defs>
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+      <rect x="20" y="104" width="960" height="476" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,4"/>
+      <rect x="30" y="114" width="140" height="12" fill="#f5f5f5"/>
+      <text x="34" y="123" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.08em">IDENTITY_DB · POSTGRES 17</text>
+      <line x1="616" y1="172" x2="384" y2="172" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+      <path d="M 616 384 L 512 384 Q 504 384 504 376 L 504 196 Q 504 188 496 188 L 384 188" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="455" y="152" width="90" height="12" fill="#f5f5f5"/>
+      <text x="500.0" y="161" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FK · role grant</text>
+      <rect x="512" y="300" width="94" height="12" fill="#f5f5f5"/>
+      <text x="512" y="309" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">FK · token owner</text>
+      <rect x="64" y="140" width="320" height="188" rx="6" fill="#f5f5f5"/>
+      <rect x="64" y="140" width="320" height="28" rx="6" fill="rgba(45,49,66,0.05)"/>
+      <rect x="64" y="140" width="320" height="188" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <line x1="65" y1="168" x2="383" y2="168" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+      <rect x="72" y="144" width="32" height="12" rx="2" fill="transparent" stroke="#7a8399" stroke-opacity="0.4" stroke-width="0.8"/>
+      <text x="88" y="153" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TABLE</text>
+      <text x="112" y="159" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" font-weight="600">users</text>
+      <text x="72" y="184" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" >id</text>
+      <text x="376" y="184" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" >uuid</text>
+      <rect x="236" y="174" width="20" height="10" rx="2" fill="rgba(45,49,66,0.04)" stroke="#7a8399" stroke-opacity="0.32" stroke-width="0.8"/>
+      <text x="246" y="182" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" >PK</text>
+      <rect x="64" y="192" width="320" height="24" fill="rgba(45,49,66,0.02)"/>
+      <text x="72" y="208" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" >email</text>
+      <text x="376" y="208" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" >citext</text>
+      <rect x="236" y="198" width="20" height="10" rx="2" fill="rgba(45,49,66,0.04)" stroke="#7a8399" stroke-opacity="0.32" stroke-width="0.8"/>
+      <text x="246" y="206" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" >UQ</text>
+      <rect x="260" y="198" width="20" height="10" rx="2" fill="rgba(45,49,66,0.04)" stroke="#7a8399" stroke-opacity="0.32" stroke-width="0.8"/>
+      <text x="270" y="206" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" >NN</text>
+      <text x="72" y="232" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" >password_hash</text>
+      <text x="376" y="232" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" >text</text>
+      <rect x="236" y="222" width="20" height="10" rx="2" fill="rgba(45,49,66,0.04)" stroke="#7a8399" stroke-opacity="0.32" stroke-width="0.8"/>
+      <text x="246" y="230" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" >NN</text>
+      <rect x="64" y="240" width="320" height="24" fill="rgba(45,49,66,0.02)"/>
+      <text x="72" y="256" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" >full_name</text>
+      <text x="376" y="256" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" >text</text>
+      <rect x="236" y="246" width="20" height="10" rx="2" fill="rgba(45,49,66,0.04)" stroke="#7a8399" stroke-opacity="0.32" stroke-width="0.8"/>
+      <text x="246" y="254" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" >NN</text>
+      <text x="72" y="280" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" >created_at</text>
+      <text x="376" y="280" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" >timestamptz</text>
+      <rect x="64" y="288" width="320" height="24" fill="rgba(45,49,66,0.02)"/>
+      <text x="72" y="304" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" >updated_at</text>
+      <text x="376" y="304" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" >timestamptz</text>
+      <line x1="65" y1="312" x2="383" y2="312" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+      <text x="72" y="323" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" >citext → case-insensitive unique login</text>
+      <rect x="616" y="140" width="320" height="116" rx="6" fill="#f5f5f5"/>
+      <rect x="616" y="140" width="320" height="28" rx="6" fill="rgba(45,49,66,0.05)"/>
+      <rect x="616" y="140" width="320" height="116" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <line x1="617" y1="168" x2="935" y2="168" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+      <rect x="624" y="144" width="32" height="12" rx="2" fill="transparent" stroke="#7a8399" stroke-opacity="0.4" stroke-width="0.8"/>
+      <text x="640" y="153" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TABLE</text>
+      <text x="664" y="159" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" font-weight="600">user_roles</text>
+      <text x="624" y="184" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" >user_id</text>
+      <text x="928" y="184" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" >uuid</text>
+      <rect x="788" y="174" width="20" height="10" rx="2" fill="rgba(45,49,66,0.04)" stroke="#7a8399" stroke-opacity="0.32" stroke-width="0.8"/>
+      <text x="798" y="182" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" >PK</text>
+      <rect x="812" y="174" width="20" height="10" rx="2" fill="rgba(45,49,66,0.04)" stroke="#7a8399" stroke-opacity="0.32" stroke-width="0.8"/>
+      <text x="822" y="182" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" >FK</text>
+      <rect x="616" y="192" width="320" height="24" fill="rgba(45,49,66,0.02)"/>
+      <text x="624" y="208" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" >role</text>
+      <text x="928" y="208" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" >text</text>
+      <rect x="788" y="198" width="20" height="10" rx="2" fill="rgba(45,49,66,0.04)" stroke="#7a8399" stroke-opacity="0.32" stroke-width="0.8"/>
+      <text x="798" y="206" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" >NN</text>
+      <text x="624" y="232" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" >created_at</text>
+      <text x="928" y="232" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" >timestamptz</text>
+      <line x1="617" y1="240" x2="935" y2="240" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+      <text x="624" y="251" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" >CHECK role IN ('buyer','seller','admin')</text>
+      <rect x="616" y="320" width="320" height="236" rx="6" fill="#f5f5f5"/>
+      <rect x="616" y="320" width="320" height="28" rx="6" fill="rgba(235,108,54,0.08)"/>
+      <rect x="616" y="320" width="320" height="236" rx="6" fill="#ffffff" stroke="#eb6c36" stroke-width="1"/>
+      <line x1="617" y1="348" x2="935" y2="348" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+      <rect x="624" y="324" width="32" height="12" rx="2" fill="transparent" stroke="#7a8399" stroke-opacity="0.4" stroke-width="0.8"/>
+      <text x="640" y="333" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TABLE</text>
+      <text x="664" y="339" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" font-weight="600">refresh_tokens</text>
+      <text x="624" y="364" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" >id</text>
+      <text x="928" y="364" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" >uuid</text>
+      <rect x="788" y="354" width="20" height="10" rx="2" fill="rgba(45,49,66,0.04)" stroke="#7a8399" stroke-opacity="0.32" stroke-width="0.8"/>
+      <text x="798" y="362" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" >PK</text>
+      <rect x="616" y="372" width="320" height="24" fill="rgba(45,49,66,0.02)"/>
+      <text x="624" y="388" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" >user_id</text>
+      <text x="928" y="388" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" >uuid</text>
+      <rect x="788" y="378" width="20" height="10" rx="2" fill="rgba(45,49,66,0.04)" stroke="#7a8399" stroke-opacity="0.32" stroke-width="0.8"/>
+      <text x="798" y="386" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" >FK</text>
+      <text x="624" y="412" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" >family_id</text>
+      <text x="928" y="412" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" >uuid</text>
+      <rect x="788" y="402" width="20" height="10" rx="2" fill="rgba(45,49,66,0.04)" stroke="#7a8399" stroke-opacity="0.32" stroke-width="0.8"/>
+      <text x="798" y="410" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" >NN</text>
+      <rect x="616" y="420" width="320" height="24" fill="rgba(45,49,66,0.02)"/>
+      <text x="624" y="436" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" >token_hash</text>
+      <text x="928" y="436" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" >bytea</text>
+      <rect x="788" y="426" width="20" height="10" rx="2" fill="rgba(45,49,66,0.04)" stroke="#7a8399" stroke-opacity="0.32" stroke-width="0.8"/>
+      <text x="798" y="434" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" >UQ</text>
+      <rect x="812" y="426" width="20" height="10" rx="2" fill="rgba(45,49,66,0.04)" stroke="#7a8399" stroke-opacity="0.32" stroke-width="0.8"/>
+      <text x="822" y="434" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" >NN</text>
+      <text x="624" y="460" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" >expires_at</text>
+      <text x="928" y="460" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" >timestamptz</text>
+      <rect x="788" y="450" width="20" height="10" rx="2" fill="rgba(45,49,66,0.04)" stroke="#7a8399" stroke-opacity="0.32" stroke-width="0.8"/>
+      <text x="798" y="458" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" >NN</text>
+      <rect x="616" y="468" width="320" height="24" fill="rgba(45,49,66,0.02)"/>
+      <text x="624" y="484" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" >revoked_at</text>
+      <text x="928" y="484" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" >timestamptz</text>
+      <text x="624" y="508" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" >replaced_by</text>
+      <text x="928" y="508" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" >uuid</text>
+      <rect x="616" y="516" width="320" height="24" fill="rgba(45,49,66,0.02)"/>
+      <text x="624" y="532" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" >created_at</text>
+      <text x="928" y="532" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" >timestamptz</text>
+      <line x1="617" y1="540" x2="935" y2="540" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+      <text x="624" y="551" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" >rotation chain: family_id · revoked_at · replaced_by</text>
+      <text x="80" y="404" fill="#4f5d75" font-size="14" font-family="'Instrument Serif', serif" font-style="italic">family_id links every token of one login;</text>
+      <text x="80" y="428" fill="#4f5d75" font-size="14" font-family="'Instrument Serif', serif" font-style="italic">revoked_at and replaced_by make replay of</text>
+      <text x="80" y="452" fill="#4f5d75" font-size="14" font-family="'Instrument Serif', serif" font-style="italic">an old token revoke the whole family.</text>
+      <line x1="20" y1="604" x2="980" y2="604" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+      <text x="20" y="619" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.08em">LEGEND</text>
+      <rect x="140" y="610" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="164" y="618" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif" >focal · rotation chain</text>
+      <line x1="300" y1="615" x2="316" y2="615" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <text x="324" y="618" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif" >FK edge · child → parent</text>
+      <rect x="460" y="610" width="14" height="10" rx="2" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <text x="484" y="618" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif" >table</text>
+      <rect x="620" y="610" width="14" height="10" rx="2" fill="rgba(45,49,66,0.02)" stroke="#7a8399" stroke-opacity="0.7" stroke-width="1" stroke-dasharray="3,2"/>
+      <text x="644" y="618" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif" >group boundary</text>
+      <rect x="780" y="610" width="20" height="10" rx="2" fill="rgba(45,49,66,0.04)" stroke="#7a8399" stroke-opacity="0.32" stroke-width="0.8"/>
+      <text x="804" y="618" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif" >PK · FK · UQ · NN</text>
+    </svg>
+    </div>
+
+    <!-- Info Cards -->
+    <div class="cards" style="grid-template-columns: 1.3fr 1fr 0.85fr;">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot coral"></span>
+          <h3>Refresh rotation, in three columns</h3>
+        </div>
+        <ul>
+          <li>family_id chains every token issued from one login session.</li>
+          <li>/refresh revokes the old row, inserts a new one in the same family, and sets replaced_by.</li>
+          <li>Reusing an already-revoked token revokes the whole family and answers 401 — that is the theft signal.</li>
+          <li>token_hash is bytea UNIQUE: 32 random bytes base64url to the client, SHA-256 digest at rest.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot ink"></span>
+          <h3>Column semantics</h3>
+        </div>
+        <ul>
+          <li>email is citext, so login is case-insensitive without a functional index.</li>
+          <li>revoked_at and replaced_by are NULL on a live token and set together on rotation.</li>
+          <li>user_roles is keyed (user_id, role); CHECK limits role to buyer, seller, admin.</li>
+          <li>Access tokens are stateless RS256 — nothing about them reaches this database.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot muted"></span>
+          <h3>What the DDL does not say</h3>
+        </div>
+        <ul>
+          <li>migrations/000001 are no-op SELECT 1 baselines; these tables land in WS1 as 000002+.</li>
+          <li>The spec DDL declares no ON DELETE action on either child FK — delete semantics are undecided.</li>
+          <li>admin is in the CHECK but unreachable in P1; no role is ever granted for it.</li>
+          <li>Logout always 204 and revokes the family server-side, not by row count alone.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <span>MARKETPLACE P1 · identity_db</span>
+      <span>TABLES 3 · FK EDGES 2 · ACCENT 1</span>
+    </div>
+
+  </div>
+</body>
+</html>

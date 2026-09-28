@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Service dependency graph — Marketplace P1</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Tokens ─────────────────────────────────────────────────── */
+    :root {
+      --color-paper:       #f5f5f5;
+      --color-paper-2:     #ececec;
+      --color-ink:         #2d3142;
+      --color-muted:       #4f5d75;
+      --color-soft:        #7a8399;
+      --color-rule:        rgba(45,49,66,0.12);
+      --color-rule-solid:  rgba(79,93,117,0.25);
+      --color-accent:      #eb6c36;
+      --color-accent-tint: rgba(235,108,54,0.08);
+      --color-link:        #2e5aa8;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Noto Serif', 'Noto Serif KR', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      min-height: 100vh;
+      padding: 3rem 2rem;
+      color: var(--color-ink);
+    }
+
+    .container { max-width: 1200px; margin: 0 auto; }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    .header { margin-bottom: 2.5rem; }
+
+    .header-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      color: var(--color-ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-family: var(--font-sans);
+      font-size: 1rem;
+      line-height: 1.55;
+      color: var(--color-muted);
+      max-width: 52ch;
+    }
+
+    /* ── Diagram container ────────────────────────────────────────── */
+    /* Default: clean, borderless — diagram sits directly on the page paper.
+       For the framed/boxed variant, uncomment the background/border/padding below. */
+    .diagram-container {
+      background: transparent;
+      border: none;
+      padding: 0;
+      overflow-x: auto;
+      /* background: var(--color-paper-2); */
+      /* border: 1px solid var(--color-rule); */
+      /* border-radius: 8px; */
+      /* padding: 1.5rem; */
+    }
+
+    svg { width: 100%; min-width: 900px; display: block; }
+
+    /* ── Info cards ───────────────────────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid var(--color-rule);
+      padding: 1.25rem;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.875rem;
+      padding-bottom: 0.875rem;
+      border-bottom: 1px solid rgba(45,49,66,0.08);
+    }
+
+    .card-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .card-dot.ink    { background: var(--color-ink); }
+    .card-dot.muted  { background: var(--color-muted); }
+    .card-dot.coral  { background: var(--color-accent); }
+    .card-dot.link   { background: var(--color-link); }
+    .card-dot.soft   { background: var(--color-soft); }
+
+    .card h3 {
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--color-ink);
+      letter-spacing: -0.005em;
+    }
+
+    .card ul {
+      list-style: none;
+      color: var(--color-muted);
+      font-size: 0.8125rem;
+      line-height: 1.55;
+    }
+
+    .card li {
+      margin-bottom: 0.3rem;
+      padding-left: 0.875rem;
+      position: relative;
+    }
+
+    .card li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: rgba(45,49,66,0.25);
+      font-size: 0.75rem;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────── */
+    .footer {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(45,49,66,0.10);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      color: var(--color-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <div class="header">
+      <p class="header-eyebrow">Dependency Graph · 2026-09-28</p>
+      <h1>Service dependency graph</h1>
+      <p class="subtitle">Who calls whom across the four services, with the catalog-to-identity back-edge that makes this a graph rather than a tree.</p>
+    </div>
+
+    <!-- Main Diagram -->
+    <div class="diagram-container">
+      <!-- Replace [diagram-slug] with a unique slug for this diagram before export. -->
+      <svg viewBox="0 0 1000 660" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="marketplace-p1-dependency-graph-full-title marketplace-p1-dependency-graph-full-desc">
+      <title id="marketplace-p1-dependency-graph-full-title">Service dependency graph</title>
+      <desc id="marketplace-p1-dependency-graph-full-desc">Ranked service dependency graph: web calls gateway, gateway calls identity, catalog and order, order calls catalog over gRPC and publishes order events to Kafka which catalog consumes, and catalog calls back into identity forming one cycle.</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+      </defs>
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <!-- rank labels -->
+      <g fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">
+        <text x="40" y="104">RANK 0 · EDGE</text>
+        <text x="40" y="248">RANK 1 · SERVICES</text>
+        <text x="40" y="392">RANK 2 · INFRASTRUCTURE</text>
+      </g>
+
+      <!-- arrows -->
+      <path d="M 260 108 H 400" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <path d="M 400 136 V 160 Q 400 168 392 168 H 188 Q 180 168 180 176 V 224" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <path d="M 480 136 V 160 Q 480 168 472 168 H 468 Q 460 168 460 176 V 224" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <path d="M 560 136 V 200 Q 560 208 568 208 H 772 Q 780 208 780 200 V 224" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <line x1="640" y1="240" x2="700" y2="240" stroke="#4f5d75" stroke-width="1.4" marker-end="url(#arrow)"/>
+      <path d="M 420 280 V 320 Q 420 328 412 328 H 188 Q 180 328 180 336 V 368" fill="none" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <path d="M 260 396 H 772 Q 780 396 780 388 V 280" fill="none" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <line x1="180" y1="280" x2="180" y2="368" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="480" y1="280" x2="480" y2="368" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="780" y1="280" x2="780" y2="368" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <path d="M 540 136 V 152 Q 540 160 548 160 H 920 Q 928 160 928 168 V 388" fill="none" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <path d="M 700 244 H 672 Q 664 244 664 236 V 176 Q 664 168 656 168 H 236 Q 228 168 228 160 V 128 Q 228 120 220 120 H 196 Q 188 120 188 128 V 216" fill="none" stroke="#eb6c36" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow-accent)"/>
+
+      <!-- labels -->
+      <rect x="312" y="88" width="35" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="330" y="97" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">REST</text>
+
+      <rect x="262" y="148" width="35" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="280" y="157" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">REST</text>
+
+      <rect x="418" y="190" width="35" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="436" y="199" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">REST</text>
+
+      <rect x="642" y="188" width="35" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="660" y="197" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">REST</text>
+
+      <rect x="652" y="220" width="36" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="670" y="229" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">GRPC</text>
+
+      <rect x="280" y="336" width="41" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="300" y="345" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">KAFKA</text>
+
+      <rect x="500" y="404" width="41" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="520" y="413" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">KAFKA</text>
+
+      <rect x="143" y="318" width="30" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="158" y="327" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SQL</text>
+
+      <rect x="443" y="318" width="30" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="458" y="327" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SQL</text>
+
+      <rect x="738" y="318" width="35" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="756" y="327" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">OTLP</text>
+
+      <rect x="886" y="266" width="35" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="904" y="275" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">OTLP</text>
+
+      <rect x="423" y="148" width="42" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="444" y="157" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CYCLE</text>
+
+
+      <!-- nodes -->
+      <rect x="100" y="80" width="160" height="56" rx="6" fill="#f5f5f5"/>
+      <rect x="100" y="80" width="160" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="108" y="86" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="122" y="95" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">WEB</text>
+      <rect x="222" y="86" width="30" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="237" y="95" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">0 IN</text>
+      <text x="180" y="118" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">web</text>
+      <text x="180" y="130" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">:5173 dev</text>
+      <rect x="400" y="80" width="160" height="56" rx="6" fill="#f5f5f5"/>
+      <rect x="400" y="80" width="160" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="408" y="86" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="422" y="95" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EDG</text>
+      <rect x="522" y="86" width="30" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="537" y="95" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">3 IN</text>
+      <text x="480" y="118" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">gateway</text>
+      <text x="480" y="130" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">:8080</text>
+      <rect x="100" y="224" width="160" height="56" rx="6" fill="#f5f5f5"/>
+      <rect x="100" y="224" width="160" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="108" y="230" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="122" y="239" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SVC</text>
+      <rect x="222" y="230" width="30" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="237" y="239" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">2 IN</text>
+      <text x="180" y="262" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">identity-svc</text>
+      <text x="180" y="274" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">:8081 · :9081</text>
+      <rect x="400" y="224" width="160" height="56" rx="6" fill="#f5f5f5"/>
+      <rect x="400" y="224" width="160" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="408" y="230" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="422" y="239" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SVC</text>
+      <rect x="522" y="230" width="30" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="537" y="239" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">1 IN</text>
+      <text x="480" y="262" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">order-svc</text>
+      <text x="480" y="274" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">:8083 · :9083</text>
+      <rect x="700" y="224" width="160" height="56" rx="6" fill="#f5f5f5"/>
+      <rect x="700" y="224" width="160" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="708" y="230" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="722" y="239" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SVC</text>
+      <rect x="822" y="230" width="30" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="837" y="239" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">2 IN</text>
+      <text x="780" y="262" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">catalog-svc</text>
+      <text x="780" y="274" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">:8082 · :9082</text>
+      <rect x="100" y="368" width="160" height="56" rx="6" fill="#f5f5f5"/>
+      <rect x="100" y="368" width="160" height="56" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
+      <rect x="108" y="374" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="122" y="383" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">BUS</text>
+      <rect x="222" y="374" width="30" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="237" y="383" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">1 IN</text>
+      <text x="180" y="406" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Kafka</text>
+      <text x="180" y="418" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">order.events</text>
+      <rect x="400" y="368" width="160" height="56" rx="6" fill="#f5f5f5"/>
+      <rect x="400" y="368" width="160" height="56" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="0.8"/>
+      <rect x="408" y="374" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="422" y="383" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DB</text>
+      <rect x="522" y="374" width="30" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="537" y="383" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">3 IN</text>
+      <text x="480" y="406" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Postgres 17</text>
+      <text x="480" y="418" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">3 databases</text>
+      <rect x="700" y="368" width="160" height="56" rx="6" fill="#f5f5f5"/>
+      <rect x="700" y="368" width="160" height="56" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
+      <rect x="708" y="374" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="722" y="383" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">OBS</text>
+      <rect x="822" y="374" width="30" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="837" y="383" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">4 IN</text>
+      <text x="780" y="406" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Jaeger</text>
+      <text x="780" y="418" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">OTLP :4317</text>
+
+
+      <!-- legend -->
+      <line x1="40" y1="588" x2="960" y2="588" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="604" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+      <rect x="148" y="609" width="16" height="12" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="186" y="623" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Internal service</text>
+      <rect x="316" y="609" width="16" height="12" rx="2" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="354" y="623" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Infra / external</text>
+      <line x1="484" y1="615" x2="514" y2="615" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <text x="522" y="623" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">REST over HTTP</text>
+      <line x1="652" y1="615" x2="682" y2="615" stroke="#eb6c36" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow-accent)"/>
+      <text x="690" y="623" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Cycle (back-edge)</text>
+    </svg>
+    </div>
+
+    <!-- Info Cards -->
+    <div class="cards">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot coral"></span>
+          <h3>The cycle is the story</h3>
+        </div>
+        <ul>
+          <li><code>catalog → identity</code> (<code>GrantRole</code> on shop open) opposes <code>order → catalog</code>, so the graph has no topological order.</li>
+          <li>The two nodes keep normal treatment; only the back-edge is accent, so the eye lands on the relationship, not the boxes.</li>
+          <li>Breaking it would need an events-based role grant — out of scope for P1.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot ink"></span>
+          <h3>Fan-in concentrates on gateway</h3>
+        </div>
+        <ul>
+          <li>Gateway carries three inbound callers; Postgres is depended on by all three services, but never crosses a network boundary.</li>
+          <li>Badges count callers, so <code>gateway</code> and <code>Postgres</code> are the two convergence points.</li>
+          <li>A tree could not show either convergence — that is why this is a graph.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot muted"></span>
+          <h3>Sync, async and telemetry</h3>
+        </div>
+        <ul>
+          <li>REST (link-blue): web → gateway and gateway → each service.</li>
+          <li>gRPC (solid muted): <code>order → catalog</code>, 3 s timeout, retry ≤2 on <code>UNAVAILABLE</code>.</li>
+          <li>Kafka (dashed): <code>order.events</code>, key <code>order_id</code>; catalog consumes only <code>OrderCancelled</code>.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <span>MARKETPLACE P1 · DEPENDENCY GRAPH</span>
+      <span>NODES 8 · EDGES 11 · CORAL 1</span>
+    </div>
+
+  </div>
+</body>
+</html>

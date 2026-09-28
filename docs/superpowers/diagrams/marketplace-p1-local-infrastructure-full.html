@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marketplace P1 · Local Infrastructure</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Tokens ─────────────────────────────────────────────────── */
+    :root {
+      --color-paper:       #f5f5f5;
+      --color-paper-2:     #ececec;
+      --color-ink:         #2d3142;
+      --color-muted:       #4f5d75;
+      --color-soft:        #7a8399;
+      --color-rule:        rgba(45,49,66,0.12);
+      --color-rule-solid:  rgba(79,93,117,0.25);
+      --color-accent:      #eb6c36;
+      --color-accent-tint: rgba(235,108,54,0.08);
+      --color-link:        #2e5aa8;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Noto Serif', 'Noto Serif KR', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      min-height: 100vh;
+      padding: 3rem 2rem;
+      color: var(--color-ink);
+    }
+
+    .container { max-width: 1200px; margin: 0 auto; }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    .header { margin-bottom: 2.5rem; }
+
+    .header-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      color: var(--color-ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-family: var(--font-sans);
+      font-size: 1rem;
+      line-height: 1.55;
+      color: var(--color-muted);
+      max-width: 52ch;
+    }
+
+    /* ── Diagram container ────────────────────────────────────────── */
+    /* Default: clean, borderless — diagram sits directly on the page paper.
+       For the framed/boxed variant, uncomment the background/border/padding below. */
+    .diagram-container {
+      background: transparent;
+      border: none;
+      padding: 0;
+      overflow-x: auto;
+      /* background: var(--color-paper-2); */
+      /* border: 1px solid var(--color-rule); */
+      /* border-radius: 8px; */
+      /* padding: 1.5rem; */
+    }
+
+    svg { width: 100%; min-width: 900px; display: block; }
+
+    /* ── Info cards ───────────────────────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: 1.3fr 0.9fr 1fr;
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid var(--color-rule);
+      padding: 1.25rem;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.875rem;
+      padding-bottom: 0.875rem;
+      border-bottom: 1px solid rgba(45,49,66,0.08);
+    }
+
+    .card-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .card-dot.ink    { background: var(--color-ink); }
+    .card-dot.muted  { background: var(--color-muted); }
+    .card-dot.coral  { background: var(--color-accent); }
+    .card-dot.link   { background: var(--color-link); }
+    .card-dot.soft   { background: var(--color-soft); }
+
+    .card h3 {
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--color-ink);
+      letter-spacing: -0.005em;
+    }
+
+    .card ul {
+      list-style: none;
+      color: var(--color-muted);
+      font-size: 0.8125rem;
+      line-height: 1.55;
+    }
+
+    .card li {
+      margin-bottom: 0.3rem;
+      padding-left: 0.875rem;
+      position: relative;
+    }
+
+    .card li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: rgba(45,49,66,0.25);
+      font-size: 0.75rem;
+    }
+
+    .card code {
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: var(--color-ink);
+      background: rgba(45,49,66,0.05);
+      border-radius: 3px;
+      padding: 0 0.25rem;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────── */
+    .footer {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(45,49,66,0.10);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      color: var(--color-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <div class="header">
+      <p class="header-eyebrow">Deployment · 2026-09-28</p>
+      <h1>Local stack: four ports reach the host</h1>
+      <p class="subtitle">The specified Compose topology publishes only the gateway, the web container, Jaeger UI and MinIO — which is exactly why the services trust <code>X-User-*</code> headers.</p>
+    </div>
+
+    <!-- Main Diagram -->
+    <div class="diagram-container">
+      <svg viewBox="0 0 1040 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="marketplace-p1-local-infrastructure-full-title marketplace-p1-local-infrastructure-full-desc">
+        <title id="marketplace-p1-local-infrastructure-full-title">Local stack: four ports reach the host</title>
+        <desc id="marketplace-p1-local-infrastructure-full-desc">Deployment diagram of the specified local Docker Compose stack: a host boundary publishing only the gateway, the web container, the Jaeger UI and the MinIO API, an application zone holding the four Go services behind the gateway on unpublished ports, and a data zone with Postgres, Redis and Kafka, with health endpoints and Makefile targets.</desc>
+        <defs>
+
+          <!-- Arrow: muted (default — generic / internal connections) -->
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+          </marker>
+
+          <!-- Arrow: coral (accent — primary / highlighted flows) -->
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+          </marker>
+
+          <!-- Arrow: link-blue (#2e5aa8 — HTTP/API / external calls) -->
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/>
+          </marker>
+
+        </defs>
+
+        <!-- Background: paper -->
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- =================================================================
+             ZONES — drawn first, before paths, labels and nodes.
+             HOST is the trust boundary. Only four mappings cross it.
+             ================================================================= -->
+        <rect x="40" y="48" width="960" height="200" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="0.8" stroke-dasharray="4,4"/>
+        <rect x="56" y="40" width="140" height="16" fill="#f5f5f5"/>
+        <text x="64" y="52" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">HOST · DOCKER</text>
+        <text x="212" y="52" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">project: marketplace</text>
+
+        <rect x="40" y="276" width="600" height="252" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="0.8" stroke-dasharray="4,4"/>
+        <rect x="56" y="268" width="88" height="16" fill="#f5f5f5"/>
+        <text x="64" y="280" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">PROFILE APP</text>
+
+        <rect x="672" y="276" width="328" height="252" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="0.8" stroke-dasharray="4,4"/>
+        <rect x="688" y="268" width="56" height="16" fill="#f5f5f5"/>
+        <text x="696" y="280" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">INFRA</text>
+
+        <!-- =================================================================
+             NETWORK PATHS — eight, behind the nodes. Attach points on any
+             shared edge are far more than 12px apart.
+             ================================================================= -->
+
+        <!-- P1: host reaches the web container (published 3000 -> :80) -->
+        <line x1="112" y1="244" x2="112" y2="186" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <!-- P2: web proxies /api to the gateway (in-network) -->
+        <line x1="248" y1="134" x2="352" y2="134" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- P3: host reaches the gateway (the only published Go port) -->
+        <line x1="428" y1="244" x2="428" y2="186" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <!-- P4: host reaches the MinIO console -->
+        <line x1="900" y1="244" x2="900" y2="186" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <!-- P5: host reaches the Jaeger UI -->
+        <line x1="760" y1="244" x2="760" y2="186" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <!-- P6: every service exports spans to Jaeger OTLP — internal only -->
+        <path d="M 480 340 L 660 340 Q 668 340 668 332 L 668 156 Q 668 148 676 148 L 694 148" fill="none" stroke="#eb6c36" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow-accent)"/>
+        <!-- P7: the app zone's dependency on the data tier -->
+        <line x1="484" y1="428" x2="698" y2="428" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- The publishable set, stated as a rule rather than drawn as a wire -->
+        <text x="600" y="201" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">ONLY FOUR PORTS PUBLISHED</text>
+
+        <!-- Path labels — 6–10px above their own stroke, clear of every node -->
+        <rect x="120" y="208" width="88" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="164" y="217" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HTTP :3000 → :80</text>
+
+        <rect x="252" y="114" width="96" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="300" y="123" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PROXY /API :8080</text>
+
+        <rect x="436" y="208" width="68" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="470" y="217" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HTTP :8080</text>
+
+        <rect x="908" y="208" width="68" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="942" y="217" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">API :9000</text>
+
+        <rect x="768" y="208" width="60" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="798" y="217" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">UI :16686</text>
+
+        <rect x="536" y="320" width="68" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="570" y="329" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">OTLP :4317</text>
+
+        <rect x="554" y="408" width="76" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="592" y="417" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">NO HOST PORT</text>
+
+        <!-- =================================================================
+             HOST NODES — the published set
+             ================================================================= -->
+
+        <!-- web -->
+        <rect x="64" y="88" width="180" height="92" rx="6" fill="#f5f5f5"/>
+        <rect x="64" y="88" width="180" height="92" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="72" y="96" width="56" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="100" y="105" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CONTAINER</text>
+        <text x="154" y="130" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">web</text>
+        <rect x="72" y="140" width="164" height="20" rx="4" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="0.8"/>
+        <text x="80" y="154" fill="#2d3142" font-size="9" font-family="'Geist', sans-serif">nginx · SPA</text>
+        <text x="228" y="154" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">:80</text>
+        <text x="72" y="172" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">docker-compose.web.yml</text>
+
+        <!-- gateway (focal) -->
+        <rect x="356" y="88" width="180" height="92" rx="6" fill="#f5f5f5"/>
+        <rect x="356" y="88" width="180" height="92" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <rect x="364" y="96" width="32" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+        <text x="380" y="105" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">APP</text>
+        <text x="446" y="130" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">gateway</text>
+        <rect x="364" y="140" width="164" height="20" rx="4" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="0.8"/>
+        <text x="372" y="154" fill="#2d3142" font-size="9" font-family="'Geist', sans-serif">http</text>
+        <text x="520" y="154" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">x1</text>
+        <text x="364" y="172" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">the only public entry · no DB</text>
+
+        <!-- jaeger -->
+        <rect x="700" y="88" width="136" height="92" rx="6" fill="#f5f5f5"/>
+        <rect x="700" y="88" width="136" height="92" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <rect x="708" y="96" width="52" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+        <text x="734" y="105" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MANAGED</text>
+        <text x="768" y="130" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">jaeger</text>
+        <rect x="708" y="140" width="120" height="20" rx="4" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="0.8"/>
+        <text x="716" y="154" fill="#2d3142" font-size="9" font-family="'Geist', sans-serif">all-in-one</text>
+        <text x="820" y="154" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">2.21</text>
+        <text x="708" y="172" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">OTLP :4317 is internal</text>
+
+        <!-- minio -->
+        <rect x="848" y="88" width="136" height="92" rx="6" fill="#f5f5f5"/>
+        <rect x="848" y="88" width="136" height="92" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <rect x="856" y="96" width="52" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+        <text x="882" y="105" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MANAGED</text>
+        <text x="916" y="130" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">minio</text>
+        <rect x="856" y="140" width="120" height="20" rx="4" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="0.8"/>
+        <text x="864" y="154" fill="#2d3142" font-size="9" font-family="'Geist', sans-serif">product-images</text>
+        <text x="968" y="154" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">x1</text>
+        <text x="856" y="172" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">console :9001 · public-read</text>
+
+        <!-- =================================================================
+             APP NODE — the four Go services behind the gateway
+             ================================================================= -->
+        <rect x="72" y="316" width="408" height="196" rx="6" fill="#f5f5f5"/>
+        <rect x="72" y="316" width="408" height="196" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="80" y="324" width="32" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="96" y="333" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">APP</text>
+        <text x="464" y="333" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="end" letter-spacing="0.04em">DISTROLESS · ENTRYPOINT ["/server"]</text>
+        <text x="276" y="358" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">go services</text>
+
+        <text x="88" y="384" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">gateway</text>
+        <text x="464" y="384" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">:8080</text>
+        <text x="88" y="404" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">identity</text>
+        <text x="464" y="404" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">:8081 · :9081</text>
+        <text x="88" y="424" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">catalog</text>
+        <text x="464" y="424" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">:8082 · :9082</text>
+        <text x="88" y="444" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">order</text>
+        <text x="464" y="444" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end">:8083 · :9083</text>
+
+        <line x1="88" y1="460" x2="464" y2="460" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <text x="88" y="476" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace">no published ports · X-User-Id trusted from gateway</text>
+        <text x="88" y="492" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace">/healthz liveness · /readyz deps 2s · migrations on start</text>
+        <text x="88" y="508" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace">docker healthcheck: /server healthcheck</text>
+
+        <!-- =================================================================
+             DATA NODE — the rest of the infra zone, one card, three lines
+             ================================================================= -->
+        <rect x="704" y="316" width="280" height="164" rx="6" fill="#f5f5f5"/>
+        <rect x="704" y="316" width="280" height="164" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="712" y="324" width="40" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+        <text x="732" y="333" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DATA</text>
+        <text x="844" y="358" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">local data tier</text>
+
+        <text x="720" y="384" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">postgres · 17-alpine · 3 databases</text>
+        <text x="720" y="406" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">redis · 7-alpine · cart hash</text>
+        <text x="720" y="428" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">kafka · 4.3.1 KRaft · order.events</text>
+
+        <line x1="720" y1="440" x2="968" y2="440" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <text x="720" y="456" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace">init jobs: kafka-topics.sh · mc mb product-images</text>
+        <text x="720" y="470" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace">AUTO_CREATE_TOPICS_ENABLE=false · RF 1</text>
+
+        <!-- =================================================================
+             ANNOTATIONS + LEGEND
+             ================================================================= -->
+        <text x="40" y="558" fill="#2d3142" font-size="14 font-style="italic" font-family="'Instrument Serif', serif">Only the gateway is reachable from outside — so the services trust X-User-* headers.</text>
+        <text x="40" y="578" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">SPECIFIED, NOT RUNNING — deploy/ IS WS0 TASK 17 · CORS ORIGINS: :3000 AND VITE :5173</text>
+
+        <line x1="40" y1="596" x2="1000" y2="596" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="40" y="612" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+
+        <rect x="40" y="627" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <text x="60" y="635" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Published to host</text>
+
+        <rect x="180" y="627" width="14" height="10" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="200" y="635" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">App container</text>
+
+        <rect x="320" y="627" width="14" height="10" rx="2" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text x="340" y="635" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Data tier</text>
+
+        <line x1="460" y1="631" x2="488" y2="631" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <text x="496" y="635" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Crosses the host boundary</text>
+
+        <line x1="700" y1="631" x2="728" y2="631" stroke="#eb6c36" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow-accent)"/>
+        <text x="736" y="635" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Trace export</text>
+
+        <text x="40" y="672" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.10em">MAKE</text>
+        <text x="92" y="672" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">up · up-app · down · gen · lint · test · keys · seed · e2e</text>
+      </svg>
+    </div>
+
+    <!-- Info Cards -->
+    <div class="cards">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot coral"></span>
+          <h3>What reaches the host, and what does not</h3>
+        </div>
+        <ul>
+          <li>Published: <code>8080:8080</code> (gateway), <code>3000:80</code> (the web container listens on :80; 3000 is the host side), <code>16686:16686</code> (Jaeger UI), <code>9000:9000</code> and <code>9001:9001</code> (MinIO API and console).</li>
+          <li>Not published: identity 8081/9081, catalog 8082/9082, order 8083/9083, Postgres, Redis, Kafka — and Jaeger’s OTLP <code>4317</code>, which is the counter-intuitive one.</li>
+          <li>That single fact is the whole authorization model: only the gateway is reachable, so it strips any inbound <code>X-User-Id</code> / <code>X-User-Roles</code> and sets fresh ones. Everything downstream trusts those headers by construction.</li>
+          <li>CORS origins list both <code>:3000</code> and the Vite dev server <code>:5173</code>.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot muted"></span>
+          <h3>Startup, health, and order</h3>
+        </div>
+        <ul>
+          <li><code>/healthz</code> and <code>/readyz</code> are registered <em>outside</em> the middleware chain, so they answer even when auth or rate limiting is unhappy.</li>
+          <li><code>/readyz</code> runs its named dependency checks concurrently under a 2s budget and returns 200 or 503.</li>
+          <li>The container healthcheck is the binary’s own argv subcommand — <code>["CMD","/server","healthcheck"]</code>, 5s interval, 3s timeout, 20 retries, 5s start period — not curl.</li>
+          <li>Migrations run on startup, so a fresh <code>make up-app</code> needs no separate migrate step.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot ink"></span>
+          <h3>Dependency order and init jobs</h3>
+        </div>
+        <ul>
+          <li>identity, catalog and order wait for Postgres to be <em>healthy</em>; order also waits for Redis.</li>
+          <li>catalog additionally waits for <code>kafka-init</code> and <code>minio-init</code> to have <em>completed successfully</em>.</li>
+          <li>gateway waits for all three services healthy; web waits for gateway healthy.</li>
+          <li>The init jobs exist because both stores have auto-create disabled: <code>kafka-topics.sh --create --topic order.events --partitions 3 --replication-factor 1</code> and <code>mc mb --ignore-existing</code> plus <code>mc anonymous set download</code> on <code>product-images</code>.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <span>MARKETPLACE P1 · LOCAL INFRASTRUCTURE</span>
+      <span>NODES 6 · PATHS 7</span>
+    </div>
+
+  </div>
+</body>
+</html>

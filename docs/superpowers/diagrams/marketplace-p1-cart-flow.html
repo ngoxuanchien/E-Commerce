@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cart: Redis is the source, Catalog is the truth</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;   /* white-smoke */
+      --color-ink:     #2d3142;   /* jet-black */
+      --color-muted:   #4f5d75;   /* blue-slate */
+      --color-accent:  #eb6c36;   /* atomic-tangerine */
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif', 'Noto Serif KR', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1200px; width: 100%; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+
+    svg { width: 100%; min-width: 900px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Swimlane · Diagram Design</p>
+    <h1>The cart is a Redis hint, and Catalog is the truth</h1>
+
+    <svg viewBox="0 0 1000 736" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="marketplace-p1-cart-flow-title marketplace-p1-cart-flow-desc">
+      <title id="marketplace-p1-cart-flow-title">Cart: Redis is the source, Catalog is the truth</title>
+      <desc id="marketplace-p1-cart-flow-desc">Cart lines live in a Redis hash keyed by user; adding a line calls Catalog to confirm the SKU exists and rejects buying from your own shop, while reading the cart enriches every line with the current price and stock and flags what is no longer available.</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <!-- ── Lanes ────────────────────────────────────────────────── -->
+      <rect x="150" y="40" width="830" height="136" fill="rgba(45,49,66,0.015)"/>
+      <rect x="150" y="184" width="830" height="248" fill="rgba(45,49,66,0.03)"/>
+      <rect x="150" y="440" width="830" height="136" fill="rgba(45,49,66,0.015)"/>
+
+      <line x1="150" y1="40" x2="150" y2="576" stroke="rgba(45,49,66,0.20)" stroke-width="1"/>
+      <line x1="150" y1="176" x2="980" y2="176" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+      <line x1="150" y1="432" x2="980" y2="432" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+      <line x1="150" y1="576" x2="980" y2="576" stroke="rgba(45,49,66,0.20)" stroke-width="1"/>
+
+      <!-- Lane labels -->
+      <text x="30" y="112" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em" text-transform="uppercase" transform="rotate(-90 30 112)">BUYER</text>
+      <text x="30" y="312" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em" text-transform="uppercase" transform="rotate(-90 30 312)">ORDER-SVC</text>
+      <text x="30" y="512" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em" text-transform="uppercase" transform="rotate(-90 30 512)">CATALOG-SVC</text>
+
+      <!-- ── Lane 1: buyer ────────────────────────────────────────── -->
+      <rect x="180" y="72" width="176" height="72" fill="#f5f5f5"/>
+      <rect x="180" y="72" width="176" height="72" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+      <rect x="188" y="80" width="42" height="13" rx="2" fill="transparent" stroke="rgba(122,131,153,0.50)" stroke-width="0.8"/>
+      <text x="209" y="89" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em" text-anchor="middle">ACTION</text>
+      <text x="268" y="104" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" font-weight="600" text-anchor="middle">Add to cart</text>
+      <text x="268" y="122" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">qty 1-99</text>
+      <text x="268" y="134" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">max 50 lines</text>
+
+      <rect x="700" y="72" width="176" height="72" fill="#f5f5f5"/>
+      <rect x="700" y="72" width="176" height="72" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+      <rect x="708" y="80" width="42" height="13" rx="2" fill="transparent" stroke="rgba(122,131,153,0.50)" stroke-width="0.8"/>
+      <text x="729" y="89" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em" text-anchor="middle">ACTION</text>
+      <text x="788" y="104" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" font-weight="600" text-anchor="middle">Read cart</text>
+      <text x="788" y="122" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">grouped by shop</text>
+      <text x="788" y="134" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">per-shop subtotal</text>
+
+      <!-- ── Lane 2: order-svc ────────────────────────────────────── -->
+      <rect x="180" y="216" width="176" height="88" fill="#f5f5f5"/>
+      <rect x="180" y="216" width="176" height="88" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="188" y="224" width="34" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.35)" stroke-width="0.8"/>
+      <text x="205" y="233" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em" text-anchor="middle">AUTH</text>
+      <text x="268" y="250" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" font-weight="600" text-anchor="middle">X-User-Id</text>
+      <text x="268" y="268" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">from the gateway</text>
+      <text x="268" y="286" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">never from the client</text>
+
+      <rect x="440" y="216" width="176" height="88" fill="#f5f5f5"/>
+      <rect x="440" y="216" width="176" height="88" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="448" y="224" width="34" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.35)" stroke-width="0.8"/>
+      <text x="465" y="233" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em" text-anchor="middle">APP</text>
+      <text x="528" y="250" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" font-weight="600" text-anchor="middle">CartService</text>
+      <text x="528" y="268" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">AddLine · RemoveLine</text>
+      <text x="528" y="286" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">GetCart</text>
+
+      <rect x="700" y="216" width="176" height="88" fill="#f5f5f5"/>
+      <rect x="700" y="216" width="176" height="88" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <rect x="708" y="224" width="30" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.35)" stroke-width="0.8"/>
+      <text x="723" y="233" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em" text-anchor="middle">DB</text>
+      <text x="788" y="250" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" font-weight="600" text-anchor="middle">Redis</text>
+      <text x="788" y="268" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">cart:{user_id}</text>
+      <text x="788" y="286" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">no TTL</text>
+
+      <rect x="440" y="336" width="176" height="72" fill="#f5f5f5"/>
+      <rect x="440" y="336" width="176" height="72" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <rect x="448" y="344" width="52" height="13" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="474" y="353" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em" text-anchor="middle">RENDER</text>
+      <text x="528" y="368" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" font-weight="600" text-anchor="middle">Flag unavailable</text>
+      <text x="528" y="386" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">subtotal counts only</text>
+      <text x="528" y="398" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">available lines</text>
+
+      <!-- ── Lane 3: catalog ──────────────────────────────────────── -->
+      <rect x="440" y="472" width="176" height="88" fill="#f5f5f5"/>
+      <rect x="440" y="472" width="176" height="88" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="448" y="480" width="36" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.35)" stroke-width="0.8"/>
+      <text x="466" y="489" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em" text-anchor="middle">GRPC</text>
+      <text x="528" y="506" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" font-weight="600" text-anchor="middle">GetSkus</text>
+      <text x="528" y="524" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">price · stock · active</text>
+      <text x="528" y="542" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">seller_user_id</text>
+
+      <rect x="700" y="472" width="176" height="88" fill="#f5f5f5"/>
+      <rect x="700" y="472" width="176" height="88" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <rect x="708" y="480" width="28" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.35)" stroke-width="0.8"/>
+      <text x="722" y="489" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em" text-anchor="middle">DB</text>
+      <text x="788" y="506" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" font-weight="600" text-anchor="middle">catalog_db</text>
+      <text x="788" y="524" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">skus</text>
+      <text x="788" y="542" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">single source of truth</text>
+
+      <!-- ── Handoffs (coral = the coupling that matters) ────────── -->
+      <!-- Add: buyer → order-svc → catalog → back → order-svc → redis -->
+      <path d="M356 108 L400 108 Q408 108 408 116 L408 244 Q408 252 416 252 L432 252" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="362" y="88" width="120" height="12" fill="#f5f5f5"/>
+      <text x="422" y="97" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em" text-anchor="middle">PUT /api/cart/items</text>
+
+      <path d="M616 260 L640 260 Q656 260 656 276 L656 460 Q656 484 672 484 L432 484" fill="none" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+      <rect x="500" y="464" width="160" height="12" fill="#f5f5f5"/>
+      <text x="580" y="473" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em" text-anchor="middle">GetSkus — validate first</text>
+
+      <path d="M528 448 L528 416 Q528 408 520 408 L400 408" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="300" y="388" width="128" height="12" fill="#f5f5f5"/>
+      <text x="364" y="397" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em" text-anchor="middle">own shop → 409</text>
+
+      <path d="M444 258 L420 258 Q404 258 404 242 L404 118 Q404 108 396 108 L364 108" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="200" y="148" width="152" height="12" fill="#f5f5f5"/>
+      <text x="276" y="157" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em" text-anchor="middle">exists? else 404</text>
+
+      <!-- Write to redis -->
+      <path d="M616 286 L640 286 Q656 286 656 270 L656 300 Q656 302 656 302 L688 302" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="618" y="292" width="72" height="12" fill="#f5f5f5"/>
+      <text x="654" y="301" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em" text-anchor="middle">HSET</text>
+
+      <!-- Read: order-svc → redis → catalog → back → order-svc → buyer -->
+      <path d="M528 304 L528 296 Q528 292 520 292 L712 292" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="600" y="316" width="96" height="12" fill="#f5f5f5"/>
+      <text x="648" y="325" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em" text-anchor="middle">HGETALL</text>
+
+      <path d="M700 300 L684 300 Q668 300 668 316 L668 404 Q668 412 660 412 L624 412" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="700" y="356" width="152" height="12" fill="#f5f5f5"/>
+      <text x="776" y="365" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em" text-anchor="middle">sku_id → quantity</text>
+
+      <path d="M444 216 L444 208 Q444 204 436 204 L264 204 Q256 204 256 196 L256 152" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="290" y="196" width="112" height="12" fill="#f5f5f5"/>
+      <text x="346" y="205" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em" text-anchor="middle">grouped lines</text>
+
+      <path d="M700 108 L692 108 Q684 108 684 116 L684 200 Q684 208 676 208 L624 208" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="700" y="160" width="152" height="12" fill="#f5f5f5"/>
+      <text x="776" y="169" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em" text-anchor="middle">200 lines + flags</text>
+
+      <!-- Editorial insight, under the catalog lane -->
+      <text x="20" y="612" fill="#2d3142" font-size="14" font-family="'Instrument Serif', serif" font-style="italic">The cart never stores a price. It stores sku_id and quantity, and every read re-prices against the catalog.</text>
+      <text x="20" y="632" fill="#2d3142" font-size="14" font-family="'Instrument Serif', serif" font-style="italic">A quantity above current stock is allowed in the cart and flagged — only checkout enforces it.</text>
+
+      <!-- Free-standing notes -->
+      <text x="20" y="660" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">field = sku_id · value = quantity · 1-99 per line · 50 lines max · no TTL</text>
+      <text x="20" y="676" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">catalog unavailable → 503 UPSTREAM_UNAVAILABLE, not an empty cart</text>
+
+      <!-- ── Legend ───────────────────────────────────────────────── -->
+      <line x1="20" y1="684" x2="980" y2="684" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+      <text x="20" y="706" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.18em" text-transform="uppercase">LEGEND</text>
+      <line x1="100" y1="702" x2="120" y1="702" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <text x="128" y="705" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">handoff</text>
+      <line x1="240" y1="702" x2="260" y1="702" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+      <text x="268" y="705" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">the call that decides the outcome</text>
+      <rect x="520" y="697" width="14" height="10" rx="2" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+      <text x="542" y="705" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">service / app</text>
+      <rect x="660" y="697" width="14" height="10" rx="2" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="0.8"/>
+      <text x="682" y="705" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">datastore</text>
+    </svg>
+  </div>
+</body>
+</html>

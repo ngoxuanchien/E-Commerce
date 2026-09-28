@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The sweeper, 60 seconds at a time</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Tokens ─────────────────────────────────────────────────── */
+    :root {
+      --color-paper:       #f5f5f5;
+      --color-paper-2:     #ececec;
+      --color-ink:         #2d3142;
+      --color-muted:       #4f5d75;
+      --color-soft:        #7a8399;
+      --color-rule:        rgba(45,49,66,0.12);
+      --color-rule-solid:  rgba(79,93,117,0.25);
+      --color-accent:      #eb6c36;
+      --color-accent-tint: rgba(235,108,54,0.08);
+      --color-link:        #2e5aa8;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Noto Serif', 'Noto Serif KR', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      min-height: 100vh;
+      padding: 3rem 2rem;
+      color: var(--color-ink);
+    }
+
+    .container { max-width: 1200px; margin: 0 auto; }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    .header { margin-bottom: 2.5rem; }
+
+    .header-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      color: var(--color-ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-family: var(--font-sans);
+      font-size: 1rem;
+      line-height: 1.55;
+      color: var(--color-muted);
+      max-width: 52ch;
+    }
+
+    /* ── Diagram container ────────────────────────────────────────── */
+    /* Default: clean, borderless — diagram sits directly on the page paper.
+       For the framed/boxed variant, uncomment the background/border/padding below. */
+    .diagram-container {
+      background: transparent;
+      border: none;
+      padding: 0;
+      overflow-x: auto;
+      /* background: var(--color-paper-2); */
+      /* border: 1px solid var(--color-rule); */
+      /* border-radius: 8px; */
+      /* padding: 1.5rem; */
+    }
+
+    svg { width: 100%; min-width: 900px; display: block; }
+
+    /* ── Info cards ───────────────────────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid var(--color-rule);
+      padding: 1.25rem;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.875rem;
+      padding-bottom: 0.875rem;
+      border-bottom: 1px solid rgba(45,49,66,0.08);
+    }
+
+    .card-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .card-dot.ink    { background: var(--color-ink); }
+    .card-dot.muted  { background: var(--color-muted); }
+    .card-dot.coral  { background: var(--color-accent); }
+    .card-dot.link   { background: var(--color-link); }
+    .card-dot.soft   { background: var(--color-soft); }
+
+    .card h3 {
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--color-ink);
+      letter-spacing: -0.005em;
+    }
+
+    .card ul {
+      list-style: none;
+      color: var(--color-muted);
+      font-size: 0.8125rem;
+      line-height: 1.55;
+    }
+
+    .card li {
+      margin-bottom: 0.3rem;
+      padding-left: 0.875rem;
+      position: relative;
+    }
+
+    .card li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: rgba(45,49,66,0.25);
+      font-size: 0.75rem;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────── */
+    .footer {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(45,49,66,0.10);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      color: var(--color-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="header">
+      <p class="header-eyebrow">Data flow · 2026-09-28</p>
+      <h1>The sweeper, 60 seconds at a time</h1>
+      <p class="subtitle">Why a 60-second job exists at all, and where stock comes back from.</p>
+    </div>
+
+    <div class="diagram-container">
+<svg viewBox="0 0 936 476" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="marketplace-p1-sweeper-recovery-full-title marketplace-p1-sweeper-recovery-full-desc">
+  <title id="marketplace-p1-sweeper-recovery-full-title">The sweeper, 60 seconds at a time</title>
+  <desc id="marketplace-p1-sweeper-recovery-full-desc">Crash-recovery loop for the order service: a checkout that dies after committing PENDING orders leaves reserved stock stranded until a sweeper running every 60 seconds claims those rows, releases the stock, cancels the orders and publishes an OrderCancelled event that catalog consumes; a failed checkout instead cancels its own orders on the request path.</desc>
+  <defs>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="11" cy="11" r="0.8" fill="rgba(45,49,66,0.10)"/></pattern>
+    <marker id="marketplace-p1-sweeper-recovery-full-arr-muted" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#4f5d75"/></marker>
+    <marker id="marketplace-p1-sweeper-recovery-full-arr-accent" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#eb6c36"/></marker>
+    <marker id="marketplace-p1-sweeper-recovery-full-arr-link" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#2e5aa8"/></marker>
+  </defs>
+  <rect width="936" height="476" fill="#f5f5f5"/>
+  <rect width="936" height="476" fill="url(#dots)"/>
+  <rect x="0" y="36" width="936" height="80" fill="rgba(45,49,66,0.018)"/>
+  <rect x="0" y="196" width="936" height="80" fill="rgba(45,49,66,0.018)"/>
+  <line x1="0" y1="36" x2="936" y2="36" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+  <line x1="0" y1="116" x2="936" y2="116" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+  <line x1="0" y1="196" x2="936" y2="196" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+  <line x1="0" y1="276" x2="936" y2="276" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+  <line x1="0" y1="356" x2="936" y2="356" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+  <line x1="140" y1="36" x2="140" y2="356" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+  <rect x="188" y="6" width="32" height="16" rx="8" fill="rgba(235,108,54,0.20)"/>
+  <text x="204" y="14" fill="#eb6c36" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">01</text>
+  <text x="204" y="29" fill="#eb6c36" font-size="7" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">STALL</text>
+  <rect x="316" y="6" width="32" height="16" rx="8" fill="rgba(45,49,66,0.12)"/>
+  <text x="332" y="14" fill="#2d3142" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">02</text>
+  <text x="332" y="29" fill="#4f5d75" font-size="7" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">SWEEP</text>
+  <rect x="444" y="6" width="32" height="16" rx="8" fill="rgba(45,49,66,0.12)"/>
+  <text x="460" y="14" fill="#2d3142" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">03</text>
+  <text x="460" y="29" fill="#4f5d75" font-size="7" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">RELEASE</text>
+  <rect x="572" y="6" width="32" height="16" rx="8" fill="rgba(45,49,66,0.12)"/>
+  <text x="588" y="14" fill="#2d3142" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">04</text>
+  <text x="588" y="29" fill="#4f5d75" font-size="7" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">PUBLISH</text>
+  <rect x="700" y="6" width="32" height="16" rx="8" fill="rgba(45,49,66,0.12)"/>
+  <text x="716" y="14" fill="#2d3142" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">05</text>
+  <text x="716" y="29" fill="#4f5d75" font-size="7" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">CONSUME</text>
+  <rect x="828" y="6" width="32" height="16" rx="8" fill="rgba(45,49,66,0.12)"/>
+  <text x="844" y="14" fill="#2d3142" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">06</text>
+  <text x="844" y="29" fill="#4f5d75" font-size="7" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">COLLECT</text>
+  <text x="70" y="72" fill="#4f5d75" font-size="8" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">BUYER</text>
+  <text x="70" y="84" fill="#4f5d75" font-size="8" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">REQUEST</text>
+  <text x="70" y="152" fill="#4f5d75" font-size="8" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">ORDER-SVC</text>
+  <text x="70" y="164" fill="#4f5d75" font-size="8" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">SWEEPER</text>
+  <text x="70" y="232" fill="#4f5d75" font-size="8" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">ORDER_DB</text>
+  <text x="70" y="244" fill="#4f5d75" font-size="8" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">POSTGRES</text>
+  <text x="70" y="312" fill="#4f5d75" font-size="8" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">CATALOG</text>
+  <text x="70" y="324" fill="#4f5d75" font-size="8" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">CONSUMER</text>
+
+  <!-- connectors, before nodes. Every endpoint sits on a node edge. -->
+  <!-- focal handoff: committed PENDING orders, never confirmed by Tx C -->
+  <line x1="204" y1="188" x2="204" y2="212" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#marketplace-p1-sweeper-recovery-full-arr-accent)"/>
+  <path d="M 254 248 H 260 Q 268 248 268 240 V 164 Q 268 156 276 156 H 282" fill="none" stroke="#4f5d75" marker-end="url(#marketplace-p1-sweeper-recovery-full-arr-muted)"/>
+  <line x1="382" y1="156" x2="410" y2="156" stroke="#4f5d75" marker-end="url(#marketplace-p1-sweeper-recovery-full-arr-muted)"/>
+  <line x1="460" y1="108" x2="460" y2="124" stroke="#4f5d75" marker-end="url(#marketplace-p1-sweeper-recovery-full-arr-muted)"/>
+  <line x1="510" y1="156" x2="538" y2="156" stroke="#4f5d75" marker-end="url(#marketplace-p1-sweeper-recovery-full-arr-muted)"/>
+  <path d="M 638 156 H 690 Q 698 156 698 164 V 276 Q 698 284 706 284 H 716" fill="none" stroke="#2e5aa8" marker-end="url(#marketplace-p1-sweeper-recovery-full-arr-link)"/>
+  <path d="M 460 188 V 228 Q 460 236 468 236 H 690 a 8,8 0 0,1 16,0 H 836 Q 844 236 844 228 V 204" fill="none" stroke="#4f5d75" stroke-dasharray="4,3" marker-end="url(#marketplace-p1-sweeper-recovery-full-arr-muted)"/>
+
+  <!-- focal label, 10px to the side of its own vertical segment -->
+  <rect x="214" y="190" width="88" height="12" rx="2" fill="#f5f5f5"/>
+  <text x="258" y="199" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">NOT CONFIRMED</text>
+
+  <!-- nodes -->
+  <rect x="154" y="124" width="100" height="64" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.25)"/>
+  <rect x="158" y="128" width="18" height="10" rx="3" fill="rgba(45,49,66,0.12)"/>
+  <text x="167" y="133" fill="#2d3142" font-size="6" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">ORD</text>
+  <text x="204" y="147" fill="#2d3142" font-size="9" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Checkout Tx A</text>
+  <text x="204" y="159" fill="#4f5d75" font-size="6.5" font-family="'Geist Mono', monospace" text-anchor="middle">orders → PENDING</text>
+  <text x="204" y="171" fill="#7a8399" font-size="6.5" font-family="'Geist Mono', monospace" text-anchor="middle">step 5 of 10</text>
+  <rect x="234" y="178" width="16" height="8" rx="3" fill="#7c8f6f"/>
+  <text x="242" y="184" fill="#fff" font-size="5" font-weight="700" font-family="'Geist Mono', monospace" text-anchor="middle">DB</text>
+  <rect x="154" y="212" width="100" height="64" rx="6" fill="rgba(235,108,54,0.07)" stroke="#eb6c36" stroke-width="1.2"/>
+  <rect x="158" y="216" width="18" height="10" rx="3" fill="rgba(235,108,54,0.20)"/>
+  <text x="167" y="221" fill="#eb6c36" font-size="6" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">DB</text>
+  <text x="204" y="235" fill="#2d3142" font-size="9" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Stranded stock</text>
+  <text x="204" y="247" fill="#4f5d75" font-size="6.5" font-family="'Geist Mono', monospace" text-anchor="middle">PENDING, no Tx C</text>
+  <text x="204" y="259" fill="#7a8399" font-size="6.5" font-family="'Geist Mono', monospace" text-anchor="middle">2 min to the sweeper</text>
+  <rect x="158" y="266" width="16" height="8" rx="3" fill="#5e7a9b"/>
+  <text x="166" y="272" fill="#fff" font-size="5" font-weight="700" font-family="'Geist Mono', monospace" text-anchor="middle">DB</text>
+  <rect x="234" y="266" width="16" height="8" rx="3" fill="#7c8f6f"/>
+  <text x="242" y="272" fill="#fff" font-size="5" font-weight="700" font-family="'Geist Mono', monospace" text-anchor="middle">DB</text>
+  <rect x="282" y="124" width="100" height="64" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.25)"/>
+  <rect x="286" y="128" width="18" height="10" rx="3" fill="rgba(45,49,66,0.12)"/>
+  <text x="295" y="133" fill="#2d3142" font-size="6" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">ORD</text>
+  <text x="332" y="147" fill="#2d3142" font-size="9" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Sweeper tick</text>
+  <text x="332" y="159" fill="#4f5d75" font-size="6.5" font-family="'Geist Mono', monospace" text-anchor="middle">PENDING older 2 min</text>
+  <text x="332" y="171" fill="#7a8399" font-size="6.5" font-family="'Geist Mono', monospace" text-anchor="middle">SWEEPER_INTERVAL</text>
+  <rect x="286" y="178" width="16" height="8" rx="3" fill="#5e7a9b"/>
+  <text x="294" y="184" fill="#fff" font-size="5" font-weight="700" font-family="'Geist Mono', monospace" text-anchor="middle">DB</text>
+  <rect x="362" y="178" width="16" height="8" rx="3" fill="#7c8f6f"/>
+  <text x="370" y="184" fill="#fff" font-size="5" font-weight="700" font-family="'Geist Mono', monospace" text-anchor="middle">DB</text>
+  <rect x="410" y="44" width="100" height="64" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.25)"/>
+  <rect x="414" y="48" width="18" height="10" rx="3" fill="rgba(45,49,66,0.12)"/>
+  <text x="423" y="53" fill="#2d3142" font-size="6" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">REQ</text>
+  <text x="460" y="67" fill="#2d3142" font-size="9" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Tx B rollback</text>
+  <text x="460" y="79" fill="#4f5d75" font-size="6.5" font-family="'Geist Mono', monospace" text-anchor="middle">OUT_OF_STOCK</text>
+  <text x="460" y="91" fill="#7a8399" font-size="6.5" font-family="'Geist Mono', monospace" text-anchor="middle">step 7 · same request</text>
+  <rect x="414" y="98" width="16" height="8" rx="3" fill="#5e7a9b"/>
+  <text x="422" y="104" fill="#fff" font-size="5" font-weight="700" font-family="'Geist Mono', monospace" text-anchor="middle">DB</text>
+  <rect x="410" y="124" width="100" height="64" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.25)"/>
+  <rect x="414" y="128" width="18" height="10" rx="3" fill="rgba(45,49,66,0.12)"/>
+  <text x="423" y="133" fill="#2d3142" font-size="6" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">ORD</text>
+  <text x="460" y="147" fill="#2d3142" font-size="9" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Release + cancel</text>
+  <text x="460" y="159" fill="#4f5d75" font-size="6.5" font-family="'Geist Mono', monospace" text-anchor="middle">CHECKOUT_TIMEOUT</text>
+  <text x="460" y="171" fill="#7a8399" font-size="6.5" font-family="'Geist Mono', monospace" text-anchor="middle">ReleaseStock gRPC</text>
+  <rect x="414" y="178" width="16" height="8" rx="3" fill="#5e7a9b"/>
+  <text x="422" y="184" fill="#fff" font-size="5" font-weight="700" font-family="'Geist Mono', monospace" text-anchor="middle">DB</text>
+  <rect x="490" y="178" width="16" height="8" rx="3" fill="#7c8f6f"/>
+  <text x="498" y="184" fill="#fff" font-size="5" font-weight="700" font-family="'Geist Mono', monospace" text-anchor="middle">DB</text>
+  <rect x="538" y="124" width="100" height="64" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.25)"/>
+  <rect x="542" y="128" width="18" height="10" rx="3" fill="rgba(45,49,66,0.12)"/>
+  <text x="551" y="133" fill="#2d3142" font-size="6" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">ORD</text>
+  <text x="588" y="147" fill="#2d3142" font-size="9" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Outbox row</text>
+  <text x="588" y="159" fill="#4f5d75" font-size="6.5" font-family="'Geist Mono', monospace" text-anchor="middle">OrderCancelled</text>
+  <text x="588" y="171" fill="#7a8399" font-size="6.5" font-family="'Geist Mono', monospace" text-anchor="middle">relay → Kafka</text>
+  <rect x="542" y="178" width="16" height="8" rx="3" fill="#5e7a9b"/>
+  <text x="550" y="184" fill="#fff" font-size="5" font-weight="700" font-family="'Geist Mono', monospace" text-anchor="middle">DB</text>
+  <rect x="618" y="178" width="16" height="8" rx="3" fill="#7c8f6f"/>
+  <text x="626" y="184" fill="#fff" font-size="5" font-weight="700" font-family="'Geist Mono', monospace" text-anchor="middle">LS</text>
+  <rect x="666" y="284" width="100" height="64" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.25)"/>
+  <rect x="670" y="288" width="18" height="10" rx="3" fill="rgba(45,49,66,0.12)"/>
+  <text x="679" y="293" fill="#2d3142" font-size="6" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">CAT</text>
+  <text x="716" y="307" fill="#2d3142" font-size="9" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Release stock</text>
+  <text x="716" y="319" fill="#4f5d75" font-size="6.5" font-family="'Geist Mono', monospace" text-anchor="middle">OrderCancelled</text>
+  <text x="716" y="331" fill="#7a8399" font-size="6.5" font-family="'Geist Mono', monospace" text-anchor="middle">consumer group</text>
+  <rect x="670" y="338" width="16" height="8" rx="3" fill="#5e7a9b"/>
+  <text x="678" y="344" fill="#fff" font-size="5" font-weight="700" font-family="'Geist Mono', monospace" text-anchor="middle">LS</text>
+  <rect x="746" y="338" width="16" height="8" rx="3" fill="#7c8f6f"/>
+  <text x="754" y="344" fill="#fff" font-size="5" font-weight="700" font-family="'Geist Mono', monospace" text-anchor="middle">DB</text>
+  <rect x="794" y="204" width="100" height="64" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.25)"/>
+  <rect x="798" y="208" width="18" height="10" rx="3" fill="rgba(45,49,66,0.12)"/>
+  <text x="807" y="213" fill="#2d3142" font-size="6" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">DB</text>
+  <text x="844" y="227" fill="#2d3142" font-size="9" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Delete old keys</text>
+  <text x="844" y="239" fill="#4f5d75" font-size="6.5" font-family="'Geist Mono', monospace" text-anchor="middle">created_at &lt; 24 h</text>
+  <text x="844" y="251" fill="#7a8399" font-size="6.5" font-family="'Geist Mono', monospace" text-anchor="middle">same 60 s job</text>
+  <rect x="798" y="258" width="16" height="8" rx="3" fill="#5e7a9b"/>
+  <text x="806" y="264" fill="#fff" font-size="5" font-weight="700" font-family="'Geist Mono', monospace" text-anchor="middle">DB</text>
+
+  <text x="140" y="380" fill="#2d3142" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="start">two doors into the same CANCELLED: the request path at</text>
+  <text x="140" y="400" fill="#2d3142" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="start">checkout step 7, or the sweeper two minutes later.</text>
+
+
+  <line x1="0" y1="396" x2="936" y2="396" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+  <text x="164" y="412" fill="#4f5d75" font-size="7" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="end" letter-spacing="0.12em">STEPS</text>
+  <rect x="180" y="403" width="24" height="12" rx="6" fill="rgba(235,108,54,0.20)"/>
+  <text x="192" y="411" fill="#eb6c36" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">01</text>
+  <text x="212" y="412" fill="#4f5d75" font-size="7" font-family="'Geist', sans-serif">Stall</text>
+  <rect x="268" y="403" width="24" height="12" rx="6" fill="rgba(45,49,66,0.12)"/>
+  <text x="280" y="411" fill="#2d3142" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">02</text>
+  <text x="300" y="412" fill="#4f5d75" font-size="7" font-family="'Geist', sans-serif">Sweep</text>
+  <rect x="356" y="403" width="24" height="12" rx="6" fill="rgba(45,49,66,0.12)"/>
+  <text x="368" y="411" fill="#2d3142" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">03</text>
+  <text x="388" y="412" fill="#4f5d75" font-size="7" font-family="'Geist', sans-serif">Release</text>
+  <rect x="444" y="403" width="24" height="12" rx="6" fill="rgba(45,49,66,0.12)"/>
+  <text x="456" y="411" fill="#2d3142" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">04</text>
+  <text x="476" y="412" fill="#4f5d75" font-size="7" font-family="'Geist', sans-serif">Publish</text>
+  <rect x="532" y="403" width="24" height="12" rx="6" fill="rgba(45,49,66,0.12)"/>
+  <text x="544" y="411" fill="#2d3142" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">05</text>
+  <text x="564" y="412" fill="#4f5d75" font-size="7" font-family="'Geist', sans-serif">Consume</text>
+  <rect x="620" y="403" width="24" height="12" rx="6" fill="rgba(45,49,66,0.12)"/>
+  <text x="632" y="411" fill="#2d3142" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">06</text>
+  <text x="652" y="412" fill="#4f5d75" font-size="7" font-family="'Geist', sans-serif">Collect</text>
+  <text x="164" y="433" fill="#4f5d75" font-size="7" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="end" letter-spacing="0.12em">DATA TYPE</text>
+  <rect x="180" y="425" width="16" height="8" rx="3" fill="#5e7a9b"/><text x="188" y="431" fill="#fff" font-size="5" font-weight="700" font-family="'Geist Mono', monospace" text-anchor="middle">DB</text><text x="202" y="433" fill="#4f5d75" font-size="7" font-family="'Geist', sans-serif">Row</text>
+  <rect x="256" y="425" width="16" height="8" rx="3" fill="#7c8f6f"/><text x="264" y="431" fill="#fff" font-size="5" font-weight="700" font-family="'Geist Mono', monospace" text-anchor="middle">LS</text><text x="278" y="433" fill="#4f5d75" font-size="7" font-family="'Geist', sans-serif">Kafka event</text>
+  <text x="360" y="433" fill="#4f5d75" font-size="7" font-family="'Geist', sans-serif">left chip = input · right chip = output</text>
+  <text x="164" y="455" fill="#4f5d75" font-size="7" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="end" letter-spacing="0.12em">FLOW</text>
+  <line x1="180" y1="452" x2="204" y2="452" stroke="#4f5d75" marker-end="url(#marketplace-p1-sweeper-recovery-full-arr-muted)"/><text x="212" y="455" fill="#4f5d75" font-size="7" font-family="'Geist', sans-serif">Claim / write</text>
+  <line x1="316" y1="452" x2="340" y2="452" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#marketplace-p1-sweeper-recovery-full-arr-accent)"/><text x="348" y="455" fill="#4f5d75" font-size="7" font-family="'Geist', sans-serif">The hazard</text>
+  <line x1="436" y1="452" x2="460" y2="452" stroke="#2e5aa8" marker-end="url(#marketplace-p1-sweeper-recovery-full-arr-link)"/><text x="468" y="455" fill="#4f5d75" font-size="7" font-family="'Geist', sans-serif">Async hop</text>
+  <line x1="560" y1="452" x2="584" y2="452" stroke="#4f5d75" stroke-dasharray="4,3" marker-end="url(#marketplace-p1-sweeper-recovery-full-arr-muted)"/><text x="592" y="455" fill="#4f5d75" font-size="7" font-family="'Geist', sans-serif">Same 60 s job</text>
+</svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot coral"></span>
+          <h3>The hazard it removes</h3>
+        </div>
+        <ul>
+          <li>Checkout step 5 (Tx A) commits orders as <code>PENDING</code></li>
+          <li>Step 8 (Tx C) is what flips them to <code>PENDING_CONFIRMATION</code></li>
+          <li>A crash in between leaves reserved stock with no owner</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot muted"></span>
+          <h3>How the loop stays safe</h3>
+        </div>
+        <ul>
+          <li><code>FOR UPDATE SKIP LOCKED</code> — replicas never collide</li>
+          <li>Cancel writes a history row and an outbox row in one tx</li>
+          <li><code>catalog-svc</code> consumes only <code>OrderCancelled</code></li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot soft"></span>
+          <h3>The rest of the job</h3>
+        </div>
+        <ul>
+          <li>Deletes <code>idempotency_keys</code> older than 24 h</li>
+          <li><code>SWEEPER_INTERVAL=60s</code>, <code>PENDING_TIMEOUT=2m</code></li>
+          <li>Runs in the same binary as the order service</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>MARKETPLACE P1 · 2026-09-28</span>
+      <span>NODES 8 · ARROWS 7 · CORAL 1 FOCAL SET</span>
+    </div>
+
+  </div>
+</body>
+</html>

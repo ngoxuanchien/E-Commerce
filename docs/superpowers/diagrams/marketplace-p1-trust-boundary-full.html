@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marketplace P1 Trust Boundary</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Tokens ─────────────────────────────────────────────────── */
+    :root {
+      --color-paper:       #f5f5f5;
+      --color-paper-2:     #ececec;
+      --color-ink:         #2d3142;
+      --color-muted:       #4f5d75;
+      --color-soft:        #7a8399;
+      --color-rule:        rgba(45,49,66,0.12);
+      --color-rule-solid:  rgba(79,93,117,0.25);
+      --color-accent:      #eb6c36;
+      --color-accent-tint: rgba(235,108,54,0.08);
+      --color-link:        #2e5aa8;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Noto Serif', 'Noto Serif KR', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      min-height: 100vh;
+      padding: 3rem 2rem;
+      color: var(--color-ink);
+    }
+
+    .container { max-width: 1200px; margin: 0 auto; }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    .header { margin-bottom: 2.5rem; }
+
+    .header-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      color: var(--color-ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-family: var(--font-sans);
+      font-size: 1rem;
+      line-height: 1.55;
+      color: var(--color-muted);
+      max-width: 52ch;
+    }
+
+    /* ── Diagram container ────────────────────────────────────────── */
+    /* Default: clean, borderless — diagram sits directly on the page paper.
+       For the framed/boxed variant, uncomment the background/border/padding below. */
+    .diagram-container {
+      background: transparent;
+      border: none;
+      padding: 0;
+      overflow-x: auto;
+      /* background: var(--color-paper-2); */
+      /* border: 1px solid var(--color-rule); */
+      /* border-radius: 8px; */
+      /* padding: 1.5rem; */
+    }
+
+    svg { width: 100%; min-width: 900px; display: block; }
+
+    /* ── Info cards ───────────────────────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr 0.85fr;
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid var(--color-rule);
+      padding: 1.25rem;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.875rem;
+      padding-bottom: 0.875rem;
+      border-bottom: 1px solid rgba(45,49,66,0.08);
+    }
+
+    .card-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .card-dot.ink    { background: var(--color-ink); }
+    .card-dot.muted  { background: var(--color-muted); }
+    .card-dot.coral  { background: var(--color-accent); }
+    .card-dot.link   { background: var(--color-link); }
+    .card-dot.soft   { background: var(--color-soft); }
+
+    .card h3 {
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--color-ink);
+      letter-spacing: -0.005em;
+    }
+
+    .card ul {
+      list-style: none;
+      color: var(--color-muted);
+      font-size: 0.8125rem;
+      line-height: 1.55;
+    }
+
+    .card li {
+      margin-bottom: 0.3rem;
+      padding-left: 0.875rem;
+      position: relative;
+    }
+
+    .card li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: rgba(45,49,66,0.25);
+      font-size: 0.75rem;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────── */
+    .footer {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(45,49,66,0.10);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      color: var(--color-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <div class="header">
+      <p class="header-eyebrow">Architecture · 2026-09-28</p>
+      <h1>P1 trust boundary</h1>
+      <p class="subtitle">web → gateway :8080 is the only application ingress, so a host port map makes the boundary checkable rather than aspirational.</p>
+    </div>
+
+    <!-- Main Diagram -->
+    <div class="diagram-container">
+      <svg viewBox="0 0 1128 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="marketplace-p1-trust-boundary-full-title marketplace-p1-trust-boundary-full-desc">
+        <title id="marketplace-p1-trust-boundary-full-title">P1 trust boundary: the paved road is web to gateway</title>
+        <desc id="marketplace-p1-trust-boundary-full-desc">The web SPA and the gateway are the only application components publishing host ports, so every backend service trusts X-User-Id and X-User-Roles after the gateway strips and re-injects them; a direct dial to a service port stops at the boundary.</desc>
+        <defs>
+
+          <!-- Arrow: muted (default — generic / internal connections) -->
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+          </marker>
+
+          <!-- Arrow: coral (accent — primary / highlighted flows) -->
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+          </marker>
+
+          <!-- Arrow: link-blue (#2e5aa8 — HTTP/API / external calls) -->
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/>
+          </marker>
+
+        </defs>
+
+        <!-- Background: paper -->
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- =================================================================
+             ZONES — three trust zones, painted first.
+             ================================================================= -->
+        <rect x="200" y="48" width="288" height="424" rx="8" fill="rgba(235,108,54,0.05)" stroke="rgba(235,108,54,0.50)" stroke-width="1" stroke-dasharray="4,4"/>
+        <rect x="208" y="52" width="160" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="216" y="61" fill="rgba(235,108,54,0.80)" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.10em">HOST PUBLISHED · TRUST BOUNDARY</text>
+        <rect x="208" y="64" width="104" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="216" y="73" fill="rgba(235,108,54,0.55)" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.10em">3000:80 · 8080:8080</text>
+
+        <rect x="512" y="48" width="352" height="424" rx="8" fill="rgba(235,108,54,0.05)" stroke="rgba(235,108,54,0.50)" stroke-width="1" stroke-dasharray="4,4"/>
+        <rect x="520" y="52" width="140" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="528" y="61" fill="rgba(235,108,54,0.80)" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.10em">INTERNAL ONLY · NO HOST PORT</text>
+        <rect x="520" y="64" width="164" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="528" y="73" fill="rgba(235,108,54,0.55)" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.10em">8081/9081 · 8082/9082 · 8083/9083</text>
+        <text x="520" y="460" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace">distroless/static-debian12:nonroot</text>
+
+        <rect x="896" y="48" width="216" height="424" rx="8" fill="rgba(235,108,54,0.05)" stroke="rgba(235,108,54,0.50)" stroke-width="1" stroke-dasharray="4,4"/>
+        <rect x="904" y="52" width="92" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="912" y="61" fill="rgba(235,108,54,0.80)" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.10em">DATA + OPERATIONS</text>
+        <rect x="904" y="64" width="68" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="912" y="73" fill="rgba(235,108,54,0.55)" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.10em">no host port</text>
+
+        <!-- =================================================================
+             ARROWS FIRST — they paint behind boxes (SVG document order).
+             ================================================================= -->
+
+        <!-- A1 permitted ingress -->
+        <line x1="128" y1="172" x2="224" y2="172" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <rect x="140" y="152" width="72" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="176" y="161" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HTTPS :3000</text>
+
+        <!-- A2 the paved road -->
+        <line x1="344" y1="204" x2="344" y2="268" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="353" y="220" width="68" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="387" y="229" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PROXY /api</text>
+
+        <!-- A3 read-only identity edge, not routed by the gateway -->
+        <path d="M 464 284 H 488 Q 496 284 496 276 V 108 Q 496 100 504 100 H 692 Q 700 100 700 108 V 120"
+              fill="none" stroke="#7a8399" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <rect x="540" y="80" width="104" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="592" y="89" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">JWKS · READ-ONLY</text>
+
+        <!-- A4 gateway -> identity -->
+        <path d="M 464 300 H 520 Q 528 300 528 292 V 160 Q 528 152 536 152 H 660"
+              fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <rect x="556" y="132" width="88" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="600" y="141" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">AUTH /api/auth/*</text>
+
+        <!-- A5 gateway -> catalog -->
+        <path d="M 464 316 H 568 Q 576 316 576 308 V 264 Q 576 256 584 256 H 660"
+              fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <rect x="596" y="236" width="64" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="628" y="245" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HTTP :8082</text>
+
+        <!-- A6 gateway -> order -->
+        <path d="M 464 332 H 600 Q 608 332 608 340 V 360 Q 608 368 616 368 H 660"
+              fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <rect x="620" y="348" width="36" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="638" y="357" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">:8083</text>
+
+        <!-- A7 identity -> identity_db -->
+        <path d="M 840 168 H 868 Q 876 168 876 176 V 236 Q 876 244 884 244 H 920"
+              fill="none" stroke="#7a8399" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <rect x="884" y="200" width="76" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="922" y="209" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">DATABASE_URL</text>
+
+        <!-- A8 catalog -> catalog_db -->
+        <line x1="840" y1="264" x2="920" y2="264" stroke="#7a8399" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+
+        <!-- A9 order -> order_db -->
+        <path d="M 840 368 H 868 Q 876 368 876 360 V 284 Q 876 276 884 276 H 920"
+              fill="none" stroke="#7a8399" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+
+        <!-- A10 key material -> identity -->
+        <line x1="920" y1="136" x2="840" y2="136" stroke="#7a8399" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <rect x="852" y="116" width="56" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="880" y="125" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">RO PEM</text>
+
+        <!-- A11 audit destination -->
+        <path d="M 344 356 V 496 Q 344 504 352 504 H 996 Q 1004 504 1004 496 V 424"
+              fill="none" stroke="#7a8399" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <rect x="668" y="484" width="64" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="700" y="493" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">OTLP :4317</text>
+
+        <!-- A12 FORBIDDEN ingress — stops outside the boundary -->
+        <path d="M 68 204 V 388 Q 68 396 76 396 H 474"
+              fill="none" stroke="#7a8399" stroke-width="1.2" stroke-dasharray="2,3"/>
+        <circle cx="484" cy="396" r="9" fill="#f5f5f5" stroke="#7a8399" stroke-width="1.4"/>
+        <line x1="479" y1="401" x2="489" y2="391" stroke="#7a8399" stroke-width="1.4"/>
+        <line x1="504" y1="386" x2="504" y2="406" stroke="#7a8399" stroke-width="2"/>
+        <rect x="404" y="414" width="180" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="494" y="423" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">BLOCKED · DIRECT :8081 / :9081</text>
+
+        <!-- =================================================================
+             COMPONENT BOXES
+             ================================================================= -->
+
+        <!-- Client -->
+        <rect x="8" y="140" width="120" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="8" y="140" width="120" height="64" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <rect x="16" y="146" width="26" height="12" rx="2" fill="transparent" stroke="rgba(122,131,153,0.45)" stroke-width="0.8"/>
+        <text x="29" y="155" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+        <text x="68" y="174" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Client</text>
+        <text x="68" y="192" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">browser</text>
+
+        <!-- web -->
+        <rect x="224" y="140" width="240" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="224" y="140" width="240" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="232" y="146" width="30" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="247" y="155" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SPA</text>
+        <text x="344" y="174" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">web</text>
+        <text x="344" y="192" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">React SPA · host 3000:80</text>
+
+        <!-- gateway (focal) -->
+        <rect x="224" y="268" width="240" height="88" rx="6" fill="#f5f5f5"/>
+        <rect x="224" y="268" width="240" height="88" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <rect x="232" y="274" width="32" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+        <text x="248" y="283" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">GATE</text>
+        <text x="344" y="302" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">gateway</text>
+        <text x="344" y="320" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">8080:8080 · only app ingress</text>
+        <text x="344" y="336" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">strips then re-injects X-User-*</text>
+        <text x="344" y="350" fill="rgba(235,108,54,0.80)" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">NO DATABASE · NO gRPC SERVER</text>
+
+        <!-- identity -->
+        <rect x="660" y="120" width="180" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="660" y="120" width="180" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="668" y="126" width="30" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="683" y="135" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SVC</text>
+        <text x="750" y="154" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">identity-svc</text>
+        <text x="750" y="172" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">identity_db · :8081/:9081</text>
+
+        <!-- catalog -->
+        <rect x="660" y="224" width="180" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="660" y="224" width="180" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="668" y="230" width="30" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="683" y="239" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SVC</text>
+        <text x="750" y="258" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">catalog-svc</text>
+        <text x="750" y="276" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">catalog_db · :8082/:9082</text>
+
+        <!-- order -->
+        <rect x="660" y="336" width="180" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="660" y="336" width="180" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="668" y="342" width="30" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="683" y="351" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SVC</text>
+        <text x="750" y="370" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">order-svc</text>
+        <text x="750" y="388" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">order_db · :8083/:9083</text>
+
+        <!-- secrets -->
+        <rect x="920" y="112" width="168" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="920" y="112" width="168" height="72" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <rect x="928" y="118" width="34" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+        <text x="945" y="127" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SECR</text>
+        <text x="1004" y="146" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">secrets</text>
+        <text x="1004" y="162" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">make keys → deploy/secrets/</text>
+        <text x="1004" y="178" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">jwt_private.pem · gitignored</text>
+
+        <!-- postgres -->
+        <rect x="920" y="224" width="168" height="88" rx="6" fill="#f5f5f5"/>
+        <rect x="920" y="224" width="168" height="88" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="928" y="230" width="34" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+        <text x="945" y="239" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DATA</text>
+        <text x="1004" y="258" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">postgres 17</text>
+        <text x="1004" y="276" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">identity_db · catalog_db</text>
+        <text x="1004" y="290" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">order_db · never cross-read</text>
+        <text x="1004" y="304" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">user · marketplace</text>
+
+        <!-- ops -->
+        <rect x="920" y="352" width="168" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="920" y="352" width="168" height="72" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <rect x="928" y="358" width="30" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+        <text x="943" y="367" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">OPS</text>
+        <text x="1004" y="386" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">jaeger UI + minio</text>
+        <text x="1004" y="402" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">UI 16686 · OTLP 4317 internal</text>
+        <text x="1004" y="418" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">API 9000 · console 9001</text>
+
+        <!-- =================================================================
+             LEGEND — outside all zone rectangles.
+             ================================================================= -->
+        <line x1="32" y1="544" x2="1096" y2="544" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+        <text x="40" y="562" fill="#7a8399" font-size="8" font-weight="500" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+
+        <rect x="40" y="576" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <text x="60" y="585" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">Only application ingress</text>
+
+        <rect x="260" y="576" width="14" height="10" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="280" y="585" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">Internal service · no host port</text>
+
+        <rect x="540" y="576" width="14" height="10" rx="2" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text x="560" y="585" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">Data / operations</text>
+
+        <line x1="740" y1="581" x2="754" y2="581" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <text x="760" y="585" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">Permitted route</text>
+
+        <line x1="880" y1="581" x2="892" y2="581" stroke="#7a8399" stroke-width="1.2" stroke-dasharray="2,3"/>
+        <circle cx="899" cy="581" r="5" fill="#f5f5f5" stroke="#7a8399" stroke-width="1.2"/>
+        <line x1="906" y1="574" x2="906" y2="588" stroke="#7a8399" stroke-width="1.6"/>
+        <text x="914" y="585" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">Blocked ingress</text>
+
+      </svg>
+    </div>
+
+    <!-- Info Cards -->
+    <div class="cards">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot coral"></span>
+          <h3>Why the services trust X-User-Id</h3>
+        </div>
+        <ul>
+          <li>Host ports: gateway <code>8080:8080</code>, web <code>3000:80</code> (container listens on :80). Those two are the entire application ingress.</li>
+          <li>The gateway always strips an inbound <code>X-User-Id</code> / <code>X-User-Roles</code>, verifies RS256 via JWKS, then re-injects <code>sub</code> and <code>roles</code> — a client cannot spoof identity.</li>
+          <li>An invalid token is 401 even on a public route: the gateway fails loudly rather than degrading to anonymous.</li>
+          <li>Everything else is unreachable from the host, so the implicit trust is a consequence of the port map, not a convention.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot ink"></span>
+          <h3>One instance, three databases</h3>
+        </div>
+        <ul>
+          <li>One <code>postgres:17</code> instance; <code>deploy/postgres/init.sql</code> creates <code>identity_db</code>, <code>catalog_db</code> and <code>order_db</code>.</li>
+          <li>The rule that keeps it honest: no service reads another's database, so co-location buys no coupling.</li>
+          <li>The gateway has no database at all — no <code>pgx</code> in its <code>go.mod</code>, no <code>migrations/</code> — and it is the only service that never starts a gRPC server.</li>
+          <li>All four images are <code>gcr.io/distroless/static-debian12:nonroot</code> with <code>ENTRYPOINT ["/server"]</code>: nothing to compromise in the image.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot link"></span>
+          <h3>Keys, JWKS and the spec's honesty</h3>
+        </div>
+        <ul>
+          <li><code>make keys</code> writes an RSA 2048 <code>deploy/secrets/jwt_private.pem</code> (gitignored); identity mounts it read-only at <code>/run/secrets/jwt_private.pem</code>.</li>
+          <li>MinIO is <code>minioadmin</code>, Postgres is <code>marketplace</code>, and the gateway also holds <code>CORS_ALLOWED_ORIGINS</code> and <code>TRUSTED_PROXIES</code> — the AUTH line reaches secrets, not one tool.</li>
+          <li>JWKS is fetched at startup, cached, refreshed every 5 min and on an unknown <code>kid</code> at most once per 30 s. That endpoint is internal-only and not routed by the gateway: a read-only identity edge, not a bypass.</li>
+          <li><code>deploy/</code> does not exist in the repo yet — this is the specified topology, not an observed one.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <span>MARKETPLACE P1 · TRUST BOUNDARY</span>
+      <span>NODES 9 · ARROWS 12 · ZONES 3</span>
+    </div>
+
+  </div>
+</body>
+</html>

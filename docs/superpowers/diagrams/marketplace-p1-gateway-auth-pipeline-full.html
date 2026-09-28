@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The gateway, one request at a time</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Tokens ─────────────────────────────────────────────────── */
+    :root {
+      --color-paper:       #f5f5f5;
+      --color-paper-2:     #ececec;
+      --color-ink:         #2d3142;
+      --color-muted:       #4f5d75;
+      --color-soft:        #7a8399;
+      --color-rule:        rgba(45,49,66,0.12);
+      --color-rule-solid:  rgba(79,93,117,0.25);
+      --color-accent:      #eb6c36;
+      --color-accent-tint: rgba(235,108,54,0.08);
+      --color-link:        #2e5aa8;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Noto Serif', 'Noto Serif KR', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      min-height: 100vh;
+      padding: 3rem 2rem;
+      color: var(--color-ink);
+    }
+
+    .container { max-width: 1200px; margin: 0 auto; }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    .header { margin-bottom: 2.5rem; }
+
+    .header-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      color: var(--color-ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-family: var(--font-sans);
+      font-size: 1rem;
+      line-height: 1.55;
+      color: var(--color-muted);
+      max-width: 52ch;
+    }
+
+    /* ── Diagram container ────────────────────────────────────────── */
+    /* Default: clean, borderless — diagram sits directly on the page paper.
+       For the framed/boxed variant, uncomment the background/border/padding below. */
+    .diagram-container {
+      background: transparent;
+      border: none;
+      padding: 0;
+      overflow-x: auto;
+      /* background: var(--color-paper-2); */
+      /* border: 1px solid var(--color-rule); */
+      /* border-radius: 8px; */
+      /* padding: 1.5rem; */
+    }
+
+    svg { width: 100%; min-width: 900px; display: block; }
+
+    /* ── Info cards ───────────────────────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr 0.9fr;
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid var(--color-rule);
+      padding: 1.25rem;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.875rem;
+      padding-bottom: 0.875rem;
+      border-bottom: 1px solid rgba(45,49,66,0.08);
+    }
+
+    .card-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .card-dot.ink    { background: var(--color-ink); }
+    .card-dot.muted  { background: var(--color-muted); }
+    .card-dot.coral  { background: var(--color-accent); }
+    .card-dot.link   { background: var(--color-link); }
+    .card-dot.soft   { background: var(--color-soft); }
+
+    .card h3 {
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--color-ink);
+      letter-spacing: -0.005em;
+    }
+
+    .card ul {
+      list-style: none;
+      color: var(--color-muted);
+      font-size: 0.8125rem;
+      line-height: 1.55;
+    }
+
+    .card li {
+      margin-bottom: 0.3rem;
+      padding-left: 0.875rem;
+      position: relative;
+    }
+
+    .card li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: rgba(45,49,66,0.25);
+      font-size: 0.75rem;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────── */
+    .footer {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(45,49,66,0.10);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      color: var(--color-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="header">
+      <p class="header-eyebrow">Flowchart · 2026-09-28</p>
+      <h1>The gateway, one request at a time</h1>
+      <p class="subtitle">Everything a request passes through before a handler sees it.</p>
+    </div>
+
+    <div class="diagram-container">
+<svg viewBox="0 0 1120 960" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="marketplace-p1-gateway-auth-pipeline-full-title marketplace-p1-gateway-auth-pipeline-full-desc">
+  <title id="marketplace-p1-gateway-auth-pipeline-full-title">The gateway, one request at a time</title>
+  <desc id="marketplace-p1-gateway-auth-pipeline-full-desc">Per-request pipeline in the API gateway: spoofed identity headers are stripped first, then a compact middleware chain of request id, tracing, access log, panic recovery, CORS, token-bucket rate limiting and a one-megabyte body limit; the authentication branch verifies an RS256 bearer token against JWKS, rejects an invalid token with 401 even on public routes, and rejects a seller route without the seller role with 403 before anything is proxied upstream.</desc>
+  <defs>
+    <marker id="marketplace-p1-gateway-auth-pipeline-full-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+    <marker id="marketplace-p1-gateway-auth-pipeline-full-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+    <marker id="marketplace-p1-gateway-auth-pipeline-full-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+  </defs>
+  <rect width="1120" height="960" fill="#f5f5f5"/>
+
+  <!-- connectors first. r=8 elbows only; the two crossings are bridged with a hop. -->
+  <line x1="360" y1="108" x2="360" y2="160" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#marketplace-p1-gateway-auth-pipeline-full-arrow)"/>
+  <line x1="360" y1="248" x2="360" y2="268" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#marketplace-p1-gateway-auth-pipeline-full-arrow)"/>
+  <line x1="360" y1="364" x2="360" y2="420" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#marketplace-p1-gateway-auth-pipeline-full-arrow)"/>
+  <path d="M 490 316 H 632 Q 640 316 640 324 V 324" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#marketplace-p1-gateway-auth-pipeline-full-arrow)"/>
+  <path d="M 500 456 H 552 Q 560 456 560 448 V 332 Q 560 324 568 324 H 632 Q 640 324 640 316" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#marketplace-p1-gateway-auth-pipeline-full-arrow)"/>
+  <line x1="360" y1="492" x2="360" y2="560" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#marketplace-p1-gateway-auth-pipeline-full-arrow)"/>
+  <line x1="360" y1="620" x2="360" y2="644" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#marketplace-p1-gateway-auth-pipeline-full-arrow)"/>
+  <line x1="500" y1="692" x2="640" y2="692" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#marketplace-p1-gateway-auth-pipeline-full-arrow)"/>
+  <path d="M 220 692 H 138 Q 130 692 130 700 V 844 Q 130 852 138 852 H 212 Q 220 852 220 844" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#marketplace-p1-gateway-auth-pipeline-full-arrow)"/>
+
+  <!-- branch labels, 6-10px clear of their stroke -->
+  <rect x="368" y="380" width="24" height="12" rx="2" fill="#f5f5f5"/>
+  <text x="380" y="389" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">YES</text>
+
+  <rect x="514" y="298" width="102" height="12" rx="2" fill="#f5f5f5"/>
+  <text x="565" y="307" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">NO · NONE</text>
+
+  <rect x="542" y="366" width="68" height="12" rx="2" fill="#f5f5f5"/>
+  <text x="576" y="375" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">INVALID</text>
+
+  <rect x="368" y="520" width="36" height="12" rx="2" fill="#f5f5f5"/>
+  <text x="386" y="529" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">VALID</text>
+
+  <rect x="512" y="674" width="116" height="12" rx="2" fill="#f5f5f5"/>
+  <text x="570" y="683" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">YES · NO ROLE</text>
+
+  <rect x="150" y="800" width="22" height="12" rx="2" fill="#f5f5f5"/>
+  <text x="161" y="809" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">NO</text>
+
+
+  <!-- 1. strip spoofed headers (security treatment) -->
+  <rect x="220" y="48" width="280" height="60" rx="6" fill="#f5f5f5"/>
+  <rect x="220" y="48" width="280" height="60" rx="6" fill="rgba(235,108,54,0.05)" stroke="rgba(235,108,54,0.50)" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="360" y="72" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Strip incoming X-User-*</text>
+  <text x="360" y="90" fill="#eb6c36" font-size="9" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">X-User-Id · X-User-Roles</text>
+
+  <!-- 2. middleware chain -->
+  <rect x="220" y="160" width="280" height="88" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+  <text x="360" y="184" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Middleware chain</text>
+  <text x="360" y="204" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">RequestID · span · log · recover</text>
+  <text x="360" y="220" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">CORS · rate limit · 1 MB body</text>
+  <text x="360" y="238" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">outside it: /healthz /readyz</text>
+
+  <!-- 2b. rate-limit rejection (off the chain, exits before auth) -->
+  <line x1="500" y1="186" x2="694" y2="186" stroke="#4f5d75" stroke-width="1"
+        marker-end="url(#marketplace-p1-gateway-auth-pipeline-arrow)"/>
+  <rect x="700" y="146" width="340" height="80" rx="6" fill="#f5f5f5"/>
+  <rect x="700" y="146" width="340" height="80" rx="6" fill="rgba(79,93,117,0.10)" stroke="#4f5d75" stroke-width="1"/>
+  <text x="870" y="170" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Rate limit exceeded</text>
+  <text x="870" y="190" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">429 RATE_LIMITED · Retry-After</text>
+  <text x="870" y="208" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">auth 10/min · else 20/s burst 40</text>
+
+  <!-- 3. decision: bearer present? -->
+  <polygon points="360,268 490,316 360,364 230,316" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+  <text x="360" y="312" fill="#2d3142" font-size="10" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Authorization:</text>
+  <text x="360" y="325" fill="#2d3142" font-size="10" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Bearer present?</text>
+
+  <!-- 4. verify (focal) -->
+  <rect x="220" y="420" width="280" height="72" rx="6" fill="#f5f5f5"/>
+  <rect x="220" y="420" width="280" height="72" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.2"/>
+  <text x="360" y="444" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Verify RS256 via JWKS</text>
+  <text x="360" y="462" fill="#eb6c36" font-size="9" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">iss = identity</text>
+  <text x="360" y="480" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">exp / nbf · 30 s leeway</text>
+
+  <!-- 5. 401 terminal -->
+  <rect x="640" y="280" width="400" height="72" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+  <text x="840" y="304" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">401 UNAUTHENTICATED</text>
+  <text x="840" y="322" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">no token on a User / Seller route, or an invalid one</text>
+  <text x="840" y="340" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">invalid fails here even on a public route</text>
+
+  <!-- 6. set headers -->
+  <rect x="220" y="560" width="280" height="60" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+  <text x="360" y="584" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Set X-User-Id, X-User-Roles</text>
+  <text x="360" y="602" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">sub · roles</text>
+
+  <!-- 7. decision: seller role? -->
+  <polygon points="360,644 500,692 360,740 220,692" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+  <text x="360" y="688" fill="#2d3142" font-size="10" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">seller role required</text>
+  <text x="360" y="701" fill="#2d3142" font-size="10" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">and absent?</text>
+
+  <!-- 8. 403 terminal -->
+  <rect x="640" y="656" width="400" height="72" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+  <text x="840" y="680" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">403 FORBIDDEN</text>
+  <text x="840" y="698" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">authenticated, but the role is missing</text>
+  <text x="840" y="716" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">another owner’s product is 404, not 403</text>
+
+  <!-- 9. proxy -->
+  <rect x="220" y="820" width="280" height="64" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+  <text x="360" y="844" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Proxy to upstream</text>
+  <text x="360" y="860" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">or 503 after 10 s</text>
+  <text x="360" y="876" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">UPSTREAM_UNAVAILABLE</text>
+
+  <text x="1100" y="60" fill="#2d3142" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">a client that sets X-User-Id has it</text>
+  <text x="1100" y="80" fill="#2d3142" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">deleted before a handler ever runs.</text>
+  <path d="M 800 70 Q 640 76 508 78" fill="none" stroke="rgba(45,49,66,0.40)" stroke-width="1" stroke-dasharray="4,3"/>
+  <circle cx="508" cy="78" r="2" fill="#2d3142"/>
+
+  <text x="1100" y="420" fill="#eb6c36" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">an expired token is a 401 even on</text>
+  <text x="1100" y="440" fill="#eb6c36" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">a public route. failing loudly is</text>
+  <text x="1100" y="460" fill="#eb6c36" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">the point: nothing downstream</text>
+  <text x="1100" y="480" fill="#eb6c36" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">trusts a half-verified request.</text>
+  <path d="M 800 440 Q 620 420 508 402" fill="none" stroke="rgba(45,49,66,0.40)" stroke-width="1" stroke-dasharray="4,3"/>
+  <circle cx="508" cy="402" r="2" fill="#eb6c36"/>
+
+
+  <line x1="40" y1="904" x2="1080" y2="904" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+  <text x="40" y="920" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+  <polygon points="148,924 160,918 172,924 160,930" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+  <text x="184" y="928" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Decision</text>
+  <rect x="276" y="918" width="24" height="12" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+  <text x="308" y="928" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Step</text>
+  <rect x="372" y="918" width="24" height="12" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+  <text x="404" y="928" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">The auth branch</text>
+  <rect x="540" y="918" width="24" height="12" rx="2" fill="rgba(235,108,54,0.05)" stroke="rgba(235,108,54,0.50)" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="572" y="928" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Anti-spoofing</text>
+  <line x1="700" y1="924" x2="724" y2="924" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#marketplace-p1-gateway-auth-pipeline-full-arrow)"/>
+  <text x="732" y="928" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Branch</text>
+</svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot coral"></span>
+          <h3>Identity is the gateway's job</h3>
+        </div>
+        <ul>
+          <li>Incoming <code>X-User-*</code> is always deleted first</li>
+          <li>Only the gateway is reachable from outside</li>
+          <li>Services trust those headers because of that</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot ink"></span>
+          <h3>The middleware chain, in order</h3>
+        </div>
+        <ul>
+          <li>RequestID → OTel span → access log → recover</li>
+          <li>CORS from <code>CORS_ALLOWED_ORIGINS</code>, credentials on</li>
+          <li>Token bucket per IP: auth routes 10/min, else 20/s burst 40</li>
+          <li><code>/healthz</code> and <code>/readyz</code> sit outside it</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot muted"></span>
+          <h3>JWKS and the role check</h3>
+        </div>
+        <ul>
+          <li>Fetched at startup, cached, refreshed every 5 min</li>
+          <li>Unknown <code>kid</code> triggers at most one refresh per 30 s</li>
+          <li>Another owner's product is 404, not 403</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>MARKETPLACE P1 · 2026-09-28</span>
+      <span>NODES 9 · ARROWS 8 · CORAL 2</span>
+    </div>
+
+  </div>
+</body>
+</html>

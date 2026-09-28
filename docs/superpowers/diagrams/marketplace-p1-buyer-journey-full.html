@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marketplace P1 · Buyer Journey</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Tokens ─────────────────────────────────────────────────── */
+    :root {
+      --color-paper:       #f5f5f5;
+      --color-paper-2:     #ececec;
+      --color-ink:         #2d3142;
+      --color-muted:       #4f5d75;
+      --color-soft:        #7a8399;
+      --color-rule:        rgba(45,49,66,0.12);
+      --color-rule-solid:  rgba(79,93,117,0.25);
+      --color-accent:      #eb6c36;
+      --color-accent-tint: rgba(235,108,54,0.08);
+      --color-link:        #2e5aa8;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Noto Serif', 'Noto Serif KR', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      min-height: 100vh;
+      padding: 3rem 2rem;
+      color: var(--color-ink);
+    }
+
+    .container { max-width: 1420px; margin: 0 auto; }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    .header { margin-bottom: 2.5rem; }
+
+    .header-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      color: var(--color-ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-family: var(--font-sans);
+      font-size: 1rem;
+      line-height: 1.55;
+      color: var(--color-muted);
+      max-width: 52ch;
+    }
+
+    /* ── Diagram container ────────────────────────────────────────── */
+    /* Default: clean, borderless — diagram sits directly on the page paper.
+       For the framed/boxed variant, uncomment the background/border/padding below. */
+    .diagram-container {
+      background: transparent;
+      border: none;
+      padding: 0;
+      overflow-x: auto;
+      /* background: var(--color-paper-2); */
+      /* border: 1px solid var(--color-rule); */
+      /* border-radius: 8px; */
+      /* padding: 1.5rem; */
+    }
+
+    svg { width: 100%; min-width: 1240px; display: block; }
+
+    /* ── Info cards ───────────────────────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr 0.9fr;
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid var(--color-rule);
+      padding: 1.25rem;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.875rem;
+      padding-bottom: 0.875rem;
+      border-bottom: 1px solid rgba(45,49,66,0.08);
+    }
+
+    .card-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .card-dot.ink    { background: var(--color-ink); }
+    .card-dot.muted  { background: var(--color-muted); }
+    .card-dot.coral  { background: var(--color-accent); }
+    .card-dot.link   { background: var(--color-link); }
+    .card-dot.soft   { background: var(--color-soft); }
+
+    .card h3 {
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--color-ink);
+      letter-spacing: -0.005em;
+    }
+
+    .card ul {
+      list-style: none;
+      color: var(--color-muted);
+      font-size: 0.8125rem;
+      line-height: 1.55;
+    }
+
+    .card li {
+      margin-bottom: 0.3rem;
+      padding-left: 0.875rem;
+      position: relative;
+    }
+
+    .card li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: rgba(45,49,66,0.25);
+      font-size: 0.75rem;
+    }
+
+    .card code {
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: var(--color-ink);
+      background: rgba(45,49,66,0.05);
+      border-radius: 3px;
+      padding: 0 0.25rem;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────── */
+    .footer {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(45,49,66,0.10);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      color: var(--color-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <div class="header">
+      <p class="header-eyebrow">User journey · 2026-09-28</p>
+      <h1>Buyer journey, from sign-up to receipt</h1>
+      <p class="subtitle">Six stages, one trough: stock the buyer never sees again move underneath the cart, and a cancellation that returns it asynchronously.</p>
+    </div>
+
+    <!-- Main Diagram -->
+    <div class="diagram-container">
+      <svg viewBox="0 0 1424 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="marketplace-p1-buyer-journey-full-title marketplace-p1-buyer-journey-full-desc">
+        <title id="marketplace-p1-buyer-journey-full-title">Buyer journey, from sign-up to receipt</title>
+        <desc id="marketplace-p1-buyer-journey-full-desc">User journey map of a Vietnamese-speaking buyer across six stages — register, browse, product detail, cart, checkout, and tracking — with a sentiment curve that dips at checkout over stock that can change under the cart, and a second pain marker where a cancelled order returns its stock asynchronously.</desc>
+        <defs>
+
+          <!-- Arrow: muted (default — generic / internal connections) -->
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+          </marker>
+
+          <!-- Arrow: coral (accent — primary / highlighted flows) -->
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+          </marker>
+
+          <!-- Arrow: link-blue (#2e5aa8 — HTTP/API / external calls) -->
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/>
+          </marker>
+
+        </defs>
+
+        <!-- Background: paper -->
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- =================================================================
+             STAGE GRID — 6 columns of 208px on a 24px gutter, left margin 64.
+             Dot x = column centre. col_left = 64 + i*232, centre = +104.
+             ================================================================= -->
+
+        <!-- Stage headers -->
+        <text x="168"  y="40" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">STAGE 1</text>
+        <text x="168"  y="60" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Register or log in</text>
+
+        <text x="400"  y="40" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">STAGE 2</text>
+        <text x="400"  y="60" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Browse and search</text>
+
+        <text x="632"  y="40" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">STAGE 3</text>
+        <text x="632"  y="60" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Product detail</text>
+
+        <text x="864"  y="40" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">STAGE 4</text>
+        <text x="864"  y="60" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Cart</text>
+
+        <text x="1096" y="40" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">STAGE 5</text>
+        <text x="1096" y="60" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Checkout</text>
+
+        <text x="1328" y="40" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">STAGE 6</text>
+        <text x="1328" y="60" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Track and complete</text>
+
+        <!-- Sentiment band: HIGH / NEUTRAL / LOW reference hairlines -->
+        <line x1="64" y1="110" x2="1440" y2="110" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <line x1="64" y1="190" x2="1440" y2="190" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <line x1="64" y1="270" x2="1440" y2="270" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="56" y="114" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end" letter-spacing="0.10em">HIGH</text>
+        <text x="56" y="194" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end" letter-spacing="0.10em">NEUTRAL</text>
+        <text x="56" y="274" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end" letter-spacing="0.10em">LOW</text>
+
+        <!-- Sentiment curve — a data curve, not a connector (§6 rule 1 exempt).
+             Ordinal levels: HIGH 110 · MED-HIGH 150 · NEUTRAL 190 · LOW 270.
+             The trough is stage 5 (checkout): LOW, with a coral incoming segment. -->
+        <polyline points="168,110 400,150 632,110" fill="none" stroke="#4f5d75" stroke-width="1.5" stroke-linejoin="round"/>
+        <polyline points="632,110 864,150" fill="none" stroke="#4f5d75" stroke-width="1.5" stroke-linejoin="round"/>
+        <polyline points="864,150 1096,270" fill="none" stroke="#eb6c36" stroke-width="1.5" stroke-linejoin="round"/>
+        <polyline points="1096,270 1328,190" fill="none" stroke="#4f5d75" stroke-width="1.5" stroke-linejoin="round"/>
+
+        <circle cx="168"  cy="110" r="5" fill="#4f5d75"/>
+        <circle cx="400"  cy="150" r="5" fill="#4f5d75"/>
+        <circle cx="632"  cy="110" r="5" fill="#4f5d75"/>
+        <circle cx="864"  cy="150" r="5" fill="#4f5d75"/>
+        <circle cx="1096" cy="270" r="5" fill="#eb6c36"/>
+        <circle cx="1328" cy="190" r="5" fill="#4f5d75"/>
+
+        <!-- Row separators (full plot width) -->
+        <line x1="64" y1="300" x2="1440" y2="300" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <line x1="64" y1="380" x2="1440" y2="380" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <line x1="64" y1="440" x2="1440" y2="440" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+
+        <!-- Row labels -->
+        <text x="72" y="324" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end" letter-spacing="0.14em">ACTIONS</text>
+        <text x="72" y="404" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end" letter-spacing="0.14em">TOUCHPOINTS</text>
+        <text x="72" y="464" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end" letter-spacing="0.14em">RULES</text>
+
+        <!-- Actions -->
+        <text x="168"  y="324" fill="#2d3142" font-size="11" font-family="'Geist', sans-serif" text-anchor="middle">Create an account</text>
+        <text x="400"  y="324" fill="#2d3142" font-size="11" font-family="'Geist', sans-serif" text-anchor="middle">Scan categories, search</text>
+        <text x="632"  y="324" fill="#2d3142" font-size="11" font-family="'Geist', sans-serif" text-anchor="middle">Pick a variant, read stock</text>
+        <text x="864"  y="324" fill="#2d3142" font-size="11" font-family="'Geist', sans-serif" text-anchor="middle">Add from several shops</text>
+        <text x="1096" y="324" fill="#2d3142" font-size="11" font-family="'Geist', sans-serif" text-anchor="middle">Address, COD, place order</text>
+        <text x="1328" y="324" fill="#2d3142" font-size="11" font-family="'Geist', sans-serif" text-anchor="middle">Watch status, confirm received</text>
+
+        <!-- Pain marker 1 — the trough (checkout) -->
+        <rect x="1000" y="336" width="192" height="16" rx="2" fill="rgba(235,108,54,0.08)" stroke="rgba(235,108,54,0.50)" stroke-width="0.8" stroke-dasharray="3,3"/>
+        <text x="1096" y="348" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.02em">STOCK MOVED SINCE CART</text>
+
+        <rect x="1000" y="356" width="192" height="16" rx="2" fill="rgba(235,108,54,0.08)" stroke="rgba(235,108,54,0.50)" stroke-width="0.8" stroke-dasharray="3,3"/>
+        <text x="1096" y="368" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">409 OUT_OF_STOCK, LINES SHOWN</text>
+
+        <!-- Touchpoints -->
+        <text x="168"  y="404" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">auth form</text>
+        <text x="400"  y="404" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">grid · /search</text>
+        <text x="632"  y="404" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">gallery</text>
+        <text x="864"  y="404" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">cart page</text>
+        <text x="1096" y="404" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">checkout</text>
+        <text x="1328" y="404" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">order list</text>
+
+        <!-- Rules — the contract detail that makes the journey specific -->
+        <text x="168"  y="464" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">token in memory</text>
+        <text x="400"  y="464" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">unaccent match</text>
+        <text x="632"  y="464" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">sku + stock</text>
+        <text x="864"  y="464" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">own shop blocked</text>
+        <text x="1096" y="464" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">one order per shop</text>
+        <text x="1328" y="464" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">idempotency key</text>
+
+        <text x="1328" y="484" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">cancel returns stock</text>
+
+        <!-- =================================================================
+             EDITORIAL NOTE — the second pain marker, in prose, because the
+             journey has spent its two-marker budget on checkout.
+             ================================================================= -->
+        <text x="64" y="524" fill="#2d3142" font-size="14 font-style="italic" font-family="'Instrument Serif', serif">Cancelling shows the order cancelled before the stock is actually back — it returns through Kafka.</text>
+        <text x="64" y="544" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">THE E2E TEST POLLS UP TO 5 S FOR THE RESTOCK · UI COPY IS VIETNAMESE WHILE THE CODE AND DOCS ARE ENGLISH</text>
+
+        <!-- Legend — horizontal strip at the bottom -->
+        <line x1="40" y1="560" x2="1384" y2="560" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="40" y="576" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+
+        <line x1="200" y1="572" x2="216" y2="572" stroke="#4f5d75" stroke-width="1.5"/>
+        <circle cx="208" cy="572" r="3" fill="#4f5d75"/>
+        <text x="224" y="576" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Sentiment curve</text>
+
+        <line x1="420" y1="572" x2="436" y2="572" stroke="#eb6c36" stroke-width="1.5"/>
+        <circle cx="428" cy="572" r="3" fill="#eb6c36"/>
+        <text x="444" y="576" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Trough stage — checkout</text>
+
+        <rect x="700" y="568" width="16" height="8" rx="2" fill="rgba(235,108,54,0.08)" stroke="rgba(235,108,54,0.50)" stroke-width="0.8" stroke-dasharray="3,3"/>
+        <text x="724" y="576" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Pain marker</text>
+
+        <line x1="880" y1="572" x2="896" y2="572" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="904" y="576" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Reference level (high / neutral / low)</text>
+      </svg>
+    </div>
+
+    <!-- Info Cards -->
+    <div class="cards">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot coral"></span>
+          <h3>Why checkout is the trough</h3>
+        </div>
+        <ul>
+          <li>Stock lives in <code>catalog_db</code> and can change between the moment a line enters the cart and the moment checkout reserves it — another buyer is a perfectly ordinary event, not an error.</li>
+          <li>Checkout is all-or-nothing: if any single <code>ReserveStock</code> fails, every order of that checkout is released and marked <code>CANCELLED</code>, and the response is 409 <code>OUT_OF_STOCK</code> with <code>shortages: [{sku_id, requested, available}]</code>.</li>
+          <li>So the UI has to name the affected lines and let the buyer fix exactly those. A generic failure here reads as the platform being broken.</li>
+          <li>Everything else in the journey is recoverable; this is the one stage where the buyer can lose the whole basket at once.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot ink"></span>
+          <h3>The stage-by-stage contract</h3>
+        </div>
+        <ul>
+          <li><strong>Sign in.</strong> Vietnamese UI copy. The access token is kept in memory only; a reload is restored by <code>POST /api/auth/refresh</code> using the <code>HttpOnly</code> <code>refresh_token</code> cookie, so no token ever reaches localStorage.</li>
+          <li><strong>Search.</strong> <code>/search?q=&amp;category=&amp;min_price=&amp;max_price=&amp;sort=</code> with keyset cursor pagination and “load more”. <code>"ao thun"</code> finds <code>"Áo thun"</code> — the <code>unaccent</code> extension is wrapped in an <code>IMMUTABLE</code> function so the generated <code>search_vector</code> can index it.</li>
+          <li><strong>Cart.</strong> Lines grouped by shop; quantity editable; unavailable lines flagged in place; buying from your own shop is 409; the subtotal counts only available lines.</li>
+          <li><strong>Checkout.</strong> COD only, one order per shop, and an <code>Idempotency-Key</code> generated on mount and reused for every retry.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot muted"></span>
+          <h3>The two frictions, honestly</h3>
+        </div>
+        <ul>
+          <li><strong>Stock drift at checkout</strong> — marked on the map, and the reason the sentiment curve bottoms out here.</li>
+          <li><strong>Asynchronous restock.</strong> Cancelling writes <code>OrderCancelled</code> to the outbox; catalog releases the stock when it consumes the event. The user sees <code>CANCELLED</code> first and the stock comes back a moment later — the E2E test polls up to 5 s to see it.</li>
+          <li>Neither is a P1 defect. Both are the direct cost of never overselling and of decoupling the cancellation from the release.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <span>MARKETPLACE P1 · BUYER JOURNEY</span>
+      <span>STAGES 6 · ROWS 3 · PAIN MARKERS 2</span>
+    </div>
+
+  </div>
+</body>
+</html>

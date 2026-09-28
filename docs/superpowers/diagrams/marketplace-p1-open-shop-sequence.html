@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Open shop sequence — Marketplace P1</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;   /* white-smoke */
+      --color-ink:     #2d3142;   /* jet-black */
+      --color-muted:   #4f5d75;   /* blue-slate */
+      --color-accent:  #eb6c36;   /* atomic-tangerine */
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif', 'Noto Serif KR', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1200px; width: 100%; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+
+    svg { width: 100%; min-width: 900px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Sequence · Marketplace P1</p>
+    <h1>Open shop sequence</h1>
+
+    <svg viewBox="0 0 1000 844" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="marketplace-p1-open-shop-sequence-title marketplace-p1-open-shop-sequence-desc">
+      <title id="marketplace-p1-open-shop-sequence-title">Open shop sequence</title>
+      <desc id="marketplace-p1-open-shop-sequence-desc">A buyer opens a shop: the gateway strips any inbound identity headers and verifies the bearer token, catalog-svc validates the slug and inserts the shop inside a database transaction, then calls identity-svc over gRPC to grant the seller role. Only the commit makes the shop durable; if the remote call fails the transaction rolls back and the client receives 503, and a token refresh afterwards is what puts seller in the access token.</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+        <marker id="arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline points="0 0, 8 3, 0 6" fill="none" stroke="#4f5d75" stroke-width="1.2"/></marker>
+      </defs>
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <!-- open transaction zone (painted first, like a frame) -->
+      <rect x="456" y="248" width="464" height="176" rx="4" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+      <rect x="456" y="248" width="46" height="16" rx="2" fill="#f5f5f5" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+      <text x="479" y="260" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">TX OPEN</text>
+
+      <!-- opt fragment: the failure path -->
+      <rect x="456" y="476" width="464" height="144" rx="4" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+      <rect x="456" y="476" width="40" height="16" rx="2" fill="#f5f5f5" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+      <text x="476" y="488" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">OPT</text>
+      <text x="468" y="508" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">[GrantRole failed]</text>
+
+      <!-- lifelines -->
+      <line x1="100" y1="128" x2="100" y2="728" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="300" y1="128" x2="300" y2="728" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="500" y1="128" x2="500" y2="728" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="700" y1="128" x2="700" y2="728" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="900" y1="128" x2="900" y2="728" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+      <!-- messages -->
+      <line x1="100" y1="176" x2="300" y2="176" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="300" y1="224" x2="500" y2="224" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="500" y1="272" x2="900" y2="272" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="500" y1="320" x2="700" y2="320" stroke="#eb6c36" stroke-width="1.6" marker-end="url(#arrow-accent)"/>
+      <line x1="700" y1="352" x2="500" y2="352" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <line x1="500" y1="400" x2="900" y2="400" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="300" y1="448" x2="100" y2="448" stroke="#eb6c36" stroke-width="1.6" marker-end="url(#arrow-accent)"/>
+      <line x1="700" y1="536" x2="500" y2="536" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <line x1="500" y1="568" x2="900" y2="568" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="500" y1="600" x2="300" y2="600" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <line x1="100" y1="672" x2="300" y2="672" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="300" y1="704" x2="700" y2="704" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- activation bars -->
+      <rect x="96" y="176" width="8" height="536" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+      <rect x="296" y="224" width="8" height="488" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+      <rect x="496" y="224" width="8" height="384" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+      <rect x="696" y="312" width="8" height="48" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+      <rect x="696" y="528" width="8" height="16" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+      <rect x="896" y="264" width="8" height="344" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+      <!-- labels -->
+      <rect x="106" y="156" width="188" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="200" y="165" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">POST /api/shops {name,slug,desc}</text>
+      <rect x="318" y="204" width="164" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="400" y="213" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">verify RS256 · X-User-Id = sub</text>
+      <rect x="538" y="252" width="124" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="600" y="261" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">BEGIN · INSERT shops</text>
+      <rect x="512" y="300" width="176" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="600" y="309" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">gRPC GrantRole "seller" 3s</text>
+      <rect x="532" y="332" width="136" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="600" y="341" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">OK · role row written</text>
+      <rect x="514" y="380" width="152" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="590" y="389" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">COMMIT — only now durable</text>
+      <rect x="156" y="428" width="88" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="200" y="437" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">201 Created</text>
+      <rect x="512" y="516" width="176" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="600" y="525" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">UNAVAILABLE | DEADLINE_EXCEEDED</text>
+      <rect x="544" y="548" width="112" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="600" y="557" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">ROLLBACK (tx abort)</text>
+      <rect x="308" y="580" width="144" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="380" y="589" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">503 UPSTREAM_UNAVAILABLE</text>
+      <rect x="132" y="652" width="136" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="200" y="661" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">POST /api/auth/refresh</text>
+      <rect x="332" y="684" width="136" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="400" y="693" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">roles re-read → seller</text>
+      <!-- annotation callouts -->
+      <text x="716" y="152" fill="#4f5d75" font-size="14" font-family="'Instrument Serif', serif" font-style="italic">Reserved slugs: me, new,</text>
+      <text x="716" y="172" fill="#4f5d75" font-size="14" font-family="'Instrument Serif', serif" font-style="italic">admin, seller → 409 CONFLICT</text>
+      <text x="200" y="752" fill="#4f5d75" font-size="14" font-family="'Instrument Serif', serif" font-style="italic">The role grant and the shop insert are not atomic —</text>
+      <text x="200" y="774" fill="#4f5d75" font-size="14" font-family="'Instrument Serif', serif" font-style="italic">the rollback is what keeps them consistent; a granted role would need cleanup.</text>
+      <!-- actors -->
+      <rect x="20" y="56" width="160" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="20" y="56" width="160" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
+      <rect x="28" y="62" width="33" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+      <text x="44" y="71" fill="rgba(45,49,66,0.30)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">BUYER</text>
+      <text x="100" y="90" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Buyer / SPA</text>
+      <text x="100" y="106" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">web  3000:80</text>
+
+      <rect x="220" y="56" width="160" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="220" y="56" width="160" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="228" y="62" width="19" height="12" rx="2" fill="transparent" stroke="#2d3142" stroke-width="0.8"/>
+      <text x="238" y="71" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">GW</text>
+      <text x="300" y="90" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">gateway</text>
+      <text x="300" y="106" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">:8080</text>
+
+      <rect x="420" y="56" width="160" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="420" y="56" width="160" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="428" y="62" width="24" height="12" rx="2" fill="transparent" stroke="#2d3142" stroke-width="0.8"/>
+      <text x="440" y="71" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CAT</text>
+      <text x="500" y="90" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">catalog-svc</text>
+      <text x="500" y="106" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">http :8082</text>
+
+      <rect x="620" y="56" width="160" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="620" y="56" width="160" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="628" y="62" width="24" height="12" rx="2" fill="transparent" stroke="#2d3142" stroke-width="0.8"/>
+      <text x="640" y="71" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">IDN</text>
+      <text x="700" y="90" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">identity-svc</text>
+      <text x="700" y="106" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">grpc :9081</text>
+
+      <rect x="820" y="56" width="160" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="820" y="56" width="160" height="64" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <rect x="828" y="62" width="19" height="12" rx="2" fill="transparent" stroke="#4f5d75" stroke-width="0.8"/>
+      <text x="838" y="71" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DB</text>
+      <text x="900" y="90" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">catalog_db</text>
+      <text x="900" y="106" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">shops</text>
+
+      <!-- legend -->
+      <line x1="40" y1="792" x2="960" y2="792" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="808" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+      <line x1="148" y1="819" x2="178" y2="819" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <text x="186" y="827" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Call</text>
+      <line x1="316" y1="819" x2="346" y2="819" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <text x="354" y="827" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Return</text>
+      <line x1="484" y1="819" x2="514" y2="819" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+      <text x="522" y="827" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">gRPC / 201</text>
+      <rect x="652" y="813" width="16" height="12" rx="2" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+      <text x="676" y="827" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Open transaction</text>
+    </svg>
+  </div>
+</body>
+</html>

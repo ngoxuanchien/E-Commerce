@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marketplace P1 · Repo Layout</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Tokens ─────────────────────────────────────────────────── */
+    :root {
+      --color-paper:       #f5f5f5;
+      --color-paper-2:     #ececec;
+      --color-ink:         #2d3142;
+      --color-muted:       #4f5d75;
+      --color-soft:        #7a8399;
+      --color-rule:        rgba(45,49,66,0.12);
+      --color-rule-solid:  rgba(79,93,117,0.25);
+      --color-accent:      #eb6c36;
+      --color-accent-tint: rgba(235,108,54,0.08);
+      --color-link:        #2e5aa8;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Noto Serif', 'Noto Serif KR', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      min-height: 100vh;
+      padding: 3rem 2rem;
+      color: var(--color-ink);
+    }
+
+    .container { max-width: 1200px; margin: 0 auto; }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    .header { margin-bottom: 2.5rem; }
+
+    .header-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      color: var(--color-ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-family: var(--font-sans);
+      font-size: 1rem;
+      line-height: 1.55;
+      color: var(--color-muted);
+      max-width: 52ch;
+    }
+
+    /* ── Diagram container ────────────────────────────────────────── */
+    /* Default: clean, borderless — diagram sits directly on the page paper.
+       For the framed/boxed variant, uncomment the background/border/padding below. */
+    .diagram-container {
+      background: transparent;
+      border: none;
+      padding: 0;
+      overflow-x: auto;
+      /* background: var(--color-paper-2); */
+      /* border: 1px solid var(--color-rule); */
+      /* border-radius: 8px; */
+      /* padding: 1.5rem; */
+    }
+
+    svg { width: 100%; min-width: 900px; display: block; }
+
+    /* ── Info cards ───────────────────────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr 0.8fr;
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid var(--color-rule);
+      padding: 1.25rem;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.875rem;
+      padding-bottom: 0.875rem;
+      border-bottom: 1px solid rgba(45,49,66,0.08);
+    }
+
+    .card-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .card-dot.ink    { background: var(--color-ink); }
+    .card-dot.muted  { background: var(--color-muted); }
+    .card-dot.coral  { background: var(--color-accent); }
+    .card-dot.link   { background: var(--color-link); }
+    .card-dot.soft   { background: var(--color-soft); }
+
+    .card h3 {
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--color-ink);
+      letter-spacing: -0.005em;
+    }
+
+    .card ul {
+      list-style: none;
+      color: var(--color-muted);
+      font-size: 0.8125rem;
+      line-height: 1.55;
+    }
+
+    .card li {
+      margin-bottom: 0.3rem;
+      padding-left: 0.875rem;
+      position: relative;
+    }
+
+    .card li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: rgba(45,49,66,0.25);
+      font-size: 0.75rem;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────── */
+    .footer {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(45,49,66,0.10);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      color: var(--color-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <div class="header">
+      <p class="header-eyebrow">Nested · 2026-09-28</p>
+      <h1>Six modules, one repo, no shared go.mod</h1>
+      <p class="subtitle">The Go workspace is split into six modules so the five parallel workstreams each own one directory and never touch another’s dependency file.</p>
+    </div>
+
+    <!-- Main Diagram -->
+    <div class="diagram-container">
+      <svg viewBox="0 0 1000 760" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="marketplace-p1-repo-layout-full-title marketplace-p1-repo-layout-full-desc">
+        <title id="marketplace-p1-repo-layout-full-title">Six modules, one repo, no shared go.mod</title>
+        <desc id="marketplace-p1-repo-layout-full-desc">Nested diagram of the Marketplace P1 Go workspace: a root ring holding go.work and tooling, the shared pkg module with twelve libraries, generated code, proto and OpenAPI contracts, a services ring where gateway, identity, catalog and order each hold their own go.mod, and the deploy, web and e2e directories.</desc>
+        <defs>
+
+          <!-- Arrow: muted (default — generic / internal connections) -->
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+          </marker>
+
+          <!-- Arrow: coral (accent — primary / highlighted flows) -->
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+          </marker>
+
+          <!-- Arrow: link-blue (#2e5aa8 — HTTP/API / external calls) -->
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/>
+          </marker>
+
+        </defs>
+
+        <!-- Background: paper -->
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- =================================================================
+             CONTAINMENT RINGS — the relationship grammar of this diagram.
+             Level 1: repo root. Level 2: top-level directories.
+             Level 3: one ring per service module inside services/.
+             No connectors: containment is the whole story.
+             ================================================================= -->
+
+        <!-- Level 1 — repo root -->
+        <rect x="40" y="48" width="920" height="636" rx="8" fill="rgba(45,49,66,0.015)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <rect x="56" y="40" width="80" height="16" fill="#f5f5f5"/>
+        <text x="64" y="52" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">e-commerce/</text>
+
+        <text x="72" y="78" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">go.work  ·  Makefile  ·  .github/workflows/ci.yml  ·  .gitignore  ·  .editorconfig</text>
+        <text x="72" y="94" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">module path: github.com/ngoxuanchien/e-commerce/&lt;dir&gt;   ·   GO_MODULES = 6</text>
+
+        <!-- Level 2 — shared libraries -->
+        <rect x="72" y="112" width="376" height="124" rx="8" fill="rgba(45,49,66,0.025)" stroke="rgba(45,49,66,0.45)" stroke-width="1"/>
+        <rect x="88" y="104" width="56" height="16" fill="#f5f5f5"/>
+        <text x="96" y="116" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">pkg/</text>
+        <text x="88" y="140" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">module .../pkg</text>
+        <text x="88" y="164" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">config · logx · httpx · authctx</text>
+        <text x="88" y="182" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">pgxx · outbox · kafkax · event</text>
+        <text x="88" y="200" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">grpcx · otelx · testutil · server</text>
+        <text x="88" y="220" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">the one module every service compiles against</text>
+
+        <!-- Level 2 — generated code -->
+        <rect x="472" y="112" width="208" height="124" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.35)" stroke-width="1"/>
+        <rect x="488" y="104" width="48" height="16" fill="#f5f5f5"/>
+        <text x="496" y="116" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">gen/</text>
+        <text x="488" y="140" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">module .../gen</text>
+        <text x="488" y="164" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">generated from proto</text>
+        <text x="488" y="182" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">committed, not built</text>
+        <text x="488" y="200" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">re-gen: make gen</text>
+        <text x="488" y="220" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">CI: git diff --exit-code</text>
+
+        <!-- Level 2 — proto contracts -->
+        <rect x="704" y="112" width="224" height="124" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.35)" stroke-width="1"/>
+        <rect x="720" y="104" width="64" height="16" fill="#f5f5f5"/>
+        <text x="728" y="116" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">proto/</text>
+        <text x="720" y="140" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">contract source of truth</text>
+        <text x="720" y="164" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">buf.yaml · buf.gen.yaml</text>
+        <text x="720" y="182" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">catalog/v1 · identity/v1</text>
+        <text x="720" y="200" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">breaking: FILE · suffix off</text>
+        <text x="720" y="220" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">WS0 owns · everyone imports</text>
+
+        <!-- Level 2 — OpenAPI + event schemas -->
+        <rect x="72" y="260" width="856" height="64" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.35)" stroke-width="1"/>
+        <rect x="88" y="252" width="48" height="16" fill="#f5f5f5"/>
+        <text x="96" y="264" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">api/</text>
+        <text x="88" y="286" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">openapi/  common.yaml · identity.yaml · catalog.yaml · order.yaml  (3.1.0, paths split per service)</text>
+        <text x="88" y="306" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">events/   JSON Schemas for the Kafka envelope on order.events</text>
+
+        <!-- Level 2 — services: the focal ring -->
+        <rect x="72" y="348" width="856" height="200" rx="8" fill="rgba(235,108,54,0.06)" stroke="#eb6c36" stroke-width="1"/>
+        <rect x="88" y="340" width="80" height="16" fill="#f5f5f5"/>
+        <text x="96" y="352" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em" font-weight="600">services/</text>
+        <rect x="452" y="340" width="360" height="16" fill="#f5f5f5"/>
+        <text x="460" y="352" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.06em">ONE GO.MOD PER RING · INTERNAL/{DOMAIN,APP,ADAPTER/*}</text>
+        <text x="96" y="374" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">build context is the repo root · runtime image gcr.io/distroless/static-debian12:nonroot · ENTRYPOINT ["/server"]</text>
+
+        <!-- Level 3 — the four service modules -->
+        <rect x="88" y="392" width="188" height="140" rx="8" fill="#f5f5f5"/>
+        <rect x="88" y="392" width="188" height="140" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
+        <rect x="88" y="384" width="72" height="16" fill="#f5f5f5"/>
+        <text x="96" y="396" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">gateway</text>
+        <rect x="232" y="400" width="36" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+        <text x="250" y="409" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">WS4</text>
+        <text x="96" y="436" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">module .../gateway</text>
+        <text x="96" y="460" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">cmd/server/main.go</text>
+        <text x="96" y="478" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">internal/{domain,app,</text>
+        <text x="96" y="496" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">adapter/{http,oauth}}</text>
+        <text x="96" y="518" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">no DB · Dockerfile · go.mod</text>
+
+        <rect x="300" y="392" width="188" height="140" rx="8" fill="#f5f5f5"/>
+        <rect x="300" y="392" width="188" height="140" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
+        <rect x="300" y="384" width="72" height="16" fill="#f5f5f5"/>
+        <text x="308" y="396" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">identity</text>
+        <rect x="444" y="400" width="36" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+        <text x="462" y="409" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">WS1</text>
+        <text x="308" y="436" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">module .../identity</text>
+        <text x="308" y="460" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">cmd/server/main.go</text>
+        <text x="308" y="478" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">internal/{domain,app,</text>
+        <text x="308" y="496" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">adapter/{http,grpc,pg}}</text>
+        <text x="308" y="518" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">migrations · Dockerfile · go.mod</text>
+
+        <rect x="512" y="392" width="188" height="140" rx="8" fill="#f5f5f5"/>
+        <rect x="512" y="392" width="188" height="140" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
+        <rect x="512" y="384" width="64" height="16" fill="#f5f5f5"/>
+        <text x="520" y="396" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">catalog</text>
+        <rect x="656" y="400" width="36" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+        <text x="674" y="409" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">WS2</text>
+        <text x="520" y="436" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">module .../catalog</text>
+        <text x="520" y="460" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">cmd/server/main.go</text>
+        <text x="520" y="478" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">internal/{domain,app,</text>
+        <text x="520" y="496" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">adapter/{http,grpc,pg,</text>
+        <text x="520" y="514" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">minio,kafka}}</text>
+
+        <rect x="724" y="392" width="188" height="140" rx="8" fill="#f5f5f5"/>
+        <rect x="724" y="392" width="188" height="140" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
+        <rect x="724" y="384" width="56" height="16" fill="#f5f5f5"/>
+        <text x="732" y="396" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">order</text>
+        <rect x="868" y="400" width="36" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+        <text x="886" y="409" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">WS3</text>
+        <text x="732" y="436" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">module .../order</text>
+        <text x="732" y="460" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">cmd/server/main.go</text>
+        <text x="732" y="478" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">internal/{domain,app,</text>
+        <text x="732" y="496" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">adapter/{http,grpc,pg,</text>
+        <text x="732" y="514" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">redis,catalog,kafka}}</text>
+
+        <!-- Level 2 — deploy, web, e2e -->
+        <rect x="72" y="572" width="376" height="48" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.35)" stroke-width="1"/>
+        <rect x="88" y="564" width="76" height="16" fill="#f5f5f5"/>
+        <text x="96" y="576" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">deploy/</text>
+        <text x="88" y="604" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">WS0 · docker-compose.yml · postgres/init.sql · secrets/</text>
+
+        <rect x="472" y="572" width="208" height="48" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.35)" stroke-width="1"/>
+        <rect x="488" y="564" width="48" height="16" fill="#f5f5f5"/>
+        <text x="496" y="576" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">web/</text>
+        <text x="488" y="604" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">WS5 · React SPA · MSW from OpenAPI</text>
+
+        <rect x="704" y="572" width="224" height="48" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.35)" stroke-width="1"/>
+        <rect x="720" y="564" width="48" height="16" fill="#f5f5f5"/>
+        <text x="728" y="576" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">e2e/</text>
+        <text x="720" y="604" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace">WS6 · Playwright + API smoke + seed</text>
+
+        <!-- =================================================================
+             EDITORIAL CALLOUT — the finding the layout exists to express.
+             ================================================================= -->
+        <text x="960" y="28" fill="#eb6c36" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">one module per workstream — nobody edits another’s go.mod</text>
+
+        <!-- LEGEND — horizontal strip after all rings -->
+        <line x1="40" y1="700" x2="960" y2="700" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="40" y="716" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+
+        <rect x="40" y="731" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <text x="60" y="739" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Service modules — one go.mod each</text>
+
+        <rect x="300" y="731" width="14" height="10" rx="2" fill="rgba(45,49,66,0.025)" stroke="rgba(45,49,66,0.45)" stroke-width="1"/>
+        <text x="320" y="739" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Shared module (pkg, gen)</text>
+
+        <rect x="500" y="731" width="14" height="10" rx="2" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.35)" stroke-width="1"/>
+        <text x="520" y="739" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Contract / tooling directory</text>
+
+        <text x="740" y="739" fill="#7a8399" font-size="8.5" font-family="'Geist', sans-serif">containment only — no connectors</text>
+      </svg>
+    </div>
+
+    <!-- Info Cards -->
+    <div class="cards">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot coral"></span>
+          <h3>Why six modules and not one</h3>
+        </div>
+        <ul>
+          <li>WS0 fixes every interface first; WS1–WS5 then run in parallel on separate branches, each editing only the directory it owns.</li>
+          <li>No two workstreams ever open the same <code>go.mod</code>, so no workstream can bump a dependency another workstream depends on.</li>
+          <li>Contract changes to <code>api/</code>, <code>proto/</code> and <code>pkg/</code> go through a dedicated PR to <code>main</code>; <code>buf breaking</code> blocks the breaking ones, and in-flight workstreams rebase afterwards.</li>
+          <li>CI runs <code>go test -race -count=1 ./...</code> as a matrix over the six modules, so a failure names the module that broke rather than a monolith.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot ink"></span>
+          <h3>Inside the four service modules</h3>
+        </div>
+        <ul>
+          <li><code>cmd/server/main.go</code> — config, tracing, migrations, HTTP and gRPC servers, graceful shutdown.</li>
+          <li><code>internal/{domain,app,adapter/*}</code> — pure domain, use cases, then http / grpc / postgres / redis / catalog / storage / kafka adapters.</li>
+          <li><code>migrations/</code> runs on startup; <code>000001_init.up.sql</code> is a deliberate no-op baseline so the migrate path runs end to end.</li>
+          <li><code>sqlc.yaml</code> is byte-identical in all four and points at <code>internal/adapter/postgres/sqlcdb</code>.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot muted"></span>
+          <h3>State of the tree</h3>
+        </div>
+        <ul>
+          <li><code>go.work</code>, <code>pkg/</code>, <code>gen/</code>, <code>proto/</code> and <code>api/</code> exist today.</li>
+          <li>The four service skeletons are on disk; <code>deploy/</code> and <code>.github/</code> are not written yet.</li>
+          <li><code>gen/</code> is committed, so CI regenerates and fails on any diff.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <span>MARKETPLACE P1 · REPO LAYOUT</span>
+      <span>NODES 13 · ARROWS 0</span>
+    </div>
+
+  </div>
+</body>
+</html>
