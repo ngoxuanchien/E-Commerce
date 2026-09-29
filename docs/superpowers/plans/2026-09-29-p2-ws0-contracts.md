@@ -865,7 +865,7 @@ func Purge(ctx context.Context, db DB, before time.Time) (int64, error) {
   - `paymentv1.PaymentInternalServer/Client` with `CancelCheckoutPayments`.
   - `paymentv1.Outcome_OUTCOME_NOT_PAID` and `Outcome_OUTCOME_PAID`.
 
-- [ ] **Step 1: Write the failing test** `gen/contract_test.go`:
+- [x] **Step 1: Write the failing test** `gen/contract_test.go`:
 
 ```go
 package gen_test
@@ -904,9 +904,9 @@ func TestP2MessagesRoundTrip(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the test and confirm it fails.** Run: `cd gen && go test ./...`. Expected: FAIL because packages `gen/order/v1` and `gen/payment/v1` are not found.
+- [x] **Step 2: Run the test and confirm it fails.** Run: `cd gen && go test ./...`. Expected: FAIL because packages `gen/order/v1` and `gen/payment/v1` are not found.
 
-- [ ] **Step 3: Write the protos** in the P1 header style (`proto/catalog/v1/catalog.proto`). `proto/order/v1/order.proto`:
+- [x] **Step 3: Write the protos** in the P1 header style (`proto/catalog/v1/catalog.proto`). `proto/order/v1/order.proto`:
 
 ```proto
 syntax = "proto3";
@@ -990,7 +990,7 @@ enum Outcome {
 
 The `SERVICE_SUFFIX` exception in `proto/buf.yaml` already covers the `…Internal` names. Update its comment to list OrderInternal and PaymentInternal too.
 
-- [ ] **Step 4: Generate the code and run the checks.**
+- [x] **Step 4: Generate the code and run the checks.**
 
 Run: `make lint-proto && make gen-proto && (cd gen && go test ./... && go vet ./...) && bin/buf breaking proto --against ".git#ref=refs/heads/main,subdir=proto"`
 Expected:
@@ -999,7 +999,7 @@ Expected:
 - tests pass;
 - no breaking changes.
 
-- [ ] **Step 5: Commit.** `git add proto gen && git commit -m "feat(contracts): OrderInternal.GetCheckout and PaymentInternal.CancelCheckoutPayments gRPC contracts"`
+- [x] **Step 5: Commit.** `git add proto gen && git commit -m "feat(contracts): OrderInternal.GetCheckout and PaymentInternal.CancelCheckoutPayments gRPC contracts"`
 
 ---
 
