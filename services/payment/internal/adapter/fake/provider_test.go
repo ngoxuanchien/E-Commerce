@@ -195,15 +195,19 @@ func TestCancel(t *testing.T) {
 	t.Run("unsupported", func(t *testing.T) {
 		pay := h.seed(t, 10_000, h.clock().Add(time.Hour))
 		h.session(t, p, pay)
-		// Hooks normally arrive with Submit (which also records an outcome); set them alone to reach the branch.
-		_, err := h.pool.Exec(ctx, `UPDATE fake_sessions SET hooks='{"cancel":"unsupported"}' WHERE payment_id=$1`, pay.ID)
-		require.NoError(t, err)
+		require.NoError(t, p.ArmHooks(ctx, pay.ID, fake.Hooks{Cancel: "unsupported"}))
 		ok, err := p.Cancel(ctx, pay)
 		require.NoError(t, err)
 		assert.False(t, ok)
+		h.advance(2 * time.Hour) // past expires_at
 		o, err := p.Query(ctx, pay)
 		require.NoError(t, err)
-		assert.Equal(t, domain.ObservedPending, o.State, "session stays payable")
+		assert.Equal(t, domain.ObservedExpired, o.State, "expired by time")
+		require.NoError(t, p.Submit(ctx, pay.ID, "succeed", fake.Hooks{}), "page stays payable")
+		assert.Equal(t, "succeed", h.next(t).Outcome)
+		o, err = p.Query(ctx, pay)
+		require.NoError(t, err)
+		assert.Equal(t, domain.ObservedSucceeded, o.State)
 	})
 	t.Run("cancelled", func(t *testing.T) {
 		pay := h.seed(t, 10_000, h.clock().Add(time.Hour))
@@ -278,4 +282,34 @@ func TestSender(t *testing.T) {
 		assert.NotEqual(t, a.EventID, b.EventID)
 		h.none(t, 60*time.Millisecond)
 	})
+}
+
+func TestArmHooks(t *testing.T) {
+	h, p := newHarness(t)
+	pay := h.seed(t, 5_000, h.clock().Add(time.Hour))
+	h.session(t, p, pay)
+
+	require.Error(t, p.ArmHooks(ctx, pay.ID, fake.Hooks{Webhook: "bogus"}))
+	require.Error(t, p.ArmHooks(ctx, pay.ID, fake.Hooks{Refund: "bogus"}))
+	require.Error(t, p.ArmHooks(ctx, pay.ID, fake.Hooks{Cancel: "bogus"}))
+	require.ErrorIs(t, p.ArmHooks(ctx, id(), fake.Hooks{}), app.ErrNotFound)
+	require.ErrorIs(t, p.ArmHooks(ctx, "not-a-uuid", fake.Hooks{}), app.ErrNotFound)
+
+	// Merge: armed webhook=drop kept when the form is empty, form refund=fail added.
+	require.NoError(t, p.ArmHooks(ctx, pay.ID, fake.Hooks{Webhook: "drop", Cancel: "unsupported"}))
+	require.NoError(t, p.Submit(ctx, pay.ID, "succeed", fake.Hooks{Refund: "fail"}))
+	h.none(t, 60*time.Millisecond) // armed drop applied
+	r, err := p.Refund(ctx, app.RefundInput{RefundID: "x", Payment: pay, Amount: 1})
+	require.NoError(t, err)
+	assert.Equal(t, app.RefundFailed, r.State)
+
+	// Non-empty form value wins over the armed one.
+	pay2 := h.seed(t, 5_000, h.clock().Add(time.Hour))
+	h.session(t, p, pay2)
+	require.NoError(t, p.ArmHooks(ctx, pay2.ID, fake.Hooks{Webhook: "drop"}))
+	require.NoError(t, p.Submit(ctx, pay2.ID, "succeed", fake.Hooks{Webhook: "duplicate"}))
+	a, b := h.next(t), h.next(t)
+	assert.Equal(t, a, b)
+
+	require.ErrorIs(t, p.ArmHooks(ctx, pay2.ID, fake.Hooks{Cancel: "unsupported"}), fake.ErrSessionClosed)
 }

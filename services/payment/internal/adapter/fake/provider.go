@@ -70,11 +70,31 @@ func (p *Provider) Page(ctx context.Context, paymentID string) (PageData, error)
 	return PageData{PaymentID: paymentID, Amount: s.amount, ExpiresAt: s.expires}, nil
 }
 
+// ArmHooks stores test hooks on a session that has no outcome yet, so they apply to Cancel
+// and to a later Submit. It replaces previously armed hooks.
+func (p *Provider) ArmHooks(ctx context.Context, paymentID string, h Hooks) error {
+	if err := h.validate(); err != nil {
+		return err
+	}
+	return p.store.arm(ctx, paymentID, h)
+}
+
 // Submit records the buyer's outcome and hooks, then schedules the webhook delivery.
-func (p *Provider) Submit(ctx context.Context, paymentID, outcome string, h Hooks) error {
+// Non-empty form hooks win over armed ones; empty ones keep the armed value.
+// It deliberately does not check expires_at: a late success on an old page is a scenario
+// the FAKE must be able to reproduce, as with a provider that cannot cancel.
+func (p *Provider) Submit(ctx context.Context, paymentID, outcome string, form Hooks) error {
 	if outcome != outcomeSucceed && outcome != outcomeFail {
 		return fmt.Errorf("fake: unknown outcome %q", outcome)
 	}
+	if err := form.validate(); err != nil {
+		return err
+	}
+	s, err := p.store.get(ctx, paymentID)
+	if err != nil {
+		return err
+	}
+	h := s.hooks.merge(form)
 	if err := p.store.submit(ctx, paymentID, outcome, h); err != nil {
 		return err
 	}

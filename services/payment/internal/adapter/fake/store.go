@@ -112,3 +112,61 @@ func (s store) addRefunded(ctx context.Context, paymentID string, amount int64) 
 	_, err := s.pool.Exec(ctx, `UPDATE fake_sessions SET refunded = refunded + $2 WHERE payment_id=$1`, paymentID, amount)
 	return err
 }
+
+// arm stores hooks while the outcome is still NULL; ErrSessionClosed once an outcome exists.
+func (s store) arm(ctx context.Context, paymentID string, h Hooks) error {
+	raw, err := json.Marshal(h)
+	if err != nil {
+		return err
+	}
+	tag, err := s.pool.Exec(ctx, `UPDATE fake_sessions SET hooks=$2 WHERE payment_id=$1 AND outcome IS NULL`, paymentID, raw)
+	if isBadUUID(err) {
+		return app.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		if _, err := s.get(ctx, paymentID); err != nil {
+			return err
+		}
+		return ErrSessionClosed
+	}
+	return nil
+}
+
+func (h Hooks) validate() error {
+	if !oneOf(h.Webhook, "", "duplicate", "drop", "stale_after") {
+		return fmt.Errorf("fake: unknown webhook hook %q", h.Webhook)
+	}
+	if !oneOf(h.Refund, "", "fail") {
+		return fmt.Errorf("fake: unknown refund hook %q", h.Refund)
+	}
+	if !oneOf(h.Cancel, "", "unsupported") {
+		return fmt.Errorf("fake: unknown cancel hook %q", h.Cancel)
+	}
+	return nil
+}
+
+func oneOf(v string, allowed ...string) bool {
+	for _, a := range allowed {
+		if v == a {
+			return true
+		}
+	}
+	return false
+}
+
+// merge overlays form over h: a non-empty form value wins, an empty one keeps h.
+func (h Hooks) merge(form Hooks) Hooks {
+	if form.Webhook != "" {
+		h.Webhook = form.Webhook
+	}
+	if form.Refund != "" {
+		h.Refund = form.Refund
+	}
+	if form.Cancel != "" {
+		h.Cancel = form.Cancel
+	}
+	return h
+}
