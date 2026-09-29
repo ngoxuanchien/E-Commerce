@@ -21,3 +21,8 @@ export function Field({ id, label, error, hint, children }: {
     </div>
   );
 }
+
+/** Accessibility wiring for a control rendered inside <Field id={id}>. */
+export function controlProps(id: string, error?: string) {
+  return { id, 'aria-invalid': error ? true : undefined, 'aria-describedby': error ? `${id}-error` : undefined } as const;
+}
