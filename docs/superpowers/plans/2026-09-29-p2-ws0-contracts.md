@@ -2068,7 +2068,7 @@ bin/buf breaking proto --against ".git#ref=refs/heads/main,subdir=proto"
 
 Expected: all green, and the gen diff is empty.
 
-- [ ] **Step 3: Commit, push and open a draft PR to trigger CI.**
+- [x] **Step 3: Commit, push and open a draft PR to trigger CI.**
 
 ```bash
 git add docs && git commit -m "docs(specs): record the shared-file gaps WS0' filled"

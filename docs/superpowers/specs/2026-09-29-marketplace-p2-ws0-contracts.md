@@ -209,7 +209,7 @@ WS0' keeps editing rights on every file listed in §2 for the rest of P2. If a w
 - [x] On a fresh volume (`COMPOSE_PROJECT_NAME=p2check`), the same holds.
 - [x] `kafka-topics --list` shows `order.events`, `payment.events` and `payout.events`.
 - [x] `git check-ignore deploy/secrets/payment.env` succeeds, and `deploy/secrets/payment.env.example` is tracked.
-- [ ] `make lint && make test` are green, and CI is green with the new matrix entries.
+- [x] `make lint && make test` are green, and CI is green with the new matrix entries (PR #2, all 12 jobs).
 
 ## 12. Gaps filled by WS0' (2026-09-29)
 
