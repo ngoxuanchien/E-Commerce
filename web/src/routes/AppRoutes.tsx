@@ -16,6 +16,7 @@ import { OpenShopPage } from '@/features/shop/OpenShopPage';
 import { SellerShopPage } from '@/features/shop/SellerShopPage';
 import { ProductFormPage } from '@/features/seller-products/ProductFormPage';
 import { SellerProductsPage } from '@/features/seller-products/SellerProductsPage';
+import { SellerOrdersPage } from '@/features/seller-orders/SellerOrdersPage';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { RegisterPage } from '@/features/auth/RegisterPage';
 
@@ -43,7 +44,7 @@ export function AppRoutes() {
                 <Route path="products" element={<SellerProductsPage />} />
                 <Route path="products/new" element={<ProductFormPage />} />
                 <Route path="products/:id" element={<ProductFormPage />} />
-                {/* seller routes (Task 18) */}
+                <Route path="orders" element={<SellerOrdersPage />} />
               </Route>
             </Route>
           </Route>

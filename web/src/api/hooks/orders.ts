@@ -73,3 +73,32 @@ export function useCompleteMyOrder() {
     ...cache,
   });
 }
+
+export function useSellerOrders(status?: OrderStatus) {
+  return useInfiniteQuery({
+    queryKey: qk.sellerOrders(status),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => unwrap(api.GET('/api/seller/orders', { params: { query: { status, cursor: pageParam } } })),
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  });
+}
+
+export function useSellerOrderAction() {
+  const cache = useOrderCacheUpdate();
+  return useMutation({
+    mutationFn: ({ id, action, reason }: { id: string; action: 'confirm' | 'ship' | 'deliver' | 'cancel'; reason?: string }) => {
+      const path = { params: { path: { id } } };
+      switch (action) {
+        case 'confirm':
+          return unwrap(api.POST('/api/seller/orders/{id}/confirm', path));
+        case 'ship':
+          return unwrap(api.POST('/api/seller/orders/{id}/ship', path));
+        case 'deliver':
+          return unwrap(api.POST('/api/seller/orders/{id}/deliver', path));
+        case 'cancel':
+          return unwrap(api.POST('/api/seller/orders/{id}/cancel', { ...path, body: { reason: reason ?? '' } }));
+      }
+    },
+    ...cache,
+  });
+}
