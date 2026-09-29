@@ -1,0 +1,103 @@
+@import 'tailwindcss';
+
+:root {
+  --paper: #f3f5f7;
+  --ink: #16213a;
+  --tarp: #1f4fb8;
+  --chili: #c8231b;
+  --jade: #0f7a5f;
+  --turmeric: #8a5a00;
+  --line: #d8dde5;
+  --muted-ink: #566175;
+
+  /* shadcn variable names mapped onto the palette */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: #ffffff;
+  --card-foreground: var(--ink);
+  --popover: #ffffff;
+  --popover-foreground: var(--ink);
+  --primary: var(--tarp);
+  --primary-foreground: #ffffff;
+  --secondary: #e6ebf3;
+  --secondary-foreground: var(--ink);
+  --muted: #e9edf2;
+  --muted-foreground: var(--muted-ink);
+  --accent: #e6ebf3;
+  --accent-foreground: var(--ink);
+  --destructive: var(--chili);
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--tarp);
+  --radius: 0.5rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-tarp: var(--tarp);
+  --color-chili: var(--chili);
+  --color-jade: var(--jade);
+  --color-turmeric: var(--turmeric);
+  --color-ink: var(--ink);
+  --font-sans: 'Be Vietnam Pro', system-ui, sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', 'Be Vietnam Pro', sans-serif;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+}
+
+/* Market-tarp stripes: marks a block that belongs to one shop (a "stall"). */
+@utility awning {
+  height: 6px;
+  background: repeating-linear-gradient(90deg, var(--tarp) 0 12px, #ffffff 12px 24px);
+}
+
+@utility price {
+  font-family: var(--font-display);
+  font-stretch: 75%;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--chili);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
