@@ -11,18 +11,25 @@ import (
 	"syscall"
 	"time"
 
+	identityv1 "github.com/ngoxuanchien/e-commerce/gen/identity/v1"
 	"github.com/ngoxuanchien/e-commerce/pkg/config"
 	"github.com/ngoxuanchien/e-commerce/pkg/grpcx"
 	"github.com/ngoxuanchien/e-commerce/pkg/logx"
 	"github.com/ngoxuanchien/e-commerce/pkg/otelx"
 	"github.com/ngoxuanchien/e-commerce/pkg/pgxx"
 	"github.com/ngoxuanchien/e-commerce/pkg/server"
+	"github.com/ngoxuanchien/e-commerce/services/identity/internal/app"
+	"github.com/ngoxuanchien/e-commerce/services/identity/internal/token"
 	"github.com/ngoxuanchien/e-commerce/services/identity/migrations"
 )
 
-// Config is the service configuration; service-specific fields are added by its workstream.
+// Config is identity-svc's configuration (WS0 base + WS1 §4).
 type Config struct {
 	config.Base
+	JWTPrivateKeyPath string        `env:"JWT_PRIVATE_KEY_PATH,required,notEmpty"`
+	AccessTokenTTL    time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"15m"`
+	RefreshTokenTTL   time.Duration `env:"REFRESH_TOKEN_TTL" envDefault:"720h"`
+	CookieSecure      bool          `env:"COOKIE_SECURE" envDefault:"true"`
 }
 
 func main() {
@@ -52,6 +59,11 @@ func run() error {
 	}
 	defer func() { _ = shutdownOtel(context.Background()) }()
 
+	key, err := token.LoadPrivateKey(cfg.JWTPrivateKeyPath)
+	if err != nil {
+		return err
+	}
+
 	if err := pgxx.Migrate(cfg.DatabaseURL, migrations.FS); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
@@ -61,13 +73,19 @@ func run() error {
 	}
 	defer pool.Close()
 
+	comps, err := newComponents(pool, key, cfg, app.DefaultBcryptCost, logger)
+	if err != nil {
+		return err
+	}
+
 	checks := map[string]server.Check{"postgres": pool.Ping}
 	grpcSrv, _ := grpcx.NewServer()
+	identityv1.RegisterIdentityInternalServer(grpcSrv, comps.GRPC)
 
 	return server.Run(ctx, server.Config{
 		HTTP: &http.Server{
 			Addr:              cfg.HTTPAddr,
-			Handler:           otelx.HTTPHandler(newHandler(logger, checks, nil), cfg.ServiceName),
+			Handler:           otelx.HTTPHandler(newHandler(logger, checks, comps.API), cfg.ServiceName),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 		GRPC:            grpcSrv,
