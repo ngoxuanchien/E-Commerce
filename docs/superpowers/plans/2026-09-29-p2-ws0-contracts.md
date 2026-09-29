@@ -1017,7 +1017,7 @@ Expected:
   - payment: `createPayment`, `getPayment`, `vnpayIpn`, `vnpayReturn`, `stripeWebhook`, `stripeReturn`, `fakeCheckoutPage`, `fakeCheckoutSubmit`, `fakeReturn`, `fakeWebhook`;
   - ledger: `getSellerWallet`, `listSellerWalletEntries`, `createSellerPayout`, `listSellerPayouts`.
 
-- [ ] **Step 1: Write the failing test** in `pkg/testutil/openapi_test.go`:
+- [x] **Step 1: Write the failing test** in `pkg/testutil/openapi_test.go`:
 
 ```go
 func TestAllOpenAPISpecsLoad(t *testing.T) {
@@ -1041,12 +1041,12 @@ Adapt `Paths.Find` and `Extensions` access to the kin-openapi version in `pkg/go
 
 Run: `cd pkg && go test ./testutil/ -run TestAllOpenAPISpecsLoad`. Expected: FAIL (`payment.yaml`: no such file).
 
-- [ ] **Step 2: `common.yaml`.**
+- [x] **Step 2: `common.yaml`.**
   - Add `INSUFFICIENT_FUNDS` to `ErrorCode.enum`, placed after `OUT_OF_STOCK`.
   - Extend the `Error.details` description with the line `INSUFFICIENT_FUNDS: {"available": <Money>}.`
   - Extend the `Conflict` response description to `(CONFLICT, OUT_OF_STOCK, INVALID_STATE_TRANSITION, INSUFFICIENT_FUNDS)`.
 
-- [ ] **Step 3: `order.yaml`** (spec §3.1; new `Order` fields are **optional**):
+- [x] **Step 3: `order.yaml`** (spec §3.1; new `Order` fields are **optional**):
   - `CheckoutRequest.payment_method`: `enum: [COD, VNPAY, STRIPE]`. Its description says a method missing from `ONLINE_PAYMENT_METHODS` answers 400 VALIDATION_ERROR (`details.fields.payment_method`), and that online orders are created in `AWAITING_PAYMENT`.
   - `Order.payment_method`: same enum.
   - `OrderStatus.enum`: add `AWAITING_PAYMENT` (before `PENDING_CONFIRMATION`). The list filter `status` query parameter must accept it: check that it references `OrderStatus`, and add the value if it has its own enum.
@@ -1059,7 +1059,7 @@ Run: `cd pkg && go test ./testutil/ -run TestAllOpenAPISpecsLoad`. Expected: FAI
     - `delivered_at: {type: [string, 'null'], format: date-time}`.
   - `POST /api/orders/{id}/cancel` description: also valid in `AWAITING_PAYMENT`. The response is the requested order, and the other `AWAITING_PAYMENT` orders of the same checkout are cancelled too.
 
-- [ ] **Step 4: Create `payment.yaml`.** Match `order.yaml`'s header style exactly: `openapi` version string, `info`, `servers`, how it `$ref`s `common.yaml` responses and the bearer scheme. Use this content:
+- [x] **Step 4: Create `payment.yaml`.** Match `order.yaml`'s header style exactly: `openapi` version string, `info`, `servers`, how it `$ref`s `common.yaml` responses and the bearer scheme. Use this content:
 
 ```yaml
 openapi: 3.1.0
@@ -1422,7 +1422,7 @@ Two checks before committing:
 - **`VnpayParams`:** if redocly or kin-openapi reject the free-form object query parameter, replace it with explicit optional `string` query parameters `vnp_Amount, vnp_TxnRef, vnp_ResponseCode, vnp_TransactionStatus, vnp_TransactionNo, vnp_SecureHash`. Say in the description that other `vnp_*` parameters pass through.
 - **`FakeWebhookEvent`:** this is the FAKE provider's own wire format. Read WS1' spec §5 (`…-p2-ws1-payment.md`). Where WS1' already names these fields differently, WS1' wins, so match it here.
 
-- [ ] **Step 5: Create `ledger.yaml`** (spec §3.3). Use the same header style as payment.yaml. Every operation has `security: [bearerAuth: []]` and `x-required-role: seller`, like `catalog.yaml`'s seller routes.
+- [x] **Step 5: Create `ledger.yaml`** (spec §3.3). Use the same header style as payment.yaml. Every operation has `security: [bearerAuth: []]` and `x-required-role: seller`, like `catalog.yaml`'s seller routes.
 
 Operations:
 - **`GET /api/seller/wallet`** (`getSellerWallet`): 200 `Wallet`, plus 401 / 403 / 429 / 5XX.
@@ -1527,16 +1527,16 @@ Schemas (every property listed is required):
           type: [string, 'null']
 ```
 
-- [ ] **Step 6: Lint the specs and run the test.** Run: `make lint-openapi && (cd pkg && go test ./testutil/)`. Expected: redocly "valid" for all six files, and the test passes.
+- [x] **Step 6: Lint the specs and run the test.** Run: `make lint-openapi && (cd pkg && go test ./testutil/)`. Expected: redocly "valid" for all six files, and the test passes.
   - If redocly flags `common.yaml` components as unused, add them to `api/.redocly.lint-ignore.yaml`; don't delete them.
   - Fix every other warning at the source.
 
-- [ ] **Step 7: Confirm unchanged services still honour the edited contracts** (Review Focus 5):
+- [x] **Step 7: Confirm unchanged services still honour the edited contracts** (Review Focus 5):
 
 Run: `(cd services/order && go test -count=1 ./...) && (cd services/gateway && go test -count=1 ./...)`
 Expected: PASS. The new `Order` fields are optional, and the enum values are only additions.
 
-- [ ] **Step 8: The web fallout.**
+- [x] **Step 8: The web fallout.**
   - In `web/scripts/gen-api.mjs`, set `SPECS = ['common', 'identity', 'catalog', 'order', 'payment', 'ledger']`.
   - Run `cd web && npm ci && npm run gen:api && npm run lint`.
   - Expected `tsc` errors: `ORDER_STATUS_LABEL` and `ORDER_STATUS_TONE` lack `AWAITING_PAYMENT`, and `ERROR_MESSAGES` lacks `INSUFFICIENT_FUNDS`.
@@ -1548,7 +1548,7 @@ Expected: PASS. The new `Order` fields are optional, and the enum values are onl
 
 Run: `npm run lint && npm test`. Expected: PASS.
 
-- [ ] **Step 9: Commit.** `git add api pkg/testutil web && git commit -m "feat(contracts): payment and ledger REST APIs; order checkout methods, AWAITING_PAYMENT and optional payment fields; INSUFFICIENT_FUNDS"`
+- [x] **Step 9: Commit.** `git add api pkg/testutil web && git commit -m "feat(contracts): payment and ledger REST APIs; order checkout methods, AWAITING_PAYMENT and optional payment fields; INSUFFICIENT_FUNDS"`
 
 ---
 
