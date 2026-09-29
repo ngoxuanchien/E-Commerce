@@ -111,11 +111,9 @@ func redactURLError(err error) error {
 	if !errors.As(err, &ue) {
 		return err
 	}
-	redacted := ue.URL
+	redacted := "<unparsable url>"
 	if u, perr := url.Parse(ue.URL); perr == nil {
 		redacted = (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path}).String()
-	} else {
-		redacted = "<unparsable url>"
 	}
 	return fmt.Errorf("%s %s: %w", ue.Op, redacted, ue.Err)
 }
