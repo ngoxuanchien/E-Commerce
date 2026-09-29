@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS processed_events;
+DROP TABLE IF EXISTS stock_reservations;
+DROP TABLE IF EXISTS skus;
+DROP TABLE IF EXISTS product_images;
+DROP TABLE IF EXISTS products;
+DROP TABLE IF EXISTS categories;
+DROP TABLE IF EXISTS shops;
+DROP FUNCTION IF EXISTS vn_unaccent(text);
+DROP EXTENSION IF EXISTS unaccent;
