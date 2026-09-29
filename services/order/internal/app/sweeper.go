@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/domain"
@@ -61,13 +62,13 @@ func (s *Sweeper) Run(ctx context.Context) error {
 
 // RunOnce cancels every stale PENDING order batch by batch (system,
 // CHECKOUT_TIMEOUT, with events), then releases their stock outside the row
-// locks (best effort), then purges expired idempotency keys. It returns how
-// many orders it cancelled.
+// locks (best effort, concurrently), then purges expired idempotency keys. It
+// returns how many orders it cancelled.
 func (s *Sweeper) RunOnce(ctx context.Context) (int, error) {
-	total := 0
+	var cancelled []domain.Order
 	for {
 		now := s.cfg.Now()
-		var cancelled []domain.Order
+		var batch []domain.Order
 		err := s.store.InTx(ctx, func(tx Tx) error {
 			orders, err := tx.ClaimStalePending(ctx, now.Add(-s.cfg.PendingTimeout), s.cfg.BatchSize)
 			if err != nil {
@@ -78,25 +79,45 @@ func (s *Sweeper) RunOnce(ctx context.Context) (int, error) {
 					return err
 				}
 			}
-			cancelled = orders
+			batch = orders
 			return nil
 		})
 		if err != nil {
-			return total, err
+			s.releaseAll(ctx, cancelled)
+			return len(cancelled), err
 		}
-		for _, o := range cancelled {
+		cancelled = append(cancelled, batch...)
+		if len(batch) < s.cfg.BatchSize {
+			break
+		}
+	}
+	s.releaseAll(ctx, cancelled)
+	if _, err := s.store.DeleteIdempotencyKeysBefore(ctx, s.cfg.Now().Add(-s.cfg.IdempotencyTTL)); err != nil {
+		return len(cancelled), err
+	}
+	return len(cancelled), nil
+}
+
+// releaseConcurrency bounds the parallel ReleaseStock calls of one sweep.
+const releaseConcurrency = 10
+
+// releaseAll returns the stock of already-cancelled orders, best effort and
+// concurrently, so a slow catalog costs about one retry budget per sweep
+// rather than one per order. Failures are only logged: catalog also releases
+// the stock when it consumes OrderCancelled.
+func (s *Sweeper) releaseAll(ctx context.Context, orders []domain.Order) {
+	sem := make(chan struct{}, releaseConcurrency)
+	var wg sync.WaitGroup
+	for _, o := range orders {
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() { <-sem; wg.Done() }()
 			if err := s.catalog.ReleaseStock(ctx, o.ID); err != nil {
 				s.cfg.Logger.WarnContext(ctx, "release stock of timed-out order failed; catalog releases it on OrderCancelled",
 					"order_id", o.ID, "error", err)
 			}
-		}
-		total += len(cancelled)
-		if len(cancelled) < s.cfg.BatchSize {
-			break
-		}
+		}()
 	}
-	if _, err := s.store.DeleteIdempotencyKeysBefore(ctx, s.cfg.Now().Add(-s.cfg.IdempotencyTTL)); err != nil {
-		return total, err
-	}
-	return total, nil
+	wg.Wait()
 }

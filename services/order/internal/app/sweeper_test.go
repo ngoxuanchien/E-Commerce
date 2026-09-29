@@ -183,3 +183,33 @@ func TestSweeperRunBoundsPendingLifetime(t *testing.T) {
 	assert.GreaterOrEqual(t, lifetime, timeout)
 	assert.LessOrEqual(t, lifetime, timeout+interval+250*time.Millisecond, "250ms slack for scheduling and the transaction")
 }
+
+// TestSweeperSlowCatalogDoesNotDelayCancellation: while catalog is down each
+// release burns its full retry budget; cancelling every stale order must not
+// wait for those releases, and the releases must not run one by one.
+func TestSweeperSlowCatalogDoesNotDelayCancellation(t *testing.T) {
+	e := newEnv(t, envOpts{postgres: true})
+	sw := app.NewSweeper(e.store, e.catalog, app.SweeperConfig{
+		Interval: time.Minute, PendingTimeout: 2 * time.Minute, BatchSize: 2, Now: e.clock.Now,
+	})
+	var orders []domain.Order
+	for range 4 {
+		o, _ := crashedCheckout(t, e, e.clock.Now(), 5)
+		orders = append(orders, o)
+	}
+	e.clock.Advance(3 * time.Minute)
+	e.fake.SetDelay(catalogfake.ReleaseStock, time.Second) // > the 300ms per-attempt timeout
+
+	start := time.Now()
+	n, err := sw.RunOnce(ctx)
+	elapsed := time.Since(start)
+	require.NoError(t, err)
+	assert.Equal(t, 4, n)
+	for _, o := range orders {
+		got, err := e.store.GetOrder(ctx, o.ID)
+		require.NoError(t, err)
+		assert.Equal(t, domain.StatusCancelled, got.Status)
+	}
+	// One release costs ~0.9s (3 attempts × 300ms); four in sequence ≈ 3.6s.
+	assert.Less(t, elapsed, 2*time.Second, "releases must run concurrently")
+}
