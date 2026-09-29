@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useRef, useState } from 'react';
+import { type FormEvent, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
@@ -74,14 +74,20 @@ export function CheckoutPage() {
   }
   const total = groups.reduce((sum, g) => sum + g.subtotal + SHIPPING_FEE_FLAT, 0);
 
-  const onSubmit = form.handleSubmit((address) => {
-    if (submitting.current) return; // double-click guard (state updates are async)
-    submitting.current = true;
+  const placeOrder = (address: Address) => {
     checkout.mutate(
       { idempotencyKey, body: { sku_ids: groups.flatMap((g) => g.items.map((i) => i.sku_id)), shipping_address: address, payment_method: 'COD' } },
       { onSettled: () => { submitting.current = false; } },
     );
-  });
+  };
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submitting.current) return; // double-click guard: React state updates land after the second click
+    submitting.current = true; // taken before async validation so a second click cannot slip in
+    void form.handleSubmit(placeOrder, () => {
+      submitting.current = false;
+    })(event);
+  };
 
   return (
     <form noValidate onSubmit={onSubmit} className="grid gap-6 lg:grid-cols-[1fr_340px] lg:items-start">
