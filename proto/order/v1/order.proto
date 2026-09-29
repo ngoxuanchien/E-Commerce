@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package order.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/ngoxuanchien/e-commerce/gen/order/v1;orderv1";
+
+// OrderInternal is order-svc's service-to-service API (not exposed publicly).
+service OrderInternal {
+  // GetCheckout returns a checkout's orders for payment-svc. NOT_FOUND if unknown.
+  // The server doesn't authorize: payment-svc compares buyer_id with its caller.
+  rpc GetCheckout(GetCheckoutRequest) returns (GetCheckoutResponse);
+}
+
+message GetCheckoutRequest {
+  string checkout_id = 1;
+}
+
+message GetCheckoutResponse {
+  string checkout_id = 1;
+  string buyer_id = 2;
+  // COD | VNPAY | STRIPE
+  string payment_method = 3;
+  // Unset for COD.
+  google.protobuf.Timestamp payment_deadline = 4;
+  // Ordered by order_id.
+  repeated CheckoutOrder orders = 5;
+}
+
+message CheckoutOrder {
+  string order_id = 1;
+  string seller_user_id = 2;
+  // Order status, e.g. AWAITING_PAYMENT.
+  string status = 3;
+  // VND.
+  int64 subtotal = 4;
+  // VND, subtotal + shipping fee.
+  int64 total = 5;
+  // VND, snapshotted at checkout; 0 for COD.
+  int64 commission_amount = 6;
+}
