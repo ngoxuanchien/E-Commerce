@@ -58,3 +58,34 @@ func TestRetryRateLimitedGivesUpAfterMaxWait(t *testing.T) {
 	assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
 	assert.Less(t, time.Since(start), time.Second)
 }
+
+// Wrapping transports (e.g. pkg/testutil.ContractTransport) may replace the
+// body with a reader that has no GetBody; the retry must still resend it.
+func TestRetryRateLimitedResendsBodyWithoutGetBody(t *testing.T) {
+	var calls atomic.Int32
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(b))
+		if calls.Add(1) == 1 {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	for _, body := range []string{"", `{"a":1}`} {
+		calls.Store(0)
+		bodies = nil
+		req, err := http.NewRequest(http.MethodPost, srv.URL, nil)
+		require.NoError(t, err)
+		req.Body = io.NopCloser(strings.NewReader(body)) // no GetBody, like a wrapping transport
+		resp, err := client.RetryRateLimited{MaxWait: 5 * time.Second}.RoundTrip(req)
+		require.NoError(t, err, "body %q", body)
+		_ = resp.Body.Close()
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, []string{body, body}, bodies)
+	}
+}

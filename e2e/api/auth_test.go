@@ -19,9 +19,14 @@ func TestGatewayAuthBoundaries(t *testing.T) {
 	_, err := anon.Me(ctx(t))
 	assert.True(t, client.IsCode(err, "UNAUTHENTICATED"), "anonymous /api/users/me: %v", err)
 
-	// A spoofed identity header without a token is stripped: still 401.
-	err = anon.Do(ctx(t), http.MethodGet, "/api/cart", nil, nil, http.Header{"X-User-Id": {w.buyers[0].User.ID}})
-	assert.True(t, client.IsCode(err, "UNAUTHENTICATED"), "spoofed X-User-Id: %v", err)
+	// Spoofed identity headers next to a valid token are stripped: the
+	// gateway injects the token's identity, so the buyer stays the buyer.
+	spoof := http.Header{"X-User-Id": {w.sellerA.User.ID}, "X-User-Roles": {"buyer,seller"}}
+	var me client.User
+	require.NoError(t, w.buyers[0].Do(ctx(t), http.MethodGet, "/api/users/me", nil, &me, spoof))
+	assert.Equal(t, w.buyers[0].User.ID, me.ID, "X-User-Id from the client must not override the token")
+	err = w.buyers[0].Do(ctx(t), http.MethodGet, "/api/seller/products", nil, nil, spoof)
+	assert.True(t, client.IsCode(err, "FORBIDDEN"), "X-User-Roles from the client must not grant seller: %v", err)
 
 	// An invalid token fails loudly even on a public route (WS4 §3). The
 	// contract does not document this 401 yet (finding F2), so this call
@@ -35,7 +40,7 @@ func TestGatewayAuthBoundaries(t *testing.T) {
 	_, err = w.buyers[0].SellerProducts(ctx(t), "")
 	assert.True(t, client.IsCode(err, "FORBIDDEN"), "buyer on seller route: %v", err)
 
-	me, err := w.buyers[0].Me(ctx(t))
+	me, err = w.buyers[0].Me(ctx(t))
 	require.NoError(t, err)
 	assert.Equal(t, w.buyers[0].User.ID, me.ID)
 }

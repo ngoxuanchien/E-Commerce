@@ -155,7 +155,7 @@ retries never create a second set of orders.
 
 If order-svc dies between Tx A and Tx C, orders stay `PENDING`. Every
 minute, a sweeper cancels orders still `PENDING` after 2 minutes
-(`CHECKOUT_TIMEOUT`). It uses `FOR UPDATE SKIP LOCKED`, so replicas don't
+(`PENDING_TIMEOUT`, cancel reason `CHECKOUT_TIMEOUT`). It uses `FOR UPDATE SKIP LOCKED`, so replicas don't
 collide, writes the cancellation events and releases the reserved stock.
 The same job deletes idempotency keys older than 24 hours.
 

@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,18 @@ func (t RetryRateLimited) RoundTrip(req *http.Request) (*http.Response, error) {
 	base := t.Base
 	if base == nil {
 		base = http.DefaultTransport
+	}
+	if req.Body != nil && req.Body != http.NoBody && req.GetBody == nil {
+		// Wrapping transports may swap in a body without GetBody; buffer it
+		// once so every retry can resend the same bytes.
+		data, err := io.ReadAll(req.Body)
+		_ = req.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		req = req.Clone(req.Context())
+		req.Body = io.NopCloser(bytes.NewReader(data))
+		req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(data)), nil }
 	}
 	deadline := time.Now().Add(t.MaxWait)
 	for {

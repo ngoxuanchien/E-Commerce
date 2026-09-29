@@ -1,4 +1,4 @@
-import { type Page, expect } from '@playwright/test';
+import { type Locator, type Page, expect } from '@playwright/test';
 import { type Account, GATEWAY_URL, PASSWORD, withRateLimitRetry } from './api';
 
 export const OUT_OF_STOCK_MESSAGE = 'Một số sản phẩm không đủ hàng. Hãy giảm số lượng ở các dòng được đánh dấu rồi đặt lại.';
@@ -7,8 +7,8 @@ export const OUT_OF_STOCK_MESSAGE = 'Một số sản phẩm không đủ hàng.
  * Logs in without the form: the login call goes straight to the gateway, and
  * its HttpOnly refresh cookie (host "localhost", path /api/auth; cookies
  * ignore ports) is then sent by the web app on localhost:3000. The app
- * restores the session on load like a returning visitor. This keeps the web
- * origin's 10/min login bucket for the tests that exercise the form itself.
+ * restores the session on load like a returning visitor. The form itself
+ * is exercised only where it is the behavior under test.
  */
 export async function signIn(page: Page, account: Account): Promise<void> {
   const res = await withRateLimitRetry(() =>
@@ -19,13 +19,33 @@ export async function signIn(page: Page, account: Account): Promise<void> {
   await expect(page.getByRole('button', { name: account.fullName })).toBeVisible();
 }
 
+/**
+ * Clicks an auth form's submit button and, when the gateway answers 429,
+ * waits Retry-After and submits again, like a patient user. The login
+ * bucket is shared by everything the same client does, so a form login can
+ * always meet an empty bucket.
+ */
+async function submitAuthForm(page: Page, button: Locator, path: '/api/auth/login' | '/api/auth/register'): Promise<void> {
+  const deadline = Date.now() + 180_000;
+  for (;;) {
+    const [res] = await Promise.all([
+      page.waitForResponse((r) => r.url().endsWith(path) && r.request().method() === 'POST'),
+      button.click(),
+    ]);
+    if (res.status() !== 429) return;
+    const waitMs = Number(res.headers()['retry-after'] ?? '1') * 1000;
+    if (Date.now() + waitMs > deadline) throw new Error(`${path}: still rate limited`);
+    await page.waitForTimeout(waitMs);
+  }
+}
+
 export async function registerViaUi(page: Page, account: Account): Promise<void> {
   await page.goto('/register');
   await page.getByLabel('Họ và tên').fill(account.fullName);
   await page.getByLabel('Email').fill(account.email);
   await page.getByLabel('Mật khẩu', { exact: true }).fill(PASSWORD);
   await page.getByLabel('Nhập lại mật khẩu').fill(PASSWORD);
-  await page.getByRole('button', { name: 'Tạo tài khoản' }).click();
+  await submitAuthForm(page, page.getByRole('button', { name: 'Tạo tài khoản' }), '/api/auth/register');
   await expect(page.getByText('Tạo tài khoản thành công. Mời bạn đăng nhập.')).toBeVisible();
 }
 
@@ -33,7 +53,7 @@ export async function loginViaUi(page: Page, account: Account): Promise<void> {
   if (!page.url().includes('/login')) await page.goto('/login');
   await page.getByLabel('Email').fill(account.email);
   await page.getByLabel('Mật khẩu').fill(PASSWORD);
-  await page.getByRole('button', { name: 'Đăng nhập' }).click();
+  await submitAuthForm(page, page.getByRole('button', { name: 'Đăng nhập' }), '/api/auth/login');
   await expect(page.getByRole('button', { name: account.fullName })).toBeVisible();
 }
 
