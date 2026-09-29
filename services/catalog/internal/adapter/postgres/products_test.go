@@ -106,6 +106,37 @@ func TestUpdateProductRejectsForeignSkuAndRollsBack(t *testing.T) {
 	assert.Equal(t, other.Skus, getProduct(t, store, other.ID).Skus, "other product untouched")
 }
 
+func TestUpdateProductComparesExpectedStock(t *testing.T) {
+	store := postgres.New(testsupport.DB(t))
+	shop := openShop(t, store)
+	p := createProduct(t, store, shop.ID, activeChange("Áo thun cotton", 150_000, 120_000))
+	a, b := p.Skus[0], p.Skus[1]
+	edit := func(expectedA, expectedB int32) domain.ProductChange {
+		return domain.ProductChange{
+			Name:    ptr("Tên đã đổi"),
+			SetSkus: true,
+			Skus: []domain.SkuChange{
+				{ID: &a.ID, Name: a.Name, Price: 99_000, Stock: 50, ExpectedStock: &expectedA, Active: true},
+				{ID: &b.ID, Name: b.Name, Price: b.Price, Stock: 50, ExpectedStock: &expectedB, Active: true},
+			},
+		}
+	}
+
+	// A reservation took 2 units of b after the seller loaded the form.
+	err := store.UpdateProduct(context.Background(), shop.ID, p.ID, edit(a.Stock, b.Stock+2))
+	var sc *domain.StockChangedError
+	require.ErrorAs(t, err, &sc)
+	assert.Equal(t, []domain.StockChange{{SkuID: b.ID, Expected: b.Stock + 2, Actual: b.Stock}}, sc.Skus)
+	got := getProduct(t, store, p.ID)
+	assert.Equal(t, "Áo thun cotton", got.Name, "the whole PATCH rolled back")
+	assert.Equal(t, p.Skus, got.Skus)
+
+	require.NoError(t, store.UpdateProduct(context.Background(), shop.ID, p.ID, edit(a.Stock, b.Stock)))
+	got = getProduct(t, store, p.ID)
+	assert.Equal(t, int32(50), got.Skus[0].Stock)
+	assert.Equal(t, int64(99_000), got.Skus[0].Price)
+}
+
 func TestUpdateAndArchiveAreScopedToShop(t *testing.T) {
 	store := postgres.New(testsupport.DB(t))
 	ctx := context.Background()

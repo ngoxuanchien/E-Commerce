@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Product, ProductInput, ProductPatch } from '@/api/types';
+import type { Product, ProductInput, ProductPatch, Sku } from '@/api/types';
 
 const PRICE_RANGE = 'Giá từ 1.000 ₫ đến 1.000.000.000 ₫';
 
@@ -61,8 +61,8 @@ export function toProductInput(v: ProductFormValues): ProductInput {
 }
 
 /**
- * PATCH body with only the fields that differ from the loaded product. Resending unchanged SKUs would
- * overwrite on-hand stock (WS2: editing stock sets it directly) with the value from when the form opened.
+ * PATCH body with only the fields that differ from the loaded product, so an edit that does not touch SKUs
+ * never writes stock.
  */
 export function diffProductInput(base: ProductInput, next: ProductInput): ProductPatch {
   const patch: ProductPatch = {};
@@ -71,4 +71,21 @@ export function diffProductInput(base: ProductInput, next: ProductInput): Produc
     if (JSON.stringify(base[key]) !== JSON.stringify(next[key])) Object.assign(patch, { [key]: next[key] });
   }
   return patch;
+}
+
+/**
+ * Adds the loaded stock of every existing SKU as `expected_stock`. The server writes `stock` only while it
+ * still equals that value. If orders reserved stock after the form opened, it answers 409 CONFLICT instead of
+ * silently undoing them.
+ */
+export function withExpectedStock(patch: ProductPatch, loaded: Sku[]): ProductPatch {
+  if (!patch.skus) return patch;
+  const stock = new Map(loaded.map((s) => [s.id, s.stock]));
+  return {
+    ...patch,
+    skus: patch.skus.map((s) => {
+      const expected = s.id === undefined ? undefined : stock.get(s.id);
+      return expected === undefined ? s : { ...s, expected_stock: expected };
+    }),
+  };
 }

@@ -97,12 +97,27 @@ describe('catalog', () => {
 
   test('PATCH skus: with id → update, without → create, omitted → deactivated; images must belong to the shop', () => {
     const p = db.product(SEED.products.bowl);
-    const updated = db.updateProduct(SEED.users.binh, p.id, { skus: [{ id: SEED.skus.bowl11, name: 'Đường kính 11 cm', price: 50_000, stock: 5 }, { name: 'Đường kính 15 cm', price: 65_000, stock: 3 }] });
+    const updated = db.updateProduct(SEED.users.binh, p.id, { skus: [{ id: SEED.skus.bowl11, name: 'Đường kính 11 cm', price: 50_000, stock: 5, expected_stock: 50 }, { name: 'Đường kính 15 cm', price: 65_000, stock: 3 }] });
     expect(updated.skus.find((s) => s.id === SEED.skus.bowl11)).toMatchObject({ price: 50_000, active: true });
     expect(updated.skus.find((s) => s.id === SEED.skus.bowl13)).toMatchObject({ active: false });
     expect(updated.skus).toHaveLength(3);
     expect(caught(() => db.updateProduct(SEED.users.binh, p.id, { image_keys: [`shops/${SEED.shops.aoThun}/x.png`] }))).toMatchObject({ code: 'VALIDATION_ERROR' });
     expect(caught(() => db.updateProduct(SEED.users.chi, p.id, { name: 'Tên mới dài' }))).toMatchObject({ status: 404 });
+  });
+
+  test('PATCH skus compares expected_stock with the current stock', () => {
+    const edit = (expected_stock?: number) => ({ skus: [{ id: SEED.skus.bowl11, name: 'Đường kính 11 cm', price: 50_000, stock: 60, expected_stock }] });
+    expect(caught(() => db.updateProduct(SEED.users.binh, SEED.products.bowl, edit()))).toMatchObject({
+      code: 'VALIDATION_ERROR', details: { fields: { 'skus[0].expected_stock': expect.any(String) } },
+    });
+    expect(caught(() => db.updateProduct(SEED.users.binh, SEED.products.bowl, edit(48)))).toMatchObject({
+      status: 409, code: 'CONFLICT', details: { skus: [{ sku_id: SEED.skus.bowl11, expected_stock: 48, stock: 50 }] },
+    });
+    expect(db.product(SEED.products.bowl).skus[0]).toMatchObject({ price: 45_000, stock: 50 });
+    expect(caught(() => db.updateProduct(SEED.users.binh, SEED.products.bowl, { skus: [{ name: 'Mới', price: 1_000, stock: 1, expected_stock: 0 }] }))).toMatchObject({
+      details: { fields: { 'skus[0].expected_stock': expect.any(String) } },
+    });
+    expect(db.updateProduct(SEED.users.binh, SEED.products.bowl, edit(50)).skus[0]).toMatchObject({ stock: 60 });
   });
 });
 

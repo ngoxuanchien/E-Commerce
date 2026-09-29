@@ -33,9 +33,7 @@ export type Product = CatalogSchemas['Product'];
 export type ProductSummary = CatalogSchemas['ProductSummary'];
 export type ProductSummaryPage = CatalogSchemas['ProductSummaryPage'];
 export type ProductPage = CatalogSchemas['ProductPage'];
-/** openapi-typescript cannot express the `required` list of ProductInput's allOf, so restore it here. */
-export type ProductInput = CatalogSchemas['ProductInput'] &
-  Required<Pick<CatalogSchemas['ProductPatch'], 'category_id' | 'name' | 'status' | 'skus'>>;
+export type ProductInput = CatalogSchemas['ProductInput'];
 export type ProductPatch = CatalogSchemas['ProductPatch'];
 export type UploadRequest = CatalogSchemas['UploadRequest'];
 export type UploadResponse = CatalogSchemas['UploadResponse'];

@@ -227,6 +227,8 @@ export interface components {
         CartShop: {
             shop: components["schemas"]["ShopRef"];
             items: components["schemas"]["CartItem"][];
+            /** @description Flat fee the order for this shop is charged at checkout (Order.shipping_fee). */
+            shipping_fee: components["schemas"]["Money"];
         };
         Cart: {
             shops: components["schemas"]["CartShop"][];
@@ -334,6 +336,7 @@ export interface components {
                 /**
                  * @description VALIDATION_ERROR: {"fields": {"<json path>": "<message>"}}.
                  *     OUT_OF_STOCK: {"shortages": [{"sku_id", "requested", "available"}]}.
+                 *     CONFLICT on a seller product PATCH with a stale expected_stock: {"skus": [{"sku_id", "expected_stock", "stock"}]}.
                  */
                 details?: {
                     [key: string]: unknown;

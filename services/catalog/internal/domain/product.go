@@ -101,11 +101,12 @@ var imageKeyPattern = regexp.MustCompile(`^shops/([0-9a-f-]{36})/[0-9a-f-]{36}\.
 
 // SkuInput is one raw SKU of a seller request.
 type SkuInput struct {
-	ID     *string
-	Name   string
-	Price  *int64
-	Stock  *int32
-	Active *bool
+	ID            *string
+	Name          string
+	Price         *int64
+	Stock         *int32
+	ExpectedStock *int32 // the stock the seller last saw; required with ID
+	Active        *bool
 }
 
 // ProductInput is a raw seller request (create or partial update). Nil
@@ -119,13 +120,16 @@ type ProductInput struct {
 	Skus        []SkuInput
 }
 
-// SkuChange is a validated SKU: ID nil → create, set → update.
+// SkuChange is a validated SKU: ID nil → create, set → update. An update
+// applies only if the SKU's stock still equals ExpectedStock (nil = no check;
+// seller input always sets it, see Validate).
 type SkuChange struct {
-	ID     *uuid.UUID
-	Name   string
-	Price  int64
-	Stock  int32
-	Active bool
+	ID            *uuid.UUID
+	Name          string
+	Price         int64
+	Stock         int32
+	ExpectedStock *int32
+	Active        bool
 }
 
 // ProductChange is a validated ProductInput. Nil fields are left unchanged;
@@ -262,6 +266,19 @@ func validateSkus(f fieldErrors, in []SkuInput, create bool) []SkuChange {
 			f.add(p+".stock", fmt.Sprintf("must be at most %d", MaxSkuStock))
 		default:
 			c.Stock = *s.Stock
+		}
+		switch {
+		case s.ExpectedStock == nil && s.ID != nil && !create:
+			// Stock is always written, so a stale form would silently undo
+			// reservations made since it was loaded.
+			f.add(p+".expected_stock", "is required when id is set")
+		case s.ExpectedStock == nil:
+		case s.ID == nil || create:
+			f.add(p+".expected_stock", "must not be set for a new SKU")
+		case *s.ExpectedStock < 0:
+			f.add(p+".expected_stock", "must be at least 0")
+		default:
+			c.ExpectedStock = s.ExpectedStock
 		}
 		if s.Active != nil {
 			c.Active = *s.Active

@@ -21,6 +21,7 @@ var (
 	ErrCatalogRejected       = errors.New("catalog rejected the request")
 	ErrIdempotencyInProgress = errors.New("idempotency key is in progress")
 	ErrIdempotencyKeyReused  = errors.New("idempotency key reused with a different request")
+	ErrIdempotencyClaimLost  = errors.New("idempotency key was reclaimed by a newer request")
 	ErrConcurrentUpdate      = errors.New("order was modified concurrently")
 	ErrCheckoutExpired       = errors.New("checkout expired before it completed")
 	ErrInvalidCursor         = errors.New("invalid cursor")

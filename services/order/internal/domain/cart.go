@@ -33,10 +33,12 @@ type CartItem struct {
 	Available   bool
 }
 
-// CartShop groups the cart lines of one shop.
+// CartShop groups the cart lines of one shop. ShippingFee is the flat fee
+// the shop's order will be charged at checkout.
 type CartShop struct {
-	Shop  ShopRef
-	Items []CartItem
+	Shop        ShopRef
+	Items       []CartItem
+	ShippingFee int64
 }
 
 // Cart is the buyer's cart grouped by shop.
@@ -46,10 +48,10 @@ type Cart struct {
 }
 
 // BuildCart enriches cart lines (SKU ID → quantity) with catalog data and
-// groups them by shop. SKUs unknown to the catalog have no shop, so they are
+// groups them by shop, each carrying shippingFee. SKUs unknown to the catalog have no shop, so they are
 // left out and returned as missing (sorted). Shops are sorted by name then ID,
 // items by product name, variant name, then SKU ID.
-func BuildCart(lines map[string]int32, skus map[string]Sku) (Cart, []string) {
+func BuildCart(lines map[string]int32, skus map[string]Sku, shippingFee int64) (Cart, []string) {
 	var cart Cart
 	var missing []string
 	byShop := map[string]*CartShop{}
@@ -61,7 +63,7 @@ func BuildCart(lines map[string]int32, skus map[string]Sku) (Cart, []string) {
 		}
 		cs := byShop[s.ShopID]
 		if cs == nil {
-			cs = &CartShop{Shop: ShopRef{ID: s.ShopID, Name: s.ShopName, Slug: s.ShopSlug}}
+			cs = &CartShop{Shop: ShopRef{ID: s.ShopID, Name: s.ShopName, Slug: s.ShopSlug}, ShippingFee: shippingFee}
 			byShop[s.ShopID] = cs
 		}
 		cs.Items = append(cs.Items, CartItem{

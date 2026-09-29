@@ -8,9 +8,9 @@ const item = (sku: string, over: Partial<CartItem> = {}): CartItem => ({
 });
 const cart: Cart = {
   shops: [
-    { shop: { id: 'A', name: 'Shop A', slug: 'a' }, items: [item('a1', { quantity: 2 }), item('a2', { available: false, unit_price: 99_000 })] },
-    { shop: { id: 'B', name: 'Shop B', slug: 'b' }, items: [item('b1', { quantity: 9, stock: 3 })] },
-    { shop: { id: 'C', name: 'Shop C', slug: 'c' }, items: [item('c1', { available: false })] },
+    { shop: { id: 'A', name: 'Shop A', slug: 'a' }, items: [item('a1', { quantity: 2 }), item('a2', { available: false, unit_price: 99_000 })], shipping_fee: 30_000 },
+    { shop: { id: 'B', name: 'Shop B', slug: 'b' }, items: [item('b1', { quantity: 9, stock: 3 })], shipping_fee: 25_000 },
+    { shop: { id: 'C', name: 'Shop C', slug: 'c' }, items: [item('c1', { available: false })], shipping_fee: 30_000 },
   ],
   subtotal: 110_000,
 };
@@ -34,10 +34,10 @@ describe('cart summary', () => {
     expect(lineIssue(item('x'), [])).toBeNull();
   });
 
-  test('groupForCheckout keeps only requested available lines, per shop, with subtotals', () => {
+  test('groupForCheckout keeps only requested available lines, per shop, with subtotals and the shop\'s shipping fee', () => {
     expect(groupForCheckout(cart, ['a1', 'a2', 'b1', 'zz'])).toEqual([
-      { shop: cart.shops[0].shop, items: [cart.shops[0].items[0]], subtotal: 20_000 },
-      { shop: cart.shops[1].shop, items: [cart.shops[1].items[0]], subtotal: 90_000 },
+      { shop: cart.shops[0].shop, items: [cart.shops[0].items[0]], subtotal: 20_000, shipping_fee: 30_000 },
+      { shop: cart.shops[1].shop, items: [cart.shops[1].items[0]], subtotal: 90_000, shipping_fee: 25_000 },
     ]);
     expect(groupForCheckout(cart, ['c1'])).toEqual([]);
   });

@@ -452,7 +452,7 @@ components:
           description: False when the SKU/product is inactive or no longer exists.
     CartShop:
       type: object
-      required: [shop, items]
+      required: [shop, items, shipping_fee]
       properties:
         shop:
           $ref: 'common.yaml#/components/schemas/ShopRef'
@@ -460,6 +460,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CartItem'
+        shipping_fee:
+          allOf:
+            - $ref: 'common.yaml#/components/schemas/Money'
+          description: Flat fee the order for this shop is charged at checkout (Order.shipping_fee).
     Cart:
       type: object
       required: [shops, subtotal]

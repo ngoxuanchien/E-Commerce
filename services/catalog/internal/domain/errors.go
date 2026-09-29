@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/google/uuid"
 )
 
 var (
@@ -45,6 +47,27 @@ type ConflictError struct {
 }
 
 func (e *ConflictError) Error() string { return e.Message }
+
+// StockChange is a SKU whose stock moved since the seller read it.
+type StockChange struct {
+	SkuID    uuid.UUID
+	Expected int32
+	Actual   int32
+}
+
+// StockChangedError rejects a seller update whose expected_stock no longer
+// matches (orders reserved or released stock meanwhile); nothing was written.
+type StockChangedError struct {
+	Skus []StockChange
+}
+
+func (e *StockChangedError) Error() string {
+	parts := make([]string, len(e.Skus))
+	for i, s := range e.Skus {
+		parts[i] = fmt.Sprintf("%s expected %d, now %d", s.SkuID, s.Expected, s.Actual)
+	}
+	return "stock changed since it was read: " + strings.Join(parts, "; ")
+}
 
 const (
 	msgRequired = "is required"

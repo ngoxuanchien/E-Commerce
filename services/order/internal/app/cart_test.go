@@ -15,7 +15,7 @@ import (
 
 func TestCartService(t *testing.T) {
 	e := newEnv(t, envOpts{redis: true})
-	svc := app.NewCartService(e.carts, e.catalog, nil)
+	svc := app.NewCartService(e.carts, e.catalog, 25_000, nil)
 
 	t.Run("empty cart does not call catalog", func(t *testing.T) {
 		before := e.fake.Calls(catalogfake.GetSkus)
@@ -36,6 +36,7 @@ func TestCartService(t *testing.T) {
 		assert.Equal(t, int32(5), cart.Shops[0].Items[0].Quantity)
 		assert.Equal(t, int32(3), cart.Shops[0].Items[0].Stock, "more than stock is allowed and visible")
 		assert.Equal(t, int64(500_000), cart.Subtotal)
+		assert.Equal(t, int64(25_000), cart.Shops[0].ShippingFee, "the configured SHIPPING_FEE_FLAT")
 
 		_, err = svc.SetItem(ctx, buyer, b.GetSkuId(), 1)
 		require.NoError(t, err)

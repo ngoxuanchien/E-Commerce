@@ -13,12 +13,20 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var (
 		ve *domain.ValidationError
 		ce *domain.ConflictError
+		sc *domain.StockChangedError
 	)
 	switch {
 	case errors.As(err, &ve):
 		err = httpx.ValidationError(ve.Fields)
 	case errors.As(err, &ce):
 		err = httpx.NewError(httpx.CodeConflict, ce.Message)
+	case errors.As(err, &sc):
+		skus := make([]map[string]any, len(sc.Skus))
+		for i, s := range sc.Skus {
+			skus[i] = map[string]any{"sku_id": s.SkuID, "expected_stock": s.Expected, "stock": s.Actual}
+		}
+		err = httpx.NewError(httpx.CodeConflict, "stock changed since the product was loaded; reload and retry").
+			WithDetails(map[string]any{"skus": skus})
 	case errors.Is(err, domain.ErrNotFound):
 		err = httpx.NewError(httpx.CodeNotFound, "not found")
 	case errors.Is(err, domain.ErrNoShop):

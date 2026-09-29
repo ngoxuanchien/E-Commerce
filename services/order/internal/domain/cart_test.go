@@ -15,7 +15,7 @@ func TestBuildCartGroupsSortsAndSumsAvailableLines(t *testing.T) {
 		"a2": {ID: "a2", ProductName: "Beta", VariantName: "L", Price: 20_000, Stock: 0, Available: false, ShopID: "shop2", ShopName: "Alpha", ShopSlug: "alpha"},
 		"b1": {ID: "b1", ProductName: "Gamma", VariantName: "S", Price: 5_000, Stock: -3, Available: true, ShopID: "shop1", ShopName: "Bravo", ShopSlug: "bravo", ImageURL: "https://img/b1"},
 	}
-	cart, missing := domain.BuildCart(map[string]int32{"a1": 2, "a2": 1, "b1": 4, "zz": 1}, skus)
+	cart, missing := domain.BuildCart(map[string]int32{"a1": 2, "a2": 1, "b1": 4, "zz": 1}, skus, 30_000)
 
 	assert.Equal(t, []string{"zz"}, missing)
 	assert.Equal(t, int64(2*10_000+4*5_000), cart.Subtotal, "unavailable lines do not count")
@@ -27,6 +27,7 @@ func TestBuildCartGroupsSortsAndSumsAvailableLines(t *testing.T) {
 	assert.Equal(t, "a2", alpha.Items[0].SkuID, "Beta sorts before Zeta")
 	assert.False(t, alpha.Items[0].Available)
 	assert.Nil(t, alpha.Items[0].ImageURL)
+	assert.Equal(t, int64(30_000), alpha.ShippingFee, "every shop carries the flat fee its order will be charged")
 
 	bravo := cart.Shops[1]
 	assert.Equal(t, domain.CartItem{
@@ -36,7 +37,7 @@ func TestBuildCartGroupsSortsAndSumsAvailableLines(t *testing.T) {
 }
 
 func TestBuildCartEmpty(t *testing.T) {
-	cart, missing := domain.BuildCart(nil, nil)
+	cart, missing := domain.BuildCart(nil, nil, 30_000)
 	assert.Empty(t, cart.Shops)
 	assert.Zero(t, cart.Subtotal)
 	assert.Empty(t, missing)

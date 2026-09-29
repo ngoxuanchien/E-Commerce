@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { Product } from '@/api/types';
-import { diffProductInput, emptyProduct, emptySku, fromProduct, productSchema, toProductInput } from './product-schema';
+import { diffProductInput, emptyProduct, emptySku, fromProduct, productSchema, toProductInput, withExpectedStock } from './product-schema';
 
 const valid = () => ({ ...emptyProduct(), category_id: 'c1', name: 'Bình gốm men lam', skus: [{ ...emptySku(), name: 'Nhỏ', price: '45000', stock: '3' }] });
 const issues = (input: unknown) => {
@@ -70,4 +70,13 @@ test('diffProductInput keeps only the fields that changed', () => {
   expect(diffProductInput(base, base)).toEqual({});
   const skus = [{ ...base.skus[0], price: 50_000 }];
   expect(diffProductInput(base, { ...base, skus })).toEqual({ skus });
+});
+
+test('withExpectedStock sends the loaded stock of every existing SKU in a PATCH', () => {
+  const loaded = [{ id: 'x', name: 'Nhỏ', price: 45_000, stock: 3, active: true }];
+  const skus = [{ id: 'x', name: 'Nhỏ', price: 50_000, stock: 9 }, { name: 'Lớn', price: 60_000, stock: 1 }];
+  expect(withExpectedStock({ skus }, loaded)).toEqual({
+    skus: [{ id: 'x', name: 'Nhỏ', price: 50_000, stock: 9, expected_stock: 3 }, { name: 'Lớn', price: 60_000, stock: 1 }],
+  });
+  expect(withExpectedStock({ name: 'Tên mới đây' }, loaded)).toEqual({ name: 'Tên mới đây' });
 });

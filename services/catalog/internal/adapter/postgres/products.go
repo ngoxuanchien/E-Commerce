@@ -102,14 +102,16 @@ func applyChildren(ctx context.Context, q *sqlcdb.Queries, productID uuid.UUID, 
 }
 
 // applySkus updates SKUs with an id, creates those without, and deactivates
-// existing SKUs missing from in (they are never deleted). existing must
+// existing SKUs missing from in (they are never deleted). Updates whose
+// ExpectedStock differs from the locked stock fail as one StockChangedError. existing must
 // already be locked (LockProductSkus), so the order of the writes below
 // cannot cause lock-order deadlocks.
 func applySkus(ctx context.Context, q *sqlcdb.Queries, productID uuid.UUID, existing []sqlcdb.LockProductSkusRow, in []domain.SkuChange) error {
-	owned := make(map[uuid.UUID]bool, len(existing))
+	stock := make(map[uuid.UUID]int32, len(existing))
 	for _, s := range existing {
-		owned[s.ID] = true
+		stock[s.ID] = s.Stock
 	}
+	var changed []domain.StockChange
 	keep := make(map[uuid.UUID]bool, len(in))
 	for i, sku := range in {
 		if sku.ID == nil {
@@ -120,10 +122,14 @@ func applySkus(ctx context.Context, q *sqlcdb.Queries, productID uuid.UUID, exis
 			}
 			continue
 		}
-		if !owned[*sku.ID] {
+		current, owned := stock[*sku.ID]
+		if !owned {
 			return &domain.ValidationError{Fields: map[string]string{
 				fmt.Sprintf("skus[%d].id", i): "does not belong to this product",
 			}}
+		}
+		if sku.ExpectedStock != nil && *sku.ExpectedStock != current {
+			changed = append(changed, domain.StockChange{SkuID: *sku.ID, Expected: *sku.ExpectedStock, Actual: current})
 		}
 		keep[*sku.ID] = true
 		if err := q.UpdateSku(ctx, sqlcdb.UpdateSkuParams{
@@ -131,6 +137,9 @@ func applySkus(ctx context.Context, q *sqlcdb.Queries, productID uuid.UUID, exis
 		}); err != nil {
 			return err
 		}
+	}
+	if len(changed) > 0 {
+		return &domain.StockChangedError{Skus: changed} // rolls back the writes above
 	}
 	for _, s := range existing {
 		if !keep[s.ID] && s.Active {
