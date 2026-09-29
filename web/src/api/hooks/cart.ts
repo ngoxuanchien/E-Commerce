@@ -26,3 +26,20 @@ export function useAddToCart() {
     onSuccess: (cart) => queryClient.setQueryData(qk.cart, cart),
   });
 }
+
+export function useSetCartQuantity() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ skuId, quantity }: { skuId: string; quantity: number }) =>
+      unwrap(api.PUT('/api/cart/items/{sku_id}', { params: { path: { sku_id: skuId } }, body: { quantity } })),
+    onSuccess: (cart) => queryClient.setQueryData(qk.cart, cart),
+  });
+}
+
+export function useRemoveCartItem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (skuId: string) => unwrap(api.DELETE('/api/cart/items/{sku_id}', { params: { path: { sku_id: skuId } } })),
+    onSuccess: (cart) => queryClient.setQueryData(qk.cart, cart),
+  });
+}

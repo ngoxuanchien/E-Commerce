@@ -2,7 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
-import { MemoryRouter, useLocation } from 'react-router';
+import { type InitialEntry, MemoryRouter, useLocation } from 'react-router';
 import { Toaster } from 'sonner';
 import { createQueryClient } from '@/app/query-client';
 import { AuthProvider } from '@/features/auth/AuthProvider';
@@ -27,7 +27,7 @@ export function signIn(email: string): void {
 
 export const currentPath = () => screen.getByTestId('location').textContent;
 
-export function renderApp(path: string, options: { as?: string } = {}) {
+export function renderApp(path: InitialEntry, options: { as?: string } = {}) {
   if (options.as) signIn(options.as);
   const queryClient = createQueryClient({ retry: false });
   const user = userEvent.setup();
