@@ -60,6 +60,9 @@ func TestCheckoutAcrossTwoShopsAndLifecycle(t *testing.T) {
 	cart, err := buyer.SetCartItem(ctx(t), pb.Skus[0].ID, 1)
 	require.NoError(t, err)
 	require.Len(t, cart.Shops, 2)
+	for _, s := range cart.Shops {
+		assert.Equal(t, shippingFee, s.ShippingFee, "the cart previews the fee each order will carry")
+	}
 
 	// Checkout: one COD order per shop, sharing the checkout id.
 	res, err := buyer.Checkout(ctx(t), newKey(), client.CheckoutRequest{ShippingAddress: client.DemoAddress("Người mua 0"), PaymentMethod: "COD"}, nil)

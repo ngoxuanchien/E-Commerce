@@ -9,6 +9,7 @@ import { paginate } from './paginate';
 import { buildSeed } from './seed';
 
 export const STORAGE_KEY = 'marketplace-mock-db:v1';
+/** Stand-in for order-svc's SHIPPING_FEE_FLAT: reported per cart shop and charged per order. */
 export const SHIPPING_FEE_FLAT = 30_000;
 export const MOCK_ASSET_BASE = 'http://localhost:9000/product-images';
 const RESERVED_SLUGS = ['me', 'new', 'admin', 'seller'];
@@ -424,7 +425,7 @@ export class MockDb {
         image_url: this.firstImage(ctx.product), unit_price: ctx.sku.price, quantity, stock: ctx.sku.stock, available,
       };
       if (available) subtotal += item.unit_price * quantity;
-      const group = groups.get(ctx.shop.id) ?? { shop: this.shopRef(ctx.shop), items: [] };
+      const group = groups.get(ctx.shop.id) ?? { shop: this.shopRef(ctx.shop), items: [], shipping_fee: SHIPPING_FEE_FLAT };
       group.items.push(item);
       groups.set(ctx.shop.id, group);
     }

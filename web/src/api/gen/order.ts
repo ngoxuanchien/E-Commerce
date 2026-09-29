@@ -227,6 +227,8 @@ export interface components {
         CartShop: {
             shop: components["schemas"]["ShopRef"];
             items: components["schemas"]["CartItem"][];
+            /** @description Flat fee the order for this shop is charged at checkout (Order.shipping_fee). */
+            shipping_fee: components["schemas"]["Money"];
         };
         Cart: {
             shops: components["schemas"]["CartShop"][];

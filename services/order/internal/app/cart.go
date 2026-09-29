@@ -11,17 +11,20 @@ import (
 
 // CartService manages the buyer's cart (WS3 §3).
 type CartService struct {
-	carts   CartStore
-	catalog Catalog
-	logger  *slog.Logger
+	carts       CartStore
+	catalog     Catalog
+	shippingFee int64
+	logger      *slog.Logger
 }
 
-// NewCartService uses logger for best-effort failures (nil = slog.Default()).
-func NewCartService(carts CartStore, catalog Catalog, logger *slog.Logger) *CartService {
+// NewCartService shows shippingFee (SHIPPING_FEE_FLAT, the fee checkout
+// charges per order) on every cart shop and uses logger for best-effort
+// failures (nil = slog.Default()).
+func NewCartService(carts CartStore, catalog Catalog, shippingFee int64, logger *slog.Logger) *CartService {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &CartService{carts: carts, catalog: catalog, logger: logger}
+	return &CartService{carts: carts, catalog: catalog, shippingFee: shippingFee, logger: logger}
 }
 
 // Get returns the cart enriched with current catalog data. Lines whose SKU
@@ -38,7 +41,7 @@ func (s *CartService) Get(ctx context.Context, userID string) (domain.Cart, erro
 	if err != nil {
 		return domain.Cart{}, err
 	}
-	cart, missing := domain.BuildCart(lines, skus)
+	cart, missing := domain.BuildCart(lines, skus, s.shippingFee)
 	if len(missing) > 0 {
 		if err := s.carts.Remove(ctx, userID, missing...); err != nil {
 			s.logger.WarnContext(ctx, "prune unknown cart skus failed", "user_id", userID, "error", err)

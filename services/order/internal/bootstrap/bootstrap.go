@@ -68,7 +68,7 @@ func New(cfg Config, d Deps) *App {
 	cat := catalog.New(d.CatalogConn, cfg.Catalog)
 	return &App{
 		API: httpadapter.NewRouter(httpadapter.Services{
-			Cart: app.NewCartService(carts, cat, d.Logger),
+			Cart: app.NewCartService(carts, cat, cfg.ShippingFeeFlat, d.Logger),
 			Checkout: app.NewCheckoutService(store, carts, cat, app.CheckoutConfig{
 				ShippingFee: cfg.ShippingFeeFlat, Now: d.Now, Logger: d.Logger,
 			}),

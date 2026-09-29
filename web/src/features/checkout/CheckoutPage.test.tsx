@@ -49,6 +49,21 @@ test('previews one order per shop with the flat shipping fee and places them', a
   expect(getDb().state.orders.length).toBe(before + 2);
 });
 
+test('previews the shipping fee the cart reports for each shop', async () => {
+  getDb().state.carts[SEED.users.an] = { [SEED.skus.bowl11]: 2, [SEED.skus.teeM]: 1 };
+  server.use(
+    http.get('*/api/cart', () => {
+      const cart = getDb().cart(SEED.users.an);
+      return HttpResponse.json({ ...cart, shops: cart.shops.map((s) => ({ ...s, shipping_fee: 45_000 })) });
+    }),
+  );
+  renderApp(twoShopUrl, { as: 'an@example.com' });
+
+  const bowlShop = await screen.findByRole('region', { name: 'Đơn hàng từ Gốm Bát Tràng Cô Bình' });
+  expect(within(bowlShop).getByText('45.000 ₫')).toBeInTheDocument();
+  expect(screen.getByText('329.000 ₫')).toBeInTheDocument(); // 90.000 + 149.000 + 2 × 45.000
+});
+
 test('client validation blocks an invalid phone number', async () => {
   getDb().state.carts[SEED.users.an] = { [SEED.skus.bowl11]: 1 };
   const keys = recordCheckoutKeys();
