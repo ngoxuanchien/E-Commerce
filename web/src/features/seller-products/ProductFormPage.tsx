@@ -2,11 +2,11 @@ import { useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { useCategories, useProduct } from '@/api/hooks/catalog';
 import { useCreateSellerProduct, useUpdateSellerProduct } from '@/api/hooks/seller';
-import { ERROR_MESSAGES, applyFieldErrors, errorMessage, isRetryable } from '@/api/errors';
+import { ApiError, ERROR_MESSAGES, applyFieldErrors, errorMessage, isRetryable } from '@/api/errors';
 import type { ProductInput } from '@/api/types';
 import { ErrorState, PageSpinner } from '@/components/states';
 import { type ProductFormApi, ProductForm } from './ProductForm';
-import { diffProductInput, emptyProduct, fromProduct, productSchema, toProductInput } from './product-schema';
+import { diffProductInput, emptyProduct, fromProduct, productSchema, toProductInput, withExpectedStock } from './product-schema';
 
 export function ProductFormPage() {
   const { id } = useParams();
@@ -25,13 +25,19 @@ export function ProductFormPage() {
     try {
       if (id && product.data) {
         const patch = diffProductInput(toProductInput(productSchema.parse(fromProduct(product.data))), input);
-        if (Object.keys(patch).length > 0) await update.mutateAsync({ id, input: patch });
+        if (Object.keys(patch).length > 0) await update.mutateAsync({ id, input: withExpectedStock(patch, product.data.skus) });
       } else {
         await create.mutateAsync(input);
       }
       toast.success(isNew ? 'Đã tạo sản phẩm' : 'Đã lưu sản phẩm');
       navigate('/seller/products');
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'CONFLICT' && !isNew) {
+        // Stock moved since the form loaded (orders reserved or released it). Reload the form with it.
+        toast.error('Tồn kho vừa thay đổi do có đơn hàng mới. Biểu mẫu đã tải lại số liệu mới nhất, vui lòng kiểm tra rồi lưu lại.');
+        void product.refetch();
+        return;
+      }
       if (applyFieldErrors(err, form.setError, { rename: { image_keys: 'images' } })) {
         form.setError('root', { message: ERROR_MESSAGES.VALIDATION_ERROR });
         return;
@@ -44,7 +50,7 @@ export function ProductFormPage() {
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">{isNew ? 'Thêm sản phẩm' : 'Sửa sản phẩm'}</h1>
       <ProductForm
-        key={product.data?.updated_at ?? 'new'}
+        key={product.data ? `${product.data.updated_at}:${product.data.skus.map((s) => s.stock).join(',')}` : 'new'}
         initial={product.data ? fromProduct(product.data) : emptyProduct()}
         categories={categories.data}
         submitLabel={isNew ? 'Tạo sản phẩm' : 'Lưu thay đổi'}

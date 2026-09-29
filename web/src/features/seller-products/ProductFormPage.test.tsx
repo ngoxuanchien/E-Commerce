@@ -105,3 +105,32 @@ test('saving an unrelated change does not overwrite stock that changed while the
   expect(saved.name).toBe('Bát ăn cơm men lam Bát Tràng loại 1');
   expect(saved.skus[0].stock).toBe(7);
 });
+
+test('an edit sends the stock it loaded, and a stale one reloads the form instead of overwriting', async () => {
+  const bodies: unknown[] = [];
+  server.use(
+    http.patch('*/api/seller/products/:id', async ({ request }) => {
+      bodies.push(await request.clone().json());
+      return undefined; // fall through to the mock API
+    }),
+  );
+  const { user } = renderApp(`/seller/products/${SEED.products.bowl}`, { as: 'binh@example.com' });
+  const price = await screen.findByLabelText('Giá (₫) phân loại 1');
+  getDb().state.products.find((p) => p.id === SEED.products.bowl)!.skus[0].stock = 47; // a buyer reserved 3 meanwhile
+  await user.clear(price);
+  await user.type(price, '50000');
+  await user.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
+
+  expect(await screen.findByText('Tồn kho vừa thay đổi do có đơn hàng mới. Biểu mẫu đã tải lại số liệu mới nhất, vui lòng kiểm tra rồi lưu lại.')).toBeInTheDocument();
+  expect(bodies[0]).toMatchObject({ skus: [{ id: SEED.skus.bowl11, stock: 50, expected_stock: 50 }, { id: SEED.skus.bowl13, expected_stock: 30 }] });
+  await waitFor(() => expect(screen.getByLabelText('Tồn kho phân loại 1')).toHaveValue('47'));
+  expect(currentPath()).toBe(`/seller/products/${SEED.products.bowl}`);
+  const saved = getDb().state.products.find((p) => p.id === SEED.products.bowl)!;
+  expect(saved.skus[0]).toMatchObject({ price: 45_000, stock: 47 });
+
+  await user.clear(screen.getByLabelText('Giá (₫) phân loại 1'));
+  await user.type(screen.getByLabelText('Giá (₫) phân loại 1'), '50000');
+  await user.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
+  await waitFor(() => expect(currentPath()).toBe('/seller/products'));
+  expect(saved.skus[0]).toMatchObject({ price: 50_000, stock: 47 });
+});

@@ -136,7 +136,7 @@ export interface paths {
         delete: operations["archiveSellerProduct"];
         options?: never;
         head?: never;
-        /** Partial update. SKUs with id are updated, without id created, omitted ones deactivated. */
+        /** Partial update. SKUs with id are updated (compare-and-set on expected_stock), without id created, omitted ones deactivated. */
         patch: operations["updateSellerProduct"];
         trace?: never;
     };
@@ -201,8 +201,19 @@ export interface components {
             name: string;
             /** Format: int64 */
             price: number;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description On-hand stock to set. On update this overwrites the current value, see expected_stock.
+             */
             stock: number;
+            /**
+             * Format: int32
+             * @description The SKU's stock as the client last read it. PATCH requires it for every SKU with `id` and
+             *     forbids it on new SKUs and on POST. The update applies only if the stock is still this
+             *     value. Otherwise orders reserved or released stock in the meantime, and the whole PATCH
+             *     is rejected with 409 CONFLICT, `details.skus = [{sku_id, expected_stock, stock}]`.
+             */
+            expected_stock?: number;
             /** @default true */
             active?: boolean;
         };
@@ -287,6 +298,7 @@ export interface components {
                 /**
                  * @description VALIDATION_ERROR: {"fields": {"<json path>": "<message>"}}.
                  *     OUT_OF_STOCK: {"shortages": [{"sku_id", "requested", "available"}]}.
+                 *     CONFLICT on a seller product PATCH with a stale expected_stock: {"skus": [{"sku_id", "expected_stock", "stock"}]}.
                  */
                 details?: {
                     [key: string]: unknown;
@@ -711,6 +723,7 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             413: components["responses"]["PayloadTooLarge"];
             429: components["responses"]["RateLimited"];
             "5XX": components["responses"]["ServerError"];
