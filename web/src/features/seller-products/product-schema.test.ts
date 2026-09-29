@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { Product } from '@/api/types';
-import { emptyProduct, emptySku, fromProduct, productSchema, toProductInput } from './product-schema';
+import { diffProductInput, emptyProduct, emptySku, fromProduct, productSchema, toProductInput } from './product-schema';
 
 const valid = () => ({ ...emptyProduct(), category_id: 'c1', name: 'Bình gốm men lam', skus: [{ ...emptySku(), name: 'Nhỏ', price: '45000', stock: '3' }] });
 const issues = (input: unknown) => {
@@ -62,4 +62,12 @@ test('fromProduct turns a product into form input', () => {
     category_id: 'c1', name: 'Bình gốm men lam', description: 'd', status: 'draft', images: [{ object_key: 'k', url: 'u' }],
     skus: [{ sku_id: 'x', name: 'Nhỏ', price: '45000', stock: '3', active: true }],
   });
+});
+
+test('diffProductInput keeps only the fields that changed', () => {
+  const base = toProductInput(productSchema.parse(valid()));
+  expect(diffProductInput(base, { ...base, name: 'Bình gốm men lam lớn' })).toEqual({ name: 'Bình gốm men lam lớn' });
+  expect(diffProductInput(base, base)).toEqual({});
+  const skus = [{ ...base.skus[0], price: 50_000 }];
+  expect(diffProductInput(base, { ...base, skus })).toEqual({ skus });
 });

@@ -74,7 +74,10 @@ test('server VALIDATION_ERROR fields appear on the matching SKU row', async () =
     ),
   );
   const { user } = renderApp(`/seller/products/${SEED.products.bowl}`, { as: 'binh@example.com' });
-  await user.click(await screen.findByRole('button', { name: 'Lưu thay đổi' }));
+  const price = await screen.findByLabelText('Giá (₫) phân loại 1');
+  await user.clear(price);
+  await user.type(price, '1500'); // a change, so a PATCH is actually sent
+  await user.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
   const row = screen.getByLabelText('Giá (₫) phân loại 1').closest('li')!;
   expect(await within(row).findByText('Giá trị không hợp lệ')).toBeInTheDocument();
   expect(screen.getByText('Dữ liệu chưa hợp lệ. Vui lòng kiểm tra các trường được đánh dấu.')).toBeInTheDocument();
@@ -88,4 +91,17 @@ test('rejects unsupported and oversized images before uploading', async () => {
   expect(await screen.findByText('a.gif: chỉ hỗ trợ ảnh JPG, PNG hoặc WEBP.')).toBeInTheDocument();
   expect(await screen.findByText('big.png: ảnh vượt quá 5 MB.')).toBeInTheDocument();
   expect(uploadImage).not.toHaveBeenCalled();
+});
+
+test('saving an unrelated change does not overwrite stock that changed while the form was open', async () => {
+  const { user } = renderApp(`/seller/products/${SEED.products.bowl}`, { as: 'binh@example.com' });
+  const name = await screen.findByLabelText('Tên sản phẩm');
+  getDb().state.products.find((p) => p.id === SEED.products.bowl)!.skus[0].stock = 7; // buyers reserved stock meanwhile
+  await user.clear(name);
+  await user.type(name, 'Bát ăn cơm men lam Bát Tràng loại 1');
+  await user.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
+  await waitFor(() => expect(currentPath()).toBe('/seller/products'));
+  const saved = getDb().state.products.find((p) => p.id === SEED.products.bowl)!;
+  expect(saved.name).toBe('Bát ăn cơm men lam Bát Tràng loại 1');
+  expect(saved.skus[0].stock).toBe(7);
 });

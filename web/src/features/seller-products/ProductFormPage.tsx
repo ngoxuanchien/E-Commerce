@@ -6,7 +6,7 @@ import { ERROR_MESSAGES, applyFieldErrors, errorMessage, isRetryable } from '@/a
 import type { ProductInput } from '@/api/types';
 import { ErrorState, PageSpinner } from '@/components/states';
 import { type ProductFormApi, ProductForm } from './ProductForm';
-import { emptyProduct, fromProduct } from './product-schema';
+import { diffProductInput, emptyProduct, fromProduct, productSchema, toProductInput } from './product-schema';
 
 export function ProductFormPage() {
   const { id } = useParams();
@@ -23,8 +23,12 @@ export function ProductFormPage() {
 
   const onSubmit = async (input: ProductInput, form: ProductFormApi) => {
     try {
-      if (id) await update.mutateAsync({ id, input });
-      else await create.mutateAsync(input);
+      if (id && product.data) {
+        const patch = diffProductInput(toProductInput(productSchema.parse(fromProduct(product.data))), input);
+        if (Object.keys(patch).length > 0) await update.mutateAsync({ id, input: patch });
+      } else {
+        await create.mutateAsync(input);
+      }
       toast.success(isNew ? 'Đã tạo sản phẩm' : 'Đã lưu sản phẩm');
       navigate('/seller/products');
     } catch (err) {

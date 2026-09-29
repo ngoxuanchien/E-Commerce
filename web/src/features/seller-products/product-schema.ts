@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Product, ProductInput } from '@/api/types';
+import type { Product, ProductInput, ProductPatch } from '@/api/types';
 
 const PRICE_RANGE = 'Giá từ 1.000 ₫ đến 1.000.000.000 ₫';
 
@@ -58,4 +58,17 @@ export function toProductInput(v: ProductFormValues): ProductInput {
     image_keys: v.images.map((i) => i.object_key),
     skus: v.skus.map((s) => ({ ...(s.sku_id ? { id: s.sku_id } : {}), name: s.name, price: s.price, stock: s.stock, active: s.active })),
   };
+}
+
+/**
+ * PATCH body with only the fields that differ from the loaded product. Resending unchanged SKUs would
+ * overwrite on-hand stock (WS2: editing stock sets it directly) with the value from when the form opened.
+ */
+export function diffProductInput(base: ProductInput, next: ProductInput): ProductPatch {
+  const patch: ProductPatch = {};
+  const keys = ['category_id', 'name', 'description', 'status', 'image_keys', 'skus'] as const;
+  for (const key of keys) {
+    if (JSON.stringify(base[key]) !== JSON.stringify(next[key])) Object.assign(patch, { [key]: next[key] });
+  }
+  return patch;
 }
