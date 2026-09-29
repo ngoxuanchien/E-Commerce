@@ -49,6 +49,16 @@ Candidate to confirm in Task 3: **F1 — browser traffic shares one rate-limit b
 | F2 | WS0 (`api/openapi/*.yaml`) | Public operations (`GET /api/categories`, `GET /api/products`, `GET /api/products/{id}`, `GET /api/shops/{slug}`, `POST /api/auth/{register,login}`) do not document the 401 that the gateway returns for an invalid bearer token (WS4 §3 "fail loudly"), so contract validation rejects a correct response and generated web types don't model it | Contract omission: those operations list only 200/4xx business codes + 429 | `E2E_FINDINGS=1 go test -run TestPublicRoutesDocumentInvalidToken401 ./api/` → `response violates contract: GET /api/products -> 401: status is not supported` | Add `'401': $ref: 'common.yaml#/components/responses/Unauthenticated'` (or the existing unauthenticated response) to every public operation | reported |
 | F3 | WS5 (`web/src/features/checkout/CheckoutPage.tsx`) | When the checkout response is lost (network error after the server committed), the buyer sees "Không có sản phẩm nào để thanh toán" instead of the form; the orders exist but the page says there is nothing to buy. Only the transient "Thử lại" toast replays the request (same key) and shows the orders | `useCheckout`'s `onSettled` invalidates the cart query; the refetched cart no longer contains the purchased lines (the server removed them), so `groupForCheckout(...)` is empty and the page renders the empty state | `E2E_FINDINGS=1 npx playwright test tests/idempotency.spec.ts -g "still retry"` → `getByText('Không có sản phẩm nào để thanh toán')` has count 1; debug capture: MAIN text = empty state, toast = 'Dịch vụ đang tạm gián đoạn. Vui lòng thử lại. / Thử lại' | Keep the checkout form (and its lines snapshot) while a retryable error is pending, e.g. don't invalidate the cart on a retryable error, or render from the submitted snapshot until the retry settles; alternatively show a notice linking to /orders | reported |
 
+
+## Acceptance evidence (2026-09-29)
+
+- **Fresh clone** of `ws6-integration` @ 31847cd into the scratchpad, run under an isolated compose project (`COMPOSE_PROJECT_NAME=mktfresh`, so fresh volumes without wiping the shared `marketplace_*` data):
+  - `make keys up-app seed` → exit 0 in 28 s (warm Docker layer cache): key generated, 3 shops created, 22 products, orders PENDING_CONFIRMATION / CONFIRMED / SHIPPING / COMPLETED / CANCELLED.
+  - `make e2e` → exit 0 in 310 s: `ok e2e/api` (109.5 s), `ok e2e/client`, `ok e2e/cmd/seed`; Playwright `7 passed, 1 skipped` (the skip is the gated F3 reproduction).
+- In the working stack: `make e2e` → same result; Playwright suite run twice, green both times; concurrency tests `-count=3` green.
+- Lint/type checks: `golangci-lint run ./...` (GOWORK=off) → 0 issues; `go vet` clean; `tsc --noEmit` clean.
+- Not yet proven: the CI `e2e` job (requires a push); a cold-cache `make up-app` time (README states 3–6 min as an estimate).
+
 ---
 
 ## File Structure
@@ -3239,7 +3249,7 @@ git commit -m "docs: add README, architecture overview and ADRs 0001-0005"
 **Files:**
 - Modify: this plan (the Findings table and ticks), plus `e2e/README.md` if the criteria mapping changes
 
-- [ ] **Step 1: Fresh-clone run**
+- [x] **Step 1: Fresh-clone run**
 
 **Ask the user first.** This step recreates the shared compose stack (project `marketplace`) and, for a truly fresh run, deletes its volumes, which removes all local data for every worktree. Once they confirm:
 
@@ -3253,7 +3263,7 @@ time make e2e
 
 Expected: every command exits 0. The first `time` shows a stack start plus seed well inside the 10-minute README budget (image builds dominate). Capture the output for the report.
 
-- [ ] **Step 2: Map the six P1 success criteria to passing tests** and paste the command output into the report:
+- [x] **Step 2: Map the six P1 success criteria to passing tests** and paste the command output into the report:
 
 | # | Criterion | Automated by |
 |---|---|---|
@@ -3264,16 +3274,16 @@ Expected: every command exits 0. The first `time` shows a stack start plus seed 
 | 5 | No oversell under concurrency | `api/oversell_test.go`, `oversell.spec.ts`, plus idempotency tests |
 | 6 | Tests pass in every service; checkout traceable gateway → order → catalog | CI `go` matrix + `web` job; `api/trace_test.go` |
 
-- [ ] **Step 3: README timing.** Follow README Quick start literally from the fresh clone and time it: clone → `make keys up-app seed` → log in at :3000 as `buyer1@example.test`. It must take under 10 minutes on this machine with a warm Docker layer cache, and the README must state the cold-cache expectation. Fix the README if a step is missing.
+- [x] **Step 3: README timing.** Follow README Quick start literally from the fresh clone and time it: clone → `make keys up-app seed` → log in at :3000 as `buyer1@example.test`. It must take under 10 minutes on this machine with a warm Docker layer cache, and the README must state the cold-cache expectation. Fix the README if a step is missing.
 
-- [ ] **Step 4: Lint and type checks**
+- [x] **Step 4: Lint and type checks**
 
 Run: `cd e2e && ../bin/golangci-lint run ./... && GOWORK=off go vet ./... && cd playwright && npx tsc --noEmit`
 Expected: clean.
 
-- [ ] **Step 5: Findings report.** For every row in the Findings table, confirm there's a skipped reproduction test that fails with `E2E_FINDINGS=1`. Report each finding to the user with its owner, root-cause evidence and suggested fix. Also report the CI status: the e2e job can only be proven green after pushing, so say so explicitly if it hasn't run.
+- [x] **Step 5: Findings report.** For every row in the Findings table, confirm there's a skipped reproduction test that fails with `E2E_FINDINGS=1`. Report each finding to the user with its owner, root-cause evidence and suggested fix. Also report the CI status: the e2e job can only be proven green after pushing, so say so explicitly if it hasn't run.
 
-- [ ] **Step 6: Commit, then finish the branch**
+- [x] **Step 6: Commit, then finish the branch**
 
 ```bash
 git add docs/superpowers/plans/2026-09-28-ws6-integration.md e2e/README.md
