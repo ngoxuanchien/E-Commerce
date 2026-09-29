@@ -1572,9 +1572,9 @@ Run: `npm run lint && npm test`. Expected: PASS.
   - ledger's `trialBalance(w io.Writer) int`.
 - WS1' and WS2' replace the bodies and keep the layout.
 
-- [ ] **Step 1: Read the patterns:** `services/order/cmd/server/{main.go,handler.go,handler_test.go,config.go}`, `services/order/migrations/migrations.go`, `services/identity/migrations/000001_init.*.sql`, `services/identity/Dockerfile` and `services/identity/sqlc.yaml`.
+- [x] **Step 1: Read the patterns:** `services/order/cmd/server/{main.go,handler.go,handler_test.go,config.go}`, `services/order/migrations/migrations.go`, `services/identity/migrations/000001_init.*.sql`, `services/identity/Dockerfile` and `services/identity/sqlc.yaml`.
 
-- [ ] **Step 2: Write the failing tests** (payment shown; ledger is the same with `ledger` names). `cmd/server/handler_test.go`:
+- [x] **Step 2: Write the failing tests** (payment shown; ledger is the same with `ledger` names). `cmd/server/handler_test.go`:
 
 ```go
 package main
@@ -1694,11 +1694,11 @@ func TestTrialBalanceIsReservedUntilWS2(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Create the modules so the tests compile and fail.** In `services/<s>`, run `go mod init github.com/ngoxuanchien/e-commerce/services/<s>`, then add the `replace` block exactly as `services/identity/go.mod` has it. At the repo root, add `./services/ledger` and `./services/payment` to `go.work`'s `use` block (sorted).
+- [x] **Step 3: Create the modules so the tests compile and fail.** In `services/<s>`, run `go mod init github.com/ngoxuanchien/e-commerce/services/<s>`, then add the `replace` block exactly as `services/identity/go.mod` has it. At the repo root, add `./services/ledger` and `./services/payment` to `go.work`'s `use` block (sorted).
 
 Run: `cd services/payment && go test ./...`. Expected: FAIL (undefined `newHandler`, `Config`, …).
 
-- [ ] **Step 4: Implement.**
+- [x] **Step 4: Implement.**
 
 `cmd/server/config.go`:
 
@@ -1837,16 +1837,16 @@ Other files:
 
 Run `go mod tidy` in both services and `go work sync` at the root. `go.work.sum` changes get committed.
 
-- [ ] **Step 5: Makefile and CI.**
+- [x] **Step 5: Makefile and CI.**
   - `Makefile`: `GO_MODULES ?= pkg gen services/gateway services/identity services/catalog services/order services/payment services/ledger`.
   - `.github/workflows/ci.yml`: add `services/payment` and `services/ledger` to the `go` job's matrix `module:` list.
 
-- [ ] **Step 6: Run the tests, lint and build.**
+- [x] **Step 6: Run the tests, lint and build.**
 
 Run: `for s in payment ledger; do (cd services/$s && go test -race -count=1 ./... && ../../bin/golangci-lint run ./...) || break; done && make test-short && docker build -q -f services/payment/Dockerfile . && docker build -q -f services/ledger/Dockerfile .`
 Expected: PASS, 0 lint issues, both images build.
 
-- [ ] **Step 7: Commit.** `git add services/payment services/ledger go.work go.work.sum Makefile .github/workflows/ci.yml && git commit -m "feat: payment-svc and ledger-svc skeletons (health, readiness, baseline migration) wired into the workspace, Makefile and CI"`
+- [x] **Step 7: Commit.** `git add services/payment services/ledger go.work go.work.sum Makefile .github/workflows/ci.yml && git commit -m "feat: payment-svc and ledger-svc skeletons (health, readiness, baseline migration) wired into the workspace, Makefile and CI"`
 
 ---
 
