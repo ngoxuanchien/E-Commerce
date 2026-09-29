@@ -1,0 +1,16 @@
+{
+  "vnp_ResponseId": "2b3c4d5e6f7a48190a1b2c3d4e5f6071",
+  "vnp_Command": "refund",
+  "vnp_ResponseCode": "95",
+  "vnp_Message": "Giao dich khong thanh cong, VNPAY tu choi",
+  "vnp_TmnCode": "TESTTMN1",
+  "vnp_TxnRef": "REPLACED_BY_STUB",
+  "vnp_Amount": "REPLACED_BY_STUB",
+  "vnp_OrderInfo": "Hoan tien",
+  "vnp_BankCode": "NCB",
+  "vnp_PayDate": "20260929160501",
+  "vnp_TransactionNo": "14226113",
+  "vnp_TransactionType": "02",
+  "vnp_TransactionStatus": "05",
+  "vnp_SecureHash": "REPLACED_BY_STUB"
+}

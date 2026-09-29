@@ -1,0 +1,18 @@
+{
+  "vnp_ResponseId": "4f7c1b5e2a9d4c3e8b6a0f1d2e3c4b5a",
+  "vnp_Command": "querydr",
+  "vnp_ResponseCode": "00",
+  "vnp_Message": "QueryDR Success",
+  "vnp_TmnCode": "TESTTMN1",
+  "vnp_TxnRef": "REPLACED_BY_STUB",
+  "vnp_Amount": "35000000",
+  "vnp_OrderInfo": "Thanh toan don hang",
+  "vnp_BankCode": "NCB",
+  "vnp_PayDate": "",
+  "vnp_TransactionNo": "0",
+  "vnp_TransactionType": "01",
+  "vnp_TransactionStatus": "01",
+  "vnp_PromotionCode": "",
+  "vnp_PromotionAmount": "",
+  "vnp_SecureHash": "REPLACED_BY_STUB"
+}
