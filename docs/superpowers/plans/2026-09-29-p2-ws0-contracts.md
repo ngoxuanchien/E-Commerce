@@ -2038,7 +2038,7 @@ unset COMPOSE_PROJECT_NAME
 - Modify: `docs/superpowers/specs/2026-09-29-marketplace-p2-overview.md` (§7 status column)
 - Modify: `docs/superpowers/specs/2026-09-29-marketplace-p2-ws3-order.md` and `…-ws5-web.md` (one pointer line each)
 
-- [ ] **Step 1: Write WS0' §12**, one bullet per gap:
+- [x] **Step 1: Write WS0' §12**, one bullet per gap:
   1. **Optional `Order` fields.** The new `Order` fields and `OrderShop.slug` are **optional** in `order.yaml` (user decision 2026-09-29), because the unchanged order-svc validates every response against it. WS3' adds them to `required` in its implementing PR. This is the only contract edit allowed outside WS0'.
   2. **`Order.shop.slug`.** P1.5 did not deliver it (overview §7). WS0' adds it to the contract, and WS3' implements it: order-svc must snapshot the shop slug at checkout, which needs a migration.
   3. **`web/` fallout.** `web/src/api/gen` was regenerated, `gen-api.mjs` includes payment and ledger, and there is one new entry each for `AWAITING_PAYMENT` (status label and tone) and `INSUFFICIENT_FUNDS` (error message), because web lint runs `gen:api:check` and `tsc`. WS5' owns everything else.
@@ -2055,7 +2055,7 @@ unset COMPOSE_PROJECT_NAME
   - add a pointer line "See WS0' §12 for the contract items this workstream completes" to WS3' §1 and WS5' §1;
   - tick the WS0' §11 acceptance boxes that Tasks 1–7 proved.
 
-- [ ] **Step 2: Full verification.**
+- [x] **Step 2: Full verification.**
 
 ```bash
 make lint

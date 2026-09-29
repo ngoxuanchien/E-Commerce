@@ -200,11 +200,29 @@ WS0' keeps editing rights on every file listed in §2 for the rest of P2. If a w
 
 ## 11. Acceptance criteria
 
-- [ ] `make gen` is clean. `buf lint`, `buf breaking` (against `main`) and `redocly lint` pass for all six OpenAPI files.
-- [ ] `pkg/event` tests encode every new event and validate it against its schema. P1 payloads without the new fields still validate.
-- [ ] `pkg/inbox` and `pkg/idemkey` have Postgres container tests. They cover first/duplicate `MarkProcessed`, and Claim → Complete → replay, different hash → reused, and reclaiming an orphaned row.
-- [ ] On an **existing** P1 volume, `make up-app` creates `payment_db` and `ledger_db`, and all six services report `/readyz` 200.
-- [ ] On a fresh volume (`COMPOSE_PROJECT_NAME=p2check`), the same holds.
-- [ ] `kafka-topics --list` shows `order.events`, `payment.events` and `payout.events`.
-- [ ] `git check-ignore deploy/secrets/payment.env` succeeds, and `deploy/secrets/payment.env.example` is tracked.
+- [x] `make gen` is clean. `buf lint`, `buf breaking` (against `main`) and `redocly lint` pass for all six OpenAPI files.
+- [x] `pkg/event` tests encode every new event and validate it against its schema. P1 payloads without the new fields still validate.
+- [x] `pkg/inbox` and `pkg/idemkey` have Postgres container tests. They cover first/duplicate `MarkProcessed`, and Claim → Complete → replay, different hash → reused, and reclaiming an orphaned row.
+- [x] On an **existing** P1 volume, `make up-app` creates `payment_db` and `ledger_db`, and all six services report `/readyz` 200.
+- [x] On a fresh volume (`COMPOSE_PROJECT_NAME=p2check`), the same holds.
+- [x] `kafka-topics --list` shows `order.events`, `payment.events` and `payout.events`.
+- [x] `git check-ignore deploy/secrets/payment.env` succeeds, and `deploy/secrets/payment.env.example` is tracked.
 - [ ] `make lint && make test` are green, and CI is green with the new matrix entries.
+
+## 12. Gaps filled by WS0' (2026-09-29)
+
+Shared-file changes WS0' made beyond the original scope, and the items it handed to other workstreams.
+
+- **Optional `Order` fields.** The new `Order` fields and `OrderShop.slug` are optional in `order.yaml` (user decision 2026-09-29), because the unchanged order-svc validates every response against it. WS3' adds them to `required` in its implementing PR. This is the only contract edit allowed outside WS0'.
+- **`Order.shop.slug`.** P1.5 did not deliver it (overview §7). WS0' adds it to the contract, and WS3' implements it: order-svc must snapshot the shop slug at checkout, which needs a migration.
+- **`web/` fallout.** `web/src/api/gen` was regenerated, `gen-api.mjs` includes payment and ledger, and there is one new entry each for `AWAITING_PAYMENT` (status label and tone) and `INSUFFICIENT_FUNDS` (error message), because web lint runs `gen:api:check` and `tsc`. The fallout also touched `web/src/api/types.test.ts` and `web/src/api/errors.test.ts`, because they pin the contract (the OrderStatus union and the ERROR_MESSAGES count). WS5' owns everything else.
+- **Gateway readiness.** The gateway `depends_on` payment and ledger (healthy), as it does for the P1 upstreams.
+- **Envelope schema.** `event_type` lists every P2 type, and the description covers all three topics.
+- **§7 items P1.5 did not cover.** P1.5 (PR #1) fixed the orphaned idempotency rows, `CartShop.shipping_fee`, the seller PATCH stock overwrite and the first CI e2e run. The rest now have owners:
+  - the `WithoutCancel` checkout deadline and the Tx B race code: WS3' (inside `services/order`);
+  - `Order.shop.slug`: contract here, implementation WS3';
+  - the reserve-after-release tombstone: stays a documented limitation (catalog README decision 6; catalog has no P2 workstream);
+  - seed resume: WS6'.
+- **`createPayment` 409 `details.reason` set.** WS1' §5 named only `ALREADY_PAID` and `BELOW_PROVIDER_MINIMUM`. The contract now pins the full set: `COD_CHECKOUT`, `NOT_AWAITING_PAYMENT`, `DEADLINE_PASSED`, `ALREADY_PAID`, `BELOW_PROVIDER_MINIMUM` (in `payment.yaml` and the `Error.details` description in `common.yaml`). WS5' maps these reasons to messages.
+- **FAKE webhook body and signature.** They follow WS1' §5.3: body `{event_id, payment_id, outcome}`, header `X-Fake-Signature: t=<unix>,v1=<hex>`. `outcome` is left an unconstrained string in the contract.
+- **`STRIPE_MIN_AMOUNT` example value.** `deploy/secrets/payment.env.example` sets `STRIPE_MIN_AMOUNT=10000` as an example. WS1' gives no default, so WS1' confirms the value.

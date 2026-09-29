@@ -4,6 +4,8 @@
 
 ## 1. Responsibility (additions)
 
+See WS0' §12 for the contract items this workstream completes.
+
 order-svc gains:
 - online payment methods at checkout, with a commission snapshot;
 - the `AWAITING_PAYMENT` state and the payment deadline;

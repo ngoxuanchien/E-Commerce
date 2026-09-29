@@ -143,14 +143,14 @@ WS0' Contracts & Foundation ───┴─┬── WS1' payment ──┐
 
 These items are tracked in the P1 follow-up notes and fixed by a separate P1.5 session **before WS3' and WS5' start**. P2 specs assume they are done.
 
-| Source | Item | Why P2 needs it |
-|---|---|---|
-| WS3 (order) | An idempotency row orphaned by a crash answers 409 "in progress" until the 24 h purge | Online checkout adds a second step. A buyer who retries checkout after a crash must not be locked out for a day. |
-| WS3 (order) | No overall deadline on the `WithoutCancel` checkout context | A hung checkout would hold orders in `PENDING` while the payment deadline is running |
-| WS3 (order) | Tx B losing the sweeper race answers 409 `CONFLICT` instead of `OUT_OF_STOCK` | The web maps these codes to different messages on the new payment path |
-| WS5 (web/contract) | `CartShop.shipping_fee` is missing, so web uses the constant `SHIPPING_FEE_FLAT` | The online amount shown before redirect must equal what the server charges |
-| WS5 (web/contract) | `Order.shop` has no `slug` | The wallet entries and payout pages link orders to shops |
-| WS2 (catalog) | A seller PATCH overwrites on-hand stock; reserve-after-release tombstone | Payment-timeout cancellations release stock far more often than P1 did |
-| WS6 (e2e) | The CI e2e job has never run on GitHub; seed doesn't resume a partial run | WS6' extends that job and seed |
+| Source | Item | Why P2 needs it | Status |
+|---|---|---|---|
+| WS3 (order) | An idempotency row orphaned by a crash answers 409 "in progress" until the 24 h purge | Online checkout adds a second step. A buyer who retries checkout after a crash must not be locked out for a day. | Fixed in P1.5 (PR #1) |
+| WS3 (order) | No overall deadline on the `WithoutCancel` checkout context | A hung checkout would hold orders in `PENDING` while the payment deadline is running | Open: WS3' (`services/order`) |
+| WS3 (order) | Tx B losing the sweeper race answers 409 `CONFLICT` instead of `OUT_OF_STOCK` | The web maps these codes to different messages on the new payment path | Open: WS3' (`services/order`) |
+| WS5 (web/contract) | `CartShop.shipping_fee` is missing, so web uses the constant `SHIPPING_FEE_FLAT` | The online amount shown before redirect must equal what the server charges | Fixed in P1.5 (PR #1) |
+| WS5 (web/contract) | `Order.shop` has no `slug` | The wallet entries and payout pages link orders to shops | Contract in WS0' (optional field); implementation WS3' |
+| WS2 (catalog) | A seller PATCH overwrites on-hand stock; reserve-after-release tombstone | Payment-timeout cancellations release stock far more often than P1 did | PATCH overwrite fixed in P1.5; the reserve-after-release tombstone stays a documented limitation (catalog README decision 6) |
+| WS6 (e2e) | The CI e2e job has never run on GitHub; seed doesn't resume a partial run | WS6' extends that job and seed | First CI e2e run done in P1.5; seed resume open: WS6' |
 
 P1 ADR 0004's known gap (the stock overwrite) is the same item as the WS2 row above.

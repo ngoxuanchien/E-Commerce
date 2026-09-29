@@ -4,6 +4,8 @@
 
 ## 1. Buyer changes
 
+See WS0' §12 for the contract items this workstream completes.
+
 | Route | Change |
 |---|---|
 | `/checkout` | Payment method radio group: "Thanh toán khi nhận hàng" (`COD`), "VNPay" (`VNPAY`), "Thẻ quốc tế (Stripe)" (`STRIPE`). The order preview uses `CartShop.shipping_fee` from the server. The P1.5 fix removes the `SHIPPING_FEE_FLAT` constant, and this spec relies on that. For online methods it shows "Tổng thanh toán" = Σ totals of the selected shops. |
