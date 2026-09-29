@@ -10,7 +10,10 @@ Thumbs.db
 .env
 .env.*
 !.env.example
-deploy/secrets/
+# Git cannot re-include a file inside an excluded directory, so ignore the
+# directory contents instead and re-include the *.example placeholders.
+deploy/secrets/*
+!deploy/secrets/*.example
 *.pem
 *.key
 

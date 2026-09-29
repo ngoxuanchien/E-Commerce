@@ -35,7 +35,7 @@ $(eval $(call go_tool,golangci-lint,github.com/golangci/golangci-lint/v2/cmd/gol
 $(eval $(call go_tool,protoc-gen-go,google.golang.org/protobuf/cmd/protoc-gen-go,$(PROTOC_GEN_GO_VERSION)))
 $(eval $(call go_tool,protoc-gen-go-grpc,google.golang.org/grpc/cmd/protoc-gen-go-grpc,$(PROTOC_GEN_GO_GRPC_VERSION)))
 
-.PHONY: help tools gen gen-proto gen-sqlc lint lint-go lint-proto lint-openapi test test-short tidy up up-app down keys seed e2e
+.PHONY: help tools gen gen-proto gen-sqlc lint lint-go lint-proto lint-openapi test test-short tidy up up-app down keys seed e2e stripe-listen
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
@@ -98,3 +98,6 @@ seed: ## Seed demo data through the gateway (run after make up-app; idempotent)
 e2e: ## Run API smoke tests + Playwright against a running stack (make up-app seed first)
 	cd e2e && GOWORK=off go test -count=1 -timeout 20m ./...
 	cd e2e/playwright && npm ci --no-audit --no-fund && npx playwright install chromium && npx playwright test
+
+stripe-listen: ## Forward Stripe test-mode webhooks to the local gateway (prints the whsec_ secret for deploy/secrets/payment.env)
+	stripe listen --forward-to localhost:8080/api/payments/stripe/webhook
