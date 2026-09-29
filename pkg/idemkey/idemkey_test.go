@@ -151,3 +151,34 @@ func TestClaimTruncatesToMicroseconds(t *testing.T) {
 	require.NoError(t, idemkey.Complete(ctx, db, scope, user, "k", rec.ClaimedAt, idemkey.Response{Status: 201, Body: []byte(`{}`)}),
 		"the returned claim matches the stored µs timestamp")
 }
+
+func TestCompletedKeyWithNilBodyIsNeverReclaimed(t *testing.T) {
+	ctx, db := context.Background(), newPool(t)
+	user := "01890000-0000-7000-8000-000000000010"
+	old := base.Add(-time.Hour)
+	_, _, err := idemkey.Claim(ctx, db, scope, user, "k", []byte("h"), old, never)
+	require.NoError(t, err)
+	require.NoError(t, idemkey.Complete(ctx, db, scope, user, "k", old, idemkey.Response{Status: 204, Body: nil}))
+	rec, created, err := idemkey.Claim(ctx, db, scope, user, "k", []byte("h"), base, base)
+	require.NoError(t, err)
+	assert.False(t, created)
+	require.NotNil(t, rec.Response)
+	assert.Equal(t, 204, rec.Response.Status)
+}
+
+func TestCompleteAndReleaseTruncateTheClaimToMicroseconds(t *testing.T) {
+	ctx, db := context.Background(), newPool(t)
+	user := "01890000-0000-7000-8000-000000000011"
+	skew := base.Add(300 * time.Nanosecond)
+
+	_, _, err := idemkey.Claim(ctx, db, scope, user, "c", []byte("h"), base, never)
+	require.NoError(t, err)
+	require.NoError(t, idemkey.Complete(ctx, db, scope, user, "c", skew, idemkey.Response{Status: 201, Body: []byte(`{}`)}))
+
+	_, _, err = idemkey.Claim(ctx, db, scope, user, "r", []byte("h"), base, never)
+	require.NoError(t, err)
+	require.NoError(t, idemkey.Release(ctx, db, scope, user, "r", skew))
+	_, found, err := idemkey.Get(ctx, db, scope, user, "r")
+	require.NoError(t, err)
+	assert.False(t, found, "Release with an untruncated claim still frees the key")
+}

@@ -22,6 +22,7 @@ func TestStatusFor(t *testing.T) {
 		httpx.CodeNotFound:               404,
 		httpx.CodeConflict:               409,
 		httpx.CodeOutOfStock:             409,
+		httpx.CodeInsufficientFunds:      409,
 		httpx.CodeInvalidStateTransition: 409,
 		httpx.CodeIdempotencyKeyReused:   422,
 		httpx.CodeRateLimited:            429,

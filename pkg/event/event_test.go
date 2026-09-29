@@ -196,3 +196,19 @@ func TestPaymentRefundedNullOrderIDRoundTrips(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, got.OrderID)
 }
+
+func TestNilAllocationsEncodeAsEmptyArray(t *testing.T) {
+	p := event.PaymentSucceeded{PaymentID: u(), CheckoutID: u(), BuyerID: u(), Provider: event.ProviderStripe,
+		ProviderRef: "pi_1", Amount: 260_000}
+	b, err := event.Encode(p, at)
+	require.NoError(t, err)
+	assert.Contains(t, string(b), `"allocations":[]`)
+
+	c := jsonschema.NewCompiler()
+	c.AssertFormat()
+	sch, err := c.Compile(filepath.Join("..", "..", "api", "events", "payment-succeeded.schema.json"))
+	require.NoError(t, err)
+	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(b))
+	require.NoError(t, err)
+	assert.NoError(t, sch.Validate(inst))
+}

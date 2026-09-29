@@ -2,9 +2,14 @@
 // (P1 WS3 §4 step 1, with the P1.5 reclaim of orphaned rows).
 //
 // created_at is the claim. Claim inserts a row, or takes over an orphaned one:
-// same request hash, no response, and claimed before staleBefore. Complete and
+// same request hash, not completed (status_code IS NULL), and claimed before staleBefore. Complete and
 // Release act only while the caller's claim is still the row's claim, so a
 // run whose key was reclaimed can neither overwrite nor free it.
+//
+// SchemaSQL uses CREATE TABLE IF NOT EXISTS, which does nothing on a database
+// that already has an idempotency_keys table of another shape (order_db's P1
+// table has no scope column). A service adopting this package there needs a
+// new table name or a migration.
 package idemkey
 
 import (
@@ -63,7 +68,7 @@ func Claim(ctx context.Context, db DB, scope, userID, key string, requestHash []
 	}
 	tag, err = db.Exec(ctx, `UPDATE idempotency_keys SET created_at = $5
 		WHERE scope = $1 AND user_id = $2 AND key = $3 AND request_hash = $4
-		  AND response IS NULL AND created_at < $6`, scope, userID, key, requestHash, at, staleBefore)
+		  AND status_code IS NULL AND created_at < $6`, scope, userID, key, requestHash, at, staleBefore)
 	if err != nil {
 		return Record{}, false, fmt.Errorf("idemkey: reclaim: %w", err)
 	}
@@ -103,9 +108,14 @@ func Get(ctx context.Context, db DB, scope, userID, key string) (Record, bool, e
 // Complete stores the final response. ErrClaimLost when claimedAt is no
 // longer the key's claim.
 func Complete(ctx context.Context, db DB, scope, userID, key string, claimedAt time.Time, resp Response) error {
+	claimedAt = claimedAt.UTC().Truncate(time.Microsecond) // compared for equality with the stored µs claim
+	var body any                                           // SQL NULL for an empty body; status_code marks completion
+	if len(resp.Body) > 0 {
+		body = json.RawMessage(resp.Body)
+	}
 	tag, err := db.Exec(ctx, `UPDATE idempotency_keys SET response = $5, status_code = $6
 		WHERE scope = $1 AND user_id = $2 AND key = $3 AND created_at = $4`,
-		scope, userID, key, claimedAt, json.RawMessage(resp.Body), resp.Status)
+		scope, userID, key, claimedAt, body, resp.Status)
 	if err != nil {
 		return fmt.Errorf("idemkey: complete: %w", err)
 	}
@@ -117,6 +127,7 @@ func Complete(ctx context.Context, db DB, scope, userID, key string, claimedAt t
 
 // Release frees the key after a transient failure, if claimedAt is still its claim.
 func Release(ctx context.Context, db DB, scope, userID, key string, claimedAt time.Time) error {
+	claimedAt = claimedAt.UTC().Truncate(time.Microsecond)
 	if _, err := db.Exec(ctx, `DELETE FROM idempotency_keys
 		WHERE scope = $1 AND user_id = $2 AND key = $3 AND created_at = $4`, scope, userID, key, claimedAt); err != nil {
 		return fmt.Errorf("idemkey: release: %w", err)

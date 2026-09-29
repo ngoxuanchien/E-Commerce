@@ -1,6 +1,9 @@
 package event
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // OrderCompleted is published by order-svc when an order reaches COMPLETED
 // (by the buyer or automatically after AUTO_COMPLETE_AFTER).
@@ -37,6 +40,15 @@ type PaymentSucceeded struct {
 }
 
 func (PaymentSucceeded) EventType() Type { return TypePaymentSucceeded }
+
+// MarshalJSON encodes a nil Allocations as [] because the schema requires an array.
+func (p PaymentSucceeded) MarshalJSON() ([]byte, error) {
+	type plain PaymentSucceeded
+	if p.Allocations == nil {
+		p.Allocations = []Allocation{}
+	}
+	return json.Marshal(plain(p))
+}
 
 type PaymentFailed struct {
 	PaymentID  string `json:"payment_id"`

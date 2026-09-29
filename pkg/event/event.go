@@ -20,7 +20,7 @@ const TopicPaymentEvents = "payment.events"
 // TopicPayoutEvents carries ledger-svc payout events; the key is the seller user ID.
 const TopicPayoutEvents = "payout.events"
 
-// Version is the only envelope version defined in P1.
+// Version is the only envelope version defined in P1 and P2.
 const Version = 1
 
 // Type is the event_type discriminator.
@@ -124,6 +124,8 @@ type OrderCancelled struct {
 	Reason      string `json:"reason"`
 	CancelledBy string `json:"cancelled_by"`
 
+	// Both are absent on events produced before WS3' (P1 order-svc).
+	// Consumers treat a missing PaymentMethod as COD and skip the event.
 	CheckoutID    string `json:"checkout_id,omitempty"`    // P2
 	PaymentMethod string `json:"payment_method,omitempty"` // P2
 }
