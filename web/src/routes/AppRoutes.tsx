@@ -1,5 +1,5 @@
-import { Route, Routes } from 'react-router';
-import { RequireAuth } from './guards';
+import { Navigate, Route, Routes } from 'react-router';
+import { RequireAuth, RequireSeller } from './guards';
 import { RootLayout } from '@/components/layout/RootLayout';
 import { StoreLayout } from '@/components/layout/StoreLayout';
 import { NotFoundPage } from '@/components/states';
@@ -11,6 +11,9 @@ import { CartPage } from '@/features/cart/CartPage';
 import { CheckoutPage } from '@/features/checkout/CheckoutPage';
 import { OrderDetailPage } from '@/features/orders/OrderDetailPage';
 import { OrdersPage } from '@/features/orders/OrdersPage';
+import { SellerLayout } from '@/components/layout/SellerLayout';
+import { OpenShopPage } from '@/features/shop/OpenShopPage';
+import { SellerShopPage } from '@/features/shop/SellerShopPage';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { RegisterPage } from '@/features/auth/RegisterPage';
 
@@ -30,7 +33,14 @@ export function AppRoutes() {
             <Route path="checkout" element={<CheckoutPage />} />
             <Route path="orders" element={<OrdersPage />} />
             <Route path="orders/:id" element={<OrderDetailPage />} />
-            {/* authenticated routes (Tasks 16-18) */}
+            <Route path="seller/open-shop" element={<OpenShopPage />} />
+            <Route path="seller" element={<RequireSeller />}>
+              <Route element={<SellerLayout />}>
+                <Route index element={<Navigate to="products" replace />} />
+                <Route path="shop" element={<SellerShopPage />} />
+                {/* seller routes (Tasks 17-18) */}
+              </Route>
+            </Route>
           </Route>
           <Route path="*" element={<NotFoundPage />} />
         </Route>
