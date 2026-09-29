@@ -31,6 +31,17 @@ type Config struct {
 	RelayInterval   time.Duration // 0 = outbox default (500ms)
 }
 
+// claimMargin covers the time between claiming an idempotency key and Tx A
+// inserting the orders (cart read, GetSkus with retries): orders become
+// sweepable that much later than the claim.
+const claimMargin = time.Minute
+
+// claimTimeout is when a checkout's idempotency key may be reclaimed: by then
+// the sweeper has cancelled whatever the dead run left PENDING.
+func (c Config) claimTimeout() time.Duration {
+	return c.PendingTimeout + c.SweeperInterval + claimMargin
+}
+
 // Producer publishes outbox messages and reports broker reachability
 // (*kafkax.Producer).
 type Producer interface {
@@ -70,7 +81,7 @@ func New(cfg Config, d Deps) *App {
 		API: httpadapter.NewRouter(httpadapter.Services{
 			Cart: app.NewCartService(carts, cat, cfg.ShippingFeeFlat, d.Logger),
 			Checkout: app.NewCheckoutService(store, carts, cat, app.CheckoutConfig{
-				ShippingFee: cfg.ShippingFeeFlat, ClaimTimeout: cfg.PendingTimeout + cfg.SweeperInterval,
+				ShippingFee: cfg.ShippingFeeFlat, ClaimTimeout: cfg.claimTimeout(),
 				Now: d.Now, Logger: d.Logger,
 			}),
 			Orders: app.NewOrderService(store, d.Now),

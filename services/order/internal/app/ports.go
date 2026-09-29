@@ -45,6 +45,9 @@ type Store interface {
 	// staleBefore; the zero time never reclaims). Otherwise rec describes the
 	// existing row.
 	BeginIdempotency(ctx context.Context, userID, key string, requestHash []byte, at, staleBefore time.Time) (rec IdempotencyRecord, created bool, err error)
+	// IdempotencyKey reads (userID, key) without claiming it; found is false
+	// if there is no row.
+	IdempotencyKey(ctx context.Context, userID, key string) (rec IdempotencyRecord, found bool, err error)
 	// DeleteIdempotencyKey releases the key if claimedAt is still its claim.
 	DeleteIdempotencyKey(ctx context.Context, userID, key string, claimedAt time.Time) error
 	DeleteIdempotencyKeysBefore(ctx context.Context, before time.Time) (int64, error)

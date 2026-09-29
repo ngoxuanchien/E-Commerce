@@ -35,11 +35,26 @@ func (s *Store) BeginIdempotency(ctx context.Context, userID, key string, reques
 	if n == 1 {
 		return claimed, true, nil
 	}
-	row, err := s.q.GetIdempotencyKey(ctx, sqlcdb.GetIdempotencyKeyParams{UserID: uid, Key: key})
-	if errors.Is(err, pgx.ErrNoRows) {
+	rec, found, err := s.IdempotencyKey(ctx, userID, key)
+	if err != nil {
+		return app.IdempotencyRecord{}, false, err
+	}
+	if !found {
 		// The request that owned the key failed and released it between our
 		// insert and this read; report "in progress" so the client retries.
 		return app.IdempotencyRecord{RequestHash: requestHash}, false, nil
+	}
+	return rec, false, nil
+}
+
+func (s *Store) IdempotencyKey(ctx context.Context, userID, key string) (app.IdempotencyRecord, bool, error) {
+	uid, err := mustParseUUID(userID)
+	if err != nil {
+		return app.IdempotencyRecord{}, false, err
+	}
+	row, err := s.q.GetIdempotencyKey(ctx, sqlcdb.GetIdempotencyKeyParams{UserID: uid, Key: key})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return app.IdempotencyRecord{}, false, nil
 	}
 	if err != nil {
 		return app.IdempotencyRecord{}, false, fmt.Errorf("get idempotency key: %w", err)
@@ -48,7 +63,7 @@ func (s *Store) BeginIdempotency(ctx context.Context, userID, key string, reques
 	if row.StatusCode != nil {
 		rec.Response = &app.Response{Status: int(*row.StatusCode), Body: row.Response}
 	}
-	return rec, false, nil
+	return rec, true, nil
 }
 
 func (s *Store) DeleteIdempotencyKey(ctx context.Context, userID, key string, claimedAt time.Time) error {

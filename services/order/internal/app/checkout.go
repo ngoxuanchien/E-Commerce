@@ -22,8 +22,8 @@ type CheckoutConfig struct {
 	ShippingFee int64 // flat fee per order (SHIPPING_FEE_FLAT)
 	// ClaimTimeout is how long an idempotency key may stay without a
 	// response before a retry of the same request takes it over (0 = never).
-	// Set it to PENDING_TIMEOUT + SWEEPER_INTERVAL: by then the sweeper has
-	// cancelled whatever the crashed run left PENDING.
+	// bootstrap uses PENDING_TIMEOUT + SWEEPER_INTERVAL + 1 min: by then the
+	// sweeper has cancelled whatever the crashed run left PENDING.
 	ClaimTimeout time.Duration
 	Now          func() time.Time // nil = UTC wall clock
 	Logger       *slog.Logger     // nil = slog.Default()
@@ -242,6 +242,7 @@ func (s *CheckoutService) abort(ctx context.Context, in CheckoutInput, enc Encod
 	store := storable(cause)
 	now := s.cfg.Now()
 	var resp Response
+	claimLost := false
 	err := s.store.InTx(ctx, func(tx Tx) error {
 		for i := range orders {
 			if err := applyTransition(ctx, tx, &orders[i], domain.ActionCancel, domain.SystemActor(), reason, now); err != nil {
@@ -252,12 +253,20 @@ func (s *CheckoutService) abort(ctx context.Context, in CheckoutInput, enc Encod
 			return nil
 		}
 		resp = enc(CheckoutResult{}, cause)
-		return tx.CompleteIdempotencyKey(ctx, in.BuyerID, in.IdempotencyKey, in.claimedAt, resp)
+		err := tx.CompleteIdempotencyKey(ctx, in.BuyerID, in.IdempotencyKey, in.claimedAt, resp)
+		if errors.Is(err, ErrIdempotencyClaimLost) {
+			// A retry owns the key now: keep the cancellations, store nothing.
+			claimLost = true
+			return nil
+		}
+		return err
 	})
-	if err != nil {
+	switch {
+	case err != nil:
 		return Response{}, fmt.Errorf("cancel orders after failed reservation: %w", err)
-	}
-	if !store {
+	case claimLost:
+		return Response{}, ErrIdempotencyClaimLost
+	case !store:
 		return Response{}, cause
 	}
 	return resp, nil
@@ -320,16 +329,23 @@ func (s *CheckoutService) commit(ctx context.Context, in CheckoutInput, enc Enco
 }
 
 // recoverCommit handles a Tx C failure other than a lost race. The commit may
-// have succeeded with only its acknowledgement lost, so a stored response
-// wins. Otherwise the reservations are released and the orders cancelled now
-// rather than left to the sweeper, so the client's retry does not run into
-// its own held stock. If the cancellation cannot be written, the key stays
-// claimed until the sweeper has cleaned up.
+// have succeeded with only its acknowledgement lost, so a response stored
+// under this run's own claim wins. Otherwise — including when a retry
+// reclaimed the key (ErrIdempotencyClaimLost), whose response is never ours —
+// the reservations are released and the orders cancelled now rather than left
+// to the sweeper, so the client's retry does not run into its own held stock.
+// If the cancellation cannot be written, the key stays claimed until the
+// sweeper has cleaned up.
 func (s *CheckoutService) recoverCommit(ctx context.Context, in CheckoutInput, orders []domain.Order, lines []domain.Line, cause error) (Response, error) {
-	rec, created, err := s.store.BeginIdempotency(ctx, in.BuyerID, in.IdempotencyKey, RequestHash(in), s.cfg.Now(), time.Time{}) // read only: never reclaim
-	if err == nil && !created && rec.Response != nil {
-		s.clearCart(ctx, in.BuyerID, lines)
-		return *rec.Response, nil
+	reason := domain.CancelReserveFailed
+	if errors.Is(cause, ErrIdempotencyClaimLost) {
+		reason = domain.CancelCheckoutTimeout
+	} else {
+		rec, found, err := s.store.IdempotencyKey(ctx, in.BuyerID, in.IdempotencyKey) // a read: never claims
+		if err == nil && found && rec.ClaimedAt.Equal(in.claimedAt) && rec.Response != nil {
+			s.clearCart(ctx, in.BuyerID, lines)
+			return *rec.Response, nil
+		}
 	}
 	s.releaseAll(ctx, orders)
 	fresh := make([]domain.Order, 0, len(orders))
@@ -343,9 +359,9 @@ func (s *CheckoutService) recoverCommit(ctx context.Context, in CheckoutInput, o
 		}
 	}
 	now := s.cfg.Now()
-	err = s.store.InTx(ctx, func(tx Tx) error {
+	err := s.store.InTx(ctx, func(tx Tx) error {
 		for i := range fresh {
-			if err := applyTransition(ctx, tx, &fresh[i], domain.ActionCancel, domain.SystemActor(), domain.CancelReserveFailed, now); err != nil {
+			if err := applyTransition(ctx, tx, &fresh[i], domain.ActionCancel, domain.SystemActor(), reason, now); err != nil {
 				return err
 			}
 		}
