@@ -141,3 +141,16 @@ func (s *PayoutService) request(ctx context.Context, in PayoutRequestInput, clai
 	})
 	return resp, err
 }
+
+// List returns the seller's payouts, newest first, optionally by status.
+func (s *PayoutService) List(ctx context.Context, seller uuid.UUID, status *domain.PayoutStatus, in ListInput) (Page[domain.Payout], error) {
+	before, err := decodeOptionalCursor(in.Cursor)
+	if err != nil {
+		return Page[domain.Payout]{}, err
+	}
+	rows, err := s.store.ListPayouts(ctx, seller, status, before, in.Limit+1)
+	if err != nil {
+		return Page[domain.Payout]{}, err
+	}
+	return pageOf(rows, in.Limit, func(p domain.Payout) Cursor { return Cursor{At: p.RequestedAt, ID: p.ID} }), nil
+}

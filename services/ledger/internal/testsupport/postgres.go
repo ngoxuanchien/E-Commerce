@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
@@ -113,4 +114,29 @@ func dsnFor(db string) string {
 	u := *templateURL
 	u.Path = "/" + db
 	return u.String()
+}
+
+// InsertCorruptTransaction writes, with triggers disabled, a transaction with
+// one +100 entry on a new liability account: total 100, one unbalanced
+// transaction, one liability in debit. Only trial-balance tests use it.
+func InsertCorruptTransaction(t testing.TB, db *pgxpool.Pool) {
+	t.Helper()
+	ctx := context.Background()
+	conn, err := db.Acquire(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+	acc, tx := uuid.New(), uuid.New()
+	for _, stmt := range []struct {
+		sql  string
+		args []any
+	}{
+		{`SET session_replication_role = replica`, nil},
+		{`INSERT INTO accounts (id, code, type) VALUES ($1, $2, 'liability')`, []any{acc, "corrupt:" + acc.String()}},
+		{`INSERT INTO journal_transactions (id, idempotency_key, kind, occurred_at) VALUES ($1, $2, 'PAY', now())`, []any{tx, "corrupt:" + tx.String()}},
+		{`INSERT INTO entries (id, transaction_id, account_id, amount) VALUES ($1, $2, $3, 100)`, []any{uuid.New(), tx, acc}},
+		{`SET session_replication_role = origin`, nil},
+	} {
+		_, err := conn.Exec(ctx, stmt.sql, stmt.args...)
+		require.NoError(t, err, stmt.sql)
+	}
 }

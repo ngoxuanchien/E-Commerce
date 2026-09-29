@@ -21,6 +21,14 @@ type Store interface {
 	ClaimKey(ctx context.Context, scope string, userID uuid.UUID, key string, requestHash []byte, at, staleBefore time.Time) (idemkey.Record, bool, error)
 	// ReleaseKey frees a claim after a transient failure.
 	ReleaseKey(ctx context.Context, scope string, userID uuid.UUID, key string, claimedAt time.Time) error
+
+	// WalletBalances are the raw Σ of the seller's wallet, payout-pending and escrow accounts.
+	WalletBalances(ctx context.Context, seller uuid.UUID) (WalletBalances, error)
+	// ListWalletEntries returns wallet entries newest first, strictly before `before`;
+	// Amount is the raw entry amount (credit < 0).
+	ListWalletEntries(ctx context.Context, seller uuid.UUID, before *Cursor, limit int) ([]WalletEntry, error)
+	ListPayouts(ctx context.Context, seller uuid.UUID, status *domain.PayoutStatus, before *Cursor, limit int) ([]domain.Payout, error)
+	TrialBalance(ctx context.Context) (TrialBalance, error)
 }
 
 // Tx is everything a use case may do inside one database transaction.
@@ -76,4 +84,22 @@ type Ledger interface {
 	// InsertJournal inserts the transaction and its entries; false when the
 	// key already exists (nothing is inserted).
 	InsertJournal(ctx context.Context, id uuid.UUID, j domain.Journal, accountIDs map[string]uuid.UUID) (bool, error)
+}
+
+// WalletBalances are raw account sums (credit-normal: ≤ 0 when healthy).
+type WalletBalances struct {
+	Wallet        int64
+	PayoutPending int64
+	Escrow        int64
+}
+
+// WalletEntry is one entry of a seller wallet joined with its transaction.
+type WalletEntry struct {
+	ID            uuid.UUID
+	TransactionID uuid.UUID
+	Kind          domain.Kind
+	Amount        int64
+	OrderID       *uuid.UUID
+	PayoutID      *uuid.UUID
+	CreatedAt     time.Time
 }
