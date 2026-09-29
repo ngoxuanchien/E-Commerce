@@ -2086,7 +2086,7 @@ git commit -m "test(e2e): add contract-checked API smoke tests for checkout flow
 **Interfaces:**
 - Consumes: the harness from Task 3 (`getWorld`, `newProduct`, `stockOf`, `newKey`, `ctx`, `actor`).
 
-- [ ] **Step 1: Write the cancel test**
+- [x] **Step 1: Write the cancel test**
 
 `e2e/api/cancel_test.go`:
 
@@ -2145,7 +2145,7 @@ func TestCancelReturnsStock(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Write the oversell test**
+- [x] **Step 2: Write the oversell test**
 
 `e2e/api/oversell_test.go`:
 
@@ -2210,7 +2210,7 @@ func TestConcurrentCheckoutsNeverOversell(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Write the idempotency tests**
+- [x] **Step 3: Write the idempotency tests**
 
 `e2e/api/idempotency_test.go`:
 
@@ -2310,12 +2310,12 @@ func TestConcurrentDoubleSubmitCreatesOneCheckout(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Run and triage**
+- [x] **Step 4: Run and triage**
 
 Run: `cd e2e && GOWORK=off go test -count=1 -v -run 'TestCancelReturnsStock|TestConcurrentCheckouts|TestCheckoutReplays|TestConcurrentDoubleSubmit' ./api/`
 Expected: PASS. Handle failures as in Task 3 Step 5. The WS3 known gaps apply: a Tx B race answers 409 `CONFLICT` instead of `OUT_OF_STOCK`, and orphaned idempotency rows exist (memory `ws3-order-followups`). If the oversell test hits the first one, record it as a finding against WS3 with the evidence. Don't loosen the assertion silently.
 
-- [ ] **Step 5: Stability check and commit**
+- [x] **Step 5: Stability check and commit**
 
 Run: `cd e2e && GOWORK=off go test -count=3 -run 'TestConcurrentCheckouts|TestConcurrentDoubleSubmit' ./api/`
 Expected: `ok` (3 iterations, no flakes).
