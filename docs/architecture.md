@@ -208,20 +208,18 @@ spans, including `ReserveStock`.
 Deliberate P1 scope cuts: COD only, flat shipping fee, no vouchers, reviews,
 notifications, admin, password reset or saved addresses.
 
-Open issues found during integration and review, each tracked with its
-owning workstream:
+Open issues, each tracked with its owning workstream:
 
-- **Every browser user shares one rate-limit bucket.** The gateway doesn't
-  trust the web container's nginx as a proxy (`TRUSTED_PROXIES` is empty),
-  so every browser user counts against one IP's limits. (WS0, finding F1)
-- **The contract is missing a 401.** Public API operations don't document
-  the 401 the gateway returns for an invalid token. (WS0, finding F2)
-- **A lost checkout response shows an empty page.** After a network error
-  on checkout, the page shows "nothing to check out" although the orders
-  were placed; the retry toast recovers. (WS5, finding F3)
 - **A stale seller form can overwrite stock.** A seller's product edit sets
   on-hand stock directly, so an edit form opened before a sale can
   re-inflate stock. Fixing it needs a contract change. (WS2)
 - **An idempotency key can stay stuck after a crash.** If order-svc crashes
   mid-checkout, the key keeps answering "in progress" until the 24-hour
   purge; the orders themselves are cancelled by the sweeper. (WS3)
+
+Integration testing also found and fixed three bugs, now covered by
+regression tests (see [e2e/README.md](../e2e/README.md#findings)):
+- browser traffic shared one rate-limit bucket (the gateway now trusts only
+  the web container as a proxy);
+- the contract lacked the 401 for invalid tokens on public routes;
+- a lost checkout response showed an empty checkout page.

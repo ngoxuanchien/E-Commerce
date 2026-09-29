@@ -305,6 +305,15 @@ export interface components {
         Timestamp: string;
     };
     responses: {
+        /** @description Missing or invalid credentials (UNAUTHENTICATED). */
+        Unauthenticated: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Too many requests (RATE_LIMITED). */
         RateLimited: {
             headers: {
@@ -336,15 +345,6 @@ export interface components {
         };
         /** @description Resource not found or not visible to the caller (NOT_FOUND). */
         NotFound: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/json": components["schemas"]["Error"];
-            };
-        };
-        /** @description Missing or invalid credentials (UNAUTHENTICATED). */
-        Unauthenticated: {
             headers: {
                 [name: string]: unknown;
             };
@@ -411,6 +411,7 @@ export interface operations {
                     "application/json": components["schemas"]["Category"][];
                 };
             };
+            401: components["responses"]["Unauthenticated"];
             429: components["responses"]["RateLimited"];
             "5XX": components["responses"]["ServerError"];
         };
@@ -448,6 +449,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthenticated"];
             429: components["responses"]["RateLimited"];
             "5XX": components["responses"]["ServerError"];
         };
@@ -472,6 +474,7 @@ export interface operations {
                     "application/json": components["schemas"]["Product"];
                 };
             };
+            401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["RateLimited"];
             "5XX": components["responses"]["ServerError"];
@@ -583,6 +586,7 @@ export interface operations {
                     "application/json": components["schemas"]["Shop"];
                 };
             };
+            401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["RateLimited"];
             "5XX": components["responses"]["ServerError"];

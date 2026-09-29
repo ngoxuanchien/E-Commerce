@@ -35,9 +35,8 @@ by the foundation workstream), so every Go command here runs with
 | Variable | Default | Used by |
 |---|---|---|
 | `GATEWAY_URL` | `http://localhost:8080` | seed, API tests, Playwright setup |
-| `WEB_URL` | `http://localhost:3000` | Playwright, finding F1 |
+| `WEB_URL` | `http://localhost:3000` | Playwright, rate-limit proxy test |
 | `JAEGER_URL` | `http://localhost:16686` | trace test |
-| `E2E_FINDINGS` | unset | `1` runs the reproductions of reported bugs (they fail until fixed) |
 
 ## Why runs are slow right after `make seed`
 
@@ -56,11 +55,14 @@ already been used.
 
 ## Findings
 
-Tests in `api/findings_test.go` and the gated test in
-`playwright/tests/idempotency.spec.ts` reproduce bugs found on the real
-stack and reported to the owning workstream (see the Findings table in
-`docs/superpowers/plans/2026-09-28-ws6-integration.md`). They are skipped
-unless `E2E_FINDINGS=1`.
+Integration found three bugs on the real stack, each first pinned by a failing
+test and then fixed. The tests now run as ordinary regression tests:
+
+| Id | Bug | Fixed in | Regression test |
+|---|---|---|---|
+| F1 | All browser traffic shared one gateway rate-limit bucket (`TRUSTED_PROXIES` empty) | `deploy/`: the gateway trusts only the web container's fixed address | `api/ratelimit_test.go` |
+| F2 | Public operations did not document the 401 for an invalid token | `api/openapi/`: 401 added, web types regenerated | `api/auth_test.go` (contract-checked) |
+| F3 | A lost checkout response replaced the checkout form with an empty state | `web/src/api/hooks/orders.ts`: no cart refetch after retryable errors | `playwright/tests/idempotency.spec.ts`, `web` unit test |
 
 ## P1 success criteria → tests
 

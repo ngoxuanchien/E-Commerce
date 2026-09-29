@@ -33,5 +33,6 @@ SKUs are short of stock.
 - gRPC errors carry typed details: `FAILED_PRECONDITION` +
   `InsufficientStock{shortages}`. order-svc maps them to REST
   `409 OUT_OF_STOCK` with `details.shortages`.
-- The e2e suite found that the REST contract lags the gateway in one place:
-  public operations don't document the 401 for an invalid token (finding F2).
+- Because the e2e suite validates real responses against the contract, it
+  catches contract drift: it found that public operations did not document the
+  gateway's 401 for an invalid token, since fixed in the contract.
