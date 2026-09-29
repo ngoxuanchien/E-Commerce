@@ -19,6 +19,7 @@ if (typeof Element !== 'undefined') {
   Element.prototype.scrollIntoView ??= function () {};
   Element.prototype.hasPointerCapture ??= () => false;
   Element.prototype.releasePointerCapture ??= () => {};
+  Element.prototype.setPointerCapture ??= () => {};
 }
 URL.createObjectURL ??= () => 'blob:mock';
 URL.revokeObjectURL ??= () => {};
