@@ -19,10 +19,14 @@ function isAuthEndpoint(request: Request): boolean {
 export function createAuthFetch(deps: AuthFetchDeps): (input: Request) => Promise<Response> {
   return async (input) => {
     const retry = input.clone();
-    const response = await fetch(withToken(input, deps.getToken()));
+    const sentToken = deps.getToken();
+    const response = await fetch(withToken(input, sentToken));
     if (response.status !== 401 || isAuthEndpoint(input)) return response;
 
-    const token = await deps.refresh();
+    // Another request may have refreshed while this one was in flight: reuse that token instead of
+    // refreshing again (the server rotates refresh tokens, so a second refresh can fail).
+    const current = deps.getToken();
+    const token = current && current !== sentToken ? current : await deps.refresh();
     if (!token) {
       deps.onAuthFailure();
       return response;

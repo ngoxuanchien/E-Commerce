@@ -55,4 +55,21 @@ describe('createAuthFetch', () => {
     expect(seen).toHaveLength(2);
     expect(deps.refresh).toHaveBeenCalledTimes(1);
   });
+
+  test('a 401 for a token that was already refreshed retries with the current token instead of refreshing again', async () => {
+    const seen: Request[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (req: Request) => {
+      seen.push(req);
+      return seen.length === 1 ? unauthorized() : ok();
+    }));
+    let token = 'stale';
+    const refresh = vi.fn(async () => 'never-used');
+    const authFetch = createAuthFetch({ getToken: () => token, refresh, onAuthFailure: vi.fn() });
+    const pending = authFetch(new Request(`${origin}/api/orders`));
+    token = 'fresh'; // another request refreshed while this one was in flight
+    const res = await pending;
+    expect(res.status).toBe(200);
+    expect(refresh).not.toHaveBeenCalled();
+    expect(seen[1].headers.get('Authorization')).toBe('Bearer fresh');
+  });
 });
