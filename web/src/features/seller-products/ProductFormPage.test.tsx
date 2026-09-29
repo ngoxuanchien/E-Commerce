@@ -1,10 +1,11 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { HttpResponse, http } from 'msw';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { SEED } from '@/mocks/seed';
 import { getDb } from '@/mocks/state';
 import { server } from '@/test/server';
 import { currentPath, renderApp } from '@/test/render';
+import type { Product } from '@/api/types';
 import { uploadImage } from './upload';
 
 vi.mock('./upload', () => ({ uploadImage: vi.fn() }));
@@ -133,4 +134,23 @@ test('an edit sends the stock it loaded, and a stale one reloads the form instea
   await user.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
   await waitFor(() => expect(currentPath()).toBe('/seller/products'));
   expect(saved.skus[0]).toMatchObject({ price: 50_000, stock: 47 });
+});
+
+test('a background refetch keeps the seller\'s edits; the save then reports the stale stock', async () => {
+  const { user, queryClient } = renderApp(`/seller/products/${SEED.products.bowl}`, { as: 'binh@example.com' });
+  const price = await screen.findByLabelText('Giá (₫) phân loại 1');
+  await user.clear(price);
+  await user.type(price, '50000');
+
+  getDb().state.products.find((p) => p.id === SEED.products.bowl)!.skus[0].stock = 47; // a buyer reserved 3
+  await act(() => queryClient.refetchQueries()); // e.g. refetchOnReconnect
+  await act(() => new Promise((resolve) => setTimeout(resolve, 0))); // react-query notifies observers on the next tick
+  expect(queryClient.getQueryData<Product>(['product', SEED.products.bowl])?.skus[0].stock).toBe(47);
+  expect(screen.getByLabelText('Giá (₫) phân loại 1')).toHaveValue('50000');
+  expect(screen.getByLabelText('Tồn kho phân loại 1')).toHaveValue('50');
+
+  await user.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
+  expect(await screen.findAllByText(/Tồn kho vừa thay đổi do có đơn hàng mới/)).not.toHaveLength(0); // sonner keeps earlier tests' toasts
+  await waitFor(() => expect(screen.getByLabelText('Tồn kho phân loại 1')).toHaveValue('47'));
+  expect(getDb().state.products.find((p) => p.id === SEED.products.bowl)!.skus[0]).toMatchObject({ price: 45_000, stock: 47 });
 });
