@@ -1015,7 +1015,7 @@ git commit -m "feat(e2e): add gateway client with 429 retry and fixture images"
 - Consumes: everything from `e2e/client` (Task 1).
 - Produces: demo accounts `seller1..3@example.test` and `buyer1..2@example.test` with password `matkhau123`; shops `thoi-trang-pho-co`, `dien-may-sai-gon` and `nha-xinh-da-lat`. README (Task 9) documents them.
 
-- [ ] **Step 1: Write the failing dataset test**
+- [x] **Step 1: Write the failing dataset test**
 
 `e2e/cmd/seed/data_test.go`:
 
@@ -1071,12 +1071,12 @@ func TestDatasetFollowsSpecAndCatalogRules(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cd e2e && GOWORK=off go test ./cmd/seed/...`
 Expected: FAIL to compile (`undefined: sellers`).
 
-- [ ] **Step 3: Write the dataset**
+- [x] **Step 3: Write the dataset**
 
 `e2e/cmd/seed/data.go`:
 
@@ -1204,7 +1204,7 @@ var orderPlans = []orderPlan{
 
 (Positional `productData` literals are fine here: the struct is local and the test pins the fields. If `govet`'s `composites` check flags them, switch to keyed fields.)
 
-- [ ] **Step 4: Write the seeding logic and entry point**
+- [x] **Step 4: Write the seeding logic and entry point**
 
 `e2e/cmd/seed/seed.go`:
 
@@ -1503,12 +1503,12 @@ func envOr(key, def string) string {
 }
 ```
 
-- [ ] **Step 5: Run the dataset test to verify it passes**
+- [x] **Step 5: Run the dataset test to verify it passes**
 
 Run: `cd e2e && GOWORK=off go vet ./... && GOWORK=off go test ./cmd/seed/...`
 Expected: `ok  github.com/ngoxuanchien/e-commerce/e2e/cmd/seed`
 
-- [ ] **Step 6: Replace the Makefile `seed` target and run it twice against the real stack**
+- [x] **Step 6: Replace the Makefile `seed` target and run it twice against the real stack**
 
 In `Makefile`, replace only the `seed` target:
 
@@ -1534,7 +1534,7 @@ Expected for the second run: 3 × `shop …: exists`, `0 products created, N alr
 
 If seeding fails against the real stack for a reason inside a service, follow the Findings protocol in Global Constraints. Do not patch the service.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add e2e/cmd/seed Makefile
