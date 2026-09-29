@@ -227,6 +227,7 @@ export interface components {
                  *     OUT_OF_STOCK: {"shortages": [{"sku_id", "requested", "available"}]}.
                  *     CONFLICT on a seller product PATCH with a stale expected_stock: {"skus": [{"sku_id", "expected_stock", "stock"}]}.
                  *     INSUFFICIENT_FUNDS: {"available": <Money>}.
+                 *     INVALID_STATE_TRANSITION (payments): {"reason": COD_CHECKOUT | NOT_AWAITING_PAYMENT | DEADLINE_PASSED | ALREADY_PAID | BELOW_PROVIDER_MINIMUM}.
                  */
                 details?: {
                     [key: string]: unknown;
@@ -332,7 +333,14 @@ export interface operations {
             400: components["responses"]["ValidationError"];
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
-            /** @description INVALID_STATE_TRANSITION — COD checkout, no order AWAITING_PAYMENT, or the payment deadline passed. */
+            /**
+             * @description INVALID_STATE_TRANSITION. `error.details.reason` is one of:
+             *     `COD_CHECKOUT` (the checkout is COD),
+             *     `NOT_AWAITING_PAYMENT` (no order is AWAITING_PAYMENT),
+             *     `DEADLINE_PASSED` (now >= payment_deadline),
+             *     `ALREADY_PAID` (a captured payment already exists),
+             *     `BELOW_PROVIDER_MINIMUM` (the amount is below the provider minimum, e.g. STRIPE_MIN_AMOUNT).
+             */
             409: {
                 headers: {
                     [name: string]: unknown;

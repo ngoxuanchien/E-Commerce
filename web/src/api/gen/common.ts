@@ -30,6 +30,7 @@ export interface components {
                  *     OUT_OF_STOCK: {"shortages": [{"sku_id", "requested", "available"}]}.
                  *     CONFLICT on a seller product PATCH with a stale expected_stock: {"skus": [{"sku_id", "expected_stock", "stock"}]}.
                  *     INSUFFICIENT_FUNDS: {"available": <Money>}.
+                 *     INVALID_STATE_TRANSITION (payments): {"reason": COD_CHECKOUT | NOT_AWAITING_PAYMENT | DEADLINE_PASSED | ALREADY_PAID | BELOW_PROVIDER_MINIMUM}.
                  */
                 details?: {
                     [key: string]: unknown;

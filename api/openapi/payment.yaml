@@ -40,7 +40,13 @@ paths:
         '404':
           $ref: 'common.yaml#/components/responses/NotFound'
         '409':
-          description: INVALID_STATE_TRANSITION — COD checkout, no order AWAITING_PAYMENT, or the payment deadline passed.
+          description: |
+            INVALID_STATE_TRANSITION. `error.details.reason` is one of:
+            `COD_CHECKOUT` (the checkout is COD),
+            `NOT_AWAITING_PAYMENT` (no order is AWAITING_PAYMENT),
+            `DEADLINE_PASSED` (now >= payment_deadline),
+            `ALREADY_PAID` (a captured payment already exists),
+            `BELOW_PROVIDER_MINIMUM` (the amount is below the provider minimum, e.g. STRIPE_MIN_AMOUNT).
           content:
             application/json:
               schema:
