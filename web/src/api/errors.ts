@@ -7,6 +7,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   NOT_FOUND: 'Không tìm thấy nội dung bạn yêu cầu.',
   CONFLICT: 'Dữ liệu đã thay đổi. Vui lòng tải lại trang và thử lại.',
   OUT_OF_STOCK: 'Một số sản phẩm không đủ hàng. Vui lòng điều chỉnh số lượng.',
+  INSUFFICIENT_FUNDS: 'Số dư không đủ để thực hiện yêu cầu.',
   INVALID_STATE_TRANSITION: 'Trạng thái đơn hàng đã thay đổi. Vui lòng tải lại trang.',
   PAYLOAD_TOO_LARGE: 'Dữ liệu gửi lên quá lớn.',
   IDEMPOTENCY_KEY_REUSED: 'Yêu cầu đặt hàng bị trùng với nội dung khác. Vui lòng tải lại trang thanh toán.',

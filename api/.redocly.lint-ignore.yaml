@@ -17,3 +17,16 @@ openapi/common.yaml:
     - '#/components/responses/PayloadTooLarge'
     - '#/components/securitySchemes/bearerAuth'
     - '#/components/securitySchemes/refreshCookie'
+# Provider callbacks answer by design with redirects (302) or always-200 acks,
+# so the generic 2XX/4XX-response rules don't apply.
+openapi/payment.yaml:
+  operation-4xx-response:
+    - '#/paths/~1api~1payments~1vnpay~1ipn/get/responses'
+    - '#/paths/~1api~1payments~1vnpay~1return/get/responses'
+    - '#/paths/~1api~1payments~1stripe~1return/get/responses'
+    - '#/paths/~1api~1payments~1fake~1return/get/responses'
+  operation-2xx-response:
+    - '#/paths/~1api~1payments~1vnpay~1return/get/responses'
+    - '#/paths/~1api~1payments~1stripe~1return/get/responses'
+    - '#/paths/~1api~1payments~1fake~1checkout~1{id}/post/responses'
+    - '#/paths/~1api~1payments~1fake~1return/get/responses'

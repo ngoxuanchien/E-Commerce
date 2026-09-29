@@ -98,7 +98,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Buyer cancels their own order (only while PENDING_CONFIRMATION). */
+        /**
+         * Buyer cancels their own order (only while PENDING_CONFIRMATION or AWAITING_PAYMENT).
+         * @description Also valid in AWAITING_PAYMENT. The response is the requested order; the other AWAITING_PAYMENT orders of the same checkout are cancelled too.
+         */
         post: operations["cancelMyOrder"];
         delete?: never;
         options?: never;
@@ -250,20 +253,25 @@ export interface components {
             /** @description Cart lines to buy; defaults to the whole cart. */
             sku_ids?: components["schemas"]["Id"][];
             shipping_address: components["schemas"]["Address"];
-            /** @enum {string} */
-            payment_method: "COD";
+            /**
+             * @description A method missing from ONLINE_PAYMENT_METHODS answers 400 VALIDATION_ERROR (details.fields.payment_method). Online orders are created in AWAITING_PAYMENT.
+             * @enum {string}
+             */
+            payment_method: "COD" | "VNPAY" | "STRIPE";
         };
         CheckoutResponse: {
             checkout_id: components["schemas"]["Id"];
             orders: components["schemas"]["Order"][];
         };
         /** @enum {string} */
-        OrderStatus: "PENDING" | "PENDING_CONFIRMATION" | "CONFIRMED" | "SHIPPING" | "DELIVERED" | "COMPLETED" | "CANCELLED";
+        OrderStatus: "PENDING" | "AWAITING_PAYMENT" | "PENDING_CONFIRMATION" | "CONFIRMED" | "SHIPPING" | "DELIVERED" | "COMPLETED" | "CANCELLED";
         /** @enum {string} */
         ActorRole: "buyer" | "seller" | "system";
         OrderShop: {
             id: components["schemas"]["Id"];
             name: string;
+            /** @description Shop slug for links (P2; optional until WS3' marks it required) */
+            slug?: string;
         };
         OrderItem: {
             sku_id: components["schemas"]["Id"];
@@ -295,7 +303,26 @@ export interface components {
             total: components["schemas"]["Money"];
             shipping_address: components["schemas"]["Address"];
             /** @enum {string} */
-            payment_method: "COD";
+            payment_method: "COD" | "VNPAY" | "STRIPE";
+            /**
+             * @description NONE for COD (P2; optional until WS3' marks it required)
+             * @enum {string}
+             */
+            payment_status?: "NONE" | "UNPAID" | "PAID" | "REFUND_PENDING" | "REFUNDED";
+            /**
+             * Format: date-time
+             * @description null for COD (P2; optional until WS3' marks it required)
+             */
+            payment_deadline?: string | null;
+            /** @description 0 for COD (P2; optional until WS3' marks it required) */
+            commission_rate_bps?: number;
+            /** @description 0 for COD (P2; optional until WS3' marks it required) */
+            commission_amount?: components["schemas"]["Money"];
+            /**
+             * Format: date-time
+             * @description (P2; optional until WS3' marks it required)
+             */
+            delivered_at?: string | null;
             cancel_reason: string | null;
             history: components["schemas"]["OrderHistoryEntry"][];
             created_at: components["schemas"]["Timestamp"];
@@ -328,7 +355,7 @@ export interface components {
          */
         Money: number;
         /** @enum {string} */
-        ErrorCode: "VALIDATION_ERROR" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "OUT_OF_STOCK" | "INVALID_STATE_TRANSITION" | "PAYLOAD_TOO_LARGE" | "IDEMPOTENCY_KEY_REUSED" | "RATE_LIMITED" | "INTERNAL" | "UPSTREAM_UNAVAILABLE";
+        ErrorCode: "VALIDATION_ERROR" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "OUT_OF_STOCK" | "INSUFFICIENT_FUNDS" | "INVALID_STATE_TRANSITION" | "PAYLOAD_TOO_LARGE" | "IDEMPOTENCY_KEY_REUSED" | "RATE_LIMITED" | "INTERNAL" | "UPSTREAM_UNAVAILABLE";
         Error: {
             error: {
                 code: components["schemas"]["ErrorCode"];
@@ -337,6 +364,7 @@ export interface components {
                  * @description VALIDATION_ERROR: {"fields": {"<json path>": "<message>"}}.
                  *     OUT_OF_STOCK: {"shortages": [{"sku_id", "requested", "available"}]}.
                  *     CONFLICT on a seller product PATCH with a stale expected_stock: {"skus": [{"sku_id", "expected_stock", "stock"}]}.
+                 *     INSUFFICIENT_FUNDS: {"available": <Money>}.
                  */
                 details?: {
                     [key: string]: unknown;
@@ -406,7 +434,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description Conflict with current state (CONFLICT, OUT_OF_STOCK, INVALID_STATE_TRANSITION). */
+        /** @description Conflict with current state (CONFLICT, OUT_OF_STOCK, INVALID_STATE_TRANSITION, INSUFFICIENT_FUNDS). */
         Conflict: {
             headers: {
                 [name: string]: unknown;

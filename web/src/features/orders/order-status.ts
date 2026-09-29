@@ -2,6 +2,7 @@ import type { ActorRole, OrderStatus } from '@/api/types';
 
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   PENDING: 'Đang xử lý',
+  AWAITING_PAYMENT: 'Chờ thanh toán',
   PENDING_CONFIRMATION: 'Chờ xác nhận',
   CONFIRMED: 'Đã xác nhận',
   SHIPPING: 'Đang giao',
@@ -12,6 +13,7 @@ export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
 
 export const ORDER_STATUS_TONE: Record<OrderStatus, string> = {
   PENDING: 'bg-muted text-muted-foreground',
+  AWAITING_PAYMENT: 'bg-turmeric/10 text-turmeric',
   PENDING_CONFIRMATION: 'bg-turmeric/10 text-turmeric',
   CONFIRMED: 'bg-tarp/10 text-tarp',
   SHIPPING: 'bg-tarp/10 text-tarp',

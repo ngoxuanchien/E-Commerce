@@ -44,7 +44,7 @@ describe('unwrap', () => {
 
 describe('messages', () => {
   test('every error code has a Vietnamese message', () => {
-    expect(Object.keys(ERROR_MESSAGES)).toHaveLength(12);
+    expect(Object.keys(ERROR_MESSAGES)).toHaveLength(13);
     expect(errorMessage(ApiError.from(409, body('OUT_OF_STOCK')))).toBe(ERROR_MESSAGES.OUT_OF_STOCK);
   });
 
