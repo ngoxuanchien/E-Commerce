@@ -306,7 +306,7 @@ export interface operations {
                     "application/json": components["schemas"]["Payout"];
                 };
             };
-            /** @description Amount below PAYOUT_MIN_AMOUNT (VALIDATION_ERROR). */
+            /** @description Amount below PAYOUT_MIN_AMOUNT (50,000 VND by default) (VALIDATION_ERROR). */
             400: {
                 headers: {
                     [name: string]: unknown;

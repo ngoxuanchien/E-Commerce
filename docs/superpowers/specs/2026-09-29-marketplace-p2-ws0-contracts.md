@@ -132,6 +132,8 @@ The P1 envelope (`event_id, event_type, version, occurred_at, data`) and the `tr
 | | **`PayoutSettled`** | `payout_id, seller_user_id, amount, settled_at` | ledger | — | — |
 | | **`PayoutFailed`** | `payout_id, seller_user_id, amount, reason` | ledger | — | — |
 
+**P1-era `OrderCancelled` events.** `checkout_id` and `payment_method` are absent on events produced before WS3' (P1 order-svc). New consumer groups start at the earliest offset, so payment-svc may replay retained P1 cancellations. Consumers treat a missing `payment_method` as COD and skip the event.
+
 New schema files:
 - `order-completed.schema.json`
 - `payment-succeeded.schema.json`, `payment-failed.schema.json`, `payment-refunded.schema.json`
@@ -213,7 +215,7 @@ WS0' keeps editing rights on every file listed in §2 for the rest of P2. If a w
 
 Shared-file changes WS0' made beyond the original scope, and the items it handed to other workstreams.
 
-- **Optional `Order` fields.** The new `Order` fields and `OrderShop.slug` are optional in `order.yaml` (user decision 2026-09-29), because the unchanged order-svc validates every response against it. WS3' adds them to `required` in its implementing PR. This is the only contract edit allowed outside WS0'.
+- **Optional `Order` fields.** The new `Order` fields and `OrderShop.slug` are optional in `order.yaml` (user decision 2026-09-29), because the unchanged order-svc validates every response against it. WS3' adds them to `required` in its implementing PR. This is the only contract edit allowed outside WS0'. Web's lint runs `gen:api:check`, so WS3''s PR that flips `required` also commits the regenerated `web/src/api/gen/order.ts` (`cd web && npm run gen:api`). That is generated output only, an explicit exception like the flip itself. Whichever of WS3'/WS5' merges second re-runs `npm run gen:api` on rebase.
 - **`Order.shop.slug`.** P1.5 did not deliver it (overview §7). WS0' adds it to the contract, and WS3' implements it: order-svc must snapshot the shop slug at checkout, which needs a migration.
 - **`web/` fallout.** `web/src/api/gen` was regenerated, `gen-api.mjs` includes payment and ledger, and there is one new entry each for `AWAITING_PAYMENT` (status label and tone) and `INSUFFICIENT_FUNDS` (error message), because web lint runs `gen:api:check` and `tsc`. The fallout also touched `web/src/api/types.test.ts` and `web/src/api/errors.test.ts`, because they pin the contract (the OrderStatus union and the ERROR_MESSAGES count). WS5' owns everything else.
 - **Gateway readiness.** The gateway `depends_on` payment and ledger (healthy), as it does for the P1 upstreams.
@@ -226,3 +228,4 @@ Shared-file changes WS0' made beyond the original scope, and the items it handed
 - **`createPayment` 409 `details.reason` set.** WS1' §5 named only `ALREADY_PAID` and `BELOW_PROVIDER_MINIMUM`. The contract now pins the full set: `COD_CHECKOUT`, `NOT_AWAITING_PAYMENT`, `DEADLINE_PASSED`, `ALREADY_PAID`, `BELOW_PROVIDER_MINIMUM` (in `payment.yaml` and the `Error.details` description in `common.yaml`). WS5' maps these reasons to messages.
 - **FAKE webhook body and signature.** They follow WS1' §5.3: body `{event_id, payment_id, outcome}`, header `X-Fake-Signature: t=<unix>,v1=<hex>`. `outcome` is left an unconstrained string in the contract.
 - **`STRIPE_MIN_AMOUNT` example value.** `deploy/secrets/payment.env.example` sets `STRIPE_MIN_AMOUNT=10000` as an example. WS1' gives no default, so WS1' confirms the value.
+- **`go.work.sum`.** Workspace-mode builds in WS1'–WS5' may rewrite `go.work.sum`. Conflicts there are resolved by running `go work sync` on rebase and do not need a WS0' PR.

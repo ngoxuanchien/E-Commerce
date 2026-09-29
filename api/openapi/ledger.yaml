@@ -84,7 +84,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Payout'
         '400':
-          description: Amount below PAYOUT_MIN_AMOUNT (VALIDATION_ERROR).
+          description: Amount below PAYOUT_MIN_AMOUNT (50,000 VND by default) (VALIDATION_ERROR).
           content:
             application/json:
               schema:

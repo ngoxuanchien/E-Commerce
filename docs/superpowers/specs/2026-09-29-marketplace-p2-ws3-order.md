@@ -4,7 +4,7 @@
 
 ## 1. Responsibility (additions)
 
-See WS0' §12 for the contract items this workstream completes.
+See WS0' §12 for the contract items this workstream completes. WS3''s PR that flips `required` in `order.yaml` also commits the regenerated `web/src/api/gen/order.ts` (`cd web && npm run gen:api`); that is generated output only, an explicit exception like the flip itself. Whichever of WS3'/WS5' merges second re-runs `npm run gen:api` on rebase.
 
 order-svc gains:
 - online payment methods at checkout, with a commission snapshot;
