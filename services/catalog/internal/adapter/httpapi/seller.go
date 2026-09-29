@@ -10,11 +10,12 @@ import (
 )
 
 type skuInputJSON struct {
-	ID     *string `json:"id"`
-	Name   string  `json:"name"`
-	Price  *int64  `json:"price"`
-	Stock  *int32  `json:"stock"`
-	Active *bool   `json:"active"`
+	ID            *string `json:"id"`
+	Name          string  `json:"name"`
+	Price         *int64  `json:"price"`
+	Stock         *int32  `json:"stock"`
+	ExpectedStock *int32  `json:"expected_stock"`
+	Active        *bool   `json:"active"`
 }
 
 // productInputJSON is both ProductInput (create) and ProductPatch (update);
@@ -35,7 +36,7 @@ func (in productInputJSON) toDomain() domain.ProductInput {
 	if in.Skus != nil {
 		out.Skus = make([]domain.SkuInput, len(in.Skus))
 		for i, s := range in.Skus {
-			out.Skus[i] = domain.SkuInput{ID: s.ID, Name: s.Name, Price: s.Price, Stock: s.Stock, Active: s.Active}
+			out.Skus[i] = domain.SkuInput{ID: s.ID, Name: s.Name, Price: s.Price, Stock: s.Stock, ExpectedStock: s.ExpectedStock, Active: s.Active}
 		}
 	}
 	return out

@@ -298,7 +298,7 @@ paths:
     patch:
       tags: [seller]
       operationId: updateSellerProduct
-      summary: Partial update. SKUs with id are updated, without id created, omitted ones deactivated.
+      summary: Partial update. SKUs with id are updated (compare-and-set on expected_stock), without id created, omitted ones deactivated.
       x-required-role: seller
       security:
         - bearerAuth: []
@@ -325,6 +325,8 @@ paths:
           $ref: 'common.yaml#/components/responses/Forbidden'
         '404':
           $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: 'common.yaml#/components/responses/Conflict'
         '413':
           $ref: 'common.yaml#/components/responses/PayloadTooLarge'
         '429':
@@ -491,6 +493,16 @@ components:
           format: int32
           minimum: 0
           maximum: 100000
+          description: On-hand stock to set. On update this overwrites the current value, see expected_stock.
+        expected_stock:
+          type: integer
+          format: int32
+          minimum: 0
+          description: |
+            The SKU's stock as the client last read it. PATCH requires it for every SKU with `id` and
+            forbids it on new SKUs and on POST. The update applies only if the stock is still this
+            value. Otherwise orders reserved or released stock in the meantime, and the whole PATCH
+            is rejected with 409 CONFLICT, `details.skus = [{sku_id, expected_stock, stock}]`.
         active:
           type: boolean
           default: true

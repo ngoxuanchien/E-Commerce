@@ -125,7 +125,11 @@ func TestProductFieldRules(t *testing.T) {
 func TestProductUpdateSkuIDs(t *testing.T) {
 	id := uuid.Must(uuid.NewV7()).String()
 	sku := func(id *string) domain.SkuInput {
-		return domain.SkuInput{ID: id, Name: "M", Price: ptr(int64(1000)), Stock: ptr(int32(1))}
+		in := domain.SkuInput{ID: id, Name: "M", Price: ptr(int64(1000)), Stock: ptr(int32(1))}
+		if id != nil {
+			in.ExpectedStock = ptr(int32(1))
+		}
+		return in
 	}
 
 	c, err := domain.ProductInput{Skus: []domain.SkuInput{sku(&id), sku(nil)}}.Validate(shopID, false)
@@ -139,6 +143,39 @@ func TestProductUpdateSkuIDs(t *testing.T) {
 
 	_, err = domain.ProductInput{Skus: []domain.SkuInput{sku(ptr("x"))}}.Validate(shopID, false)
 	assert.Contains(t, fields(t, err), "skus[0].id")
+}
+
+func TestSkuExpectedStock(t *testing.T) {
+	id := uuid.Must(uuid.NewV7()).String()
+	sku := func(id *string, expected *int32) domain.SkuInput {
+		return domain.SkuInput{ID: id, Name: "M", Price: ptr(int64(1000)), Stock: ptr(int32(7)), ExpectedStock: expected}
+	}
+
+	c, err := domain.ProductInput{Skus: []domain.SkuInput{sku(&id, ptr(int32(4))), sku(nil, nil)}}.Validate(shopID, false)
+	require.NoError(t, err)
+	require.NotNil(t, c.Skus[0].ExpectedStock)
+	assert.Equal(t, int32(4), *c.Skus[0].ExpectedStock)
+	assert.Nil(t, c.Skus[1].ExpectedStock)
+
+	_, err = domain.ProductInput{Skus: []domain.SkuInput{sku(&id, nil)}}.Validate(shopID, false)
+	assert.Equal(t, "is required when id is set", fields(t, err)["skus[0].expected_stock"], "updating a SKU writes its stock, so it must be compared")
+
+	_, err = domain.ProductInput{Skus: []domain.SkuInput{sku(&id, ptr(int32(-1)))}}.Validate(shopID, false)
+	assert.Contains(t, fields(t, err), "skus[0].expected_stock")
+
+	_, err = domain.ProductInput{Skus: []domain.SkuInput{sku(nil, ptr(int32(0)))}}.Validate(shopID, false)
+	assert.Equal(t, "must not be set for a new SKU", fields(t, err)["skus[0].expected_stock"])
+
+	in := validCreate()
+	in.Skus[0].ExpectedStock = ptr(int32(0))
+	_, err = in.Validate(shopID, true)
+	assert.Equal(t, "must not be set for a new SKU", fields(t, err)["skus[0].expected_stock"])
+}
+
+func TestStockChangedError(t *testing.T) {
+	a := uuid.MustParse("01a0e700-0000-7000-8000-00000000000a")
+	err := &domain.StockChangedError{Skus: []domain.StockChange{{SkuID: a, Expected: 5, Actual: 3}}}
+	assert.Equal(t, "stock changed since it was read: 01a0e700-0000-7000-8000-00000000000a expected 5, now 3", err.Error())
 }
 
 func TestMinActivePrice(t *testing.T) {
