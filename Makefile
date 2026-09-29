@@ -95,5 +95,6 @@ keys: ## Generate the dev JWT signing key (deploy/secrets, gitignored)
 seed: ## Seed demo data through the gateway (run after make up-app; idempotent)
 	cd e2e && GOWORK=off go run ./cmd/seed
 
-e2e: ## Run end-to-end tests (implemented by WS6)
-	@echo "e2e: not implemented yet (owned by WS6)"
+e2e: ## Run API smoke tests + Playwright against a running stack (make up-app seed first)
+	cd e2e && GOWORK=off go test -count=1 -timeout 20m ./...
+	cd e2e/playwright && npm ci --no-audit --no-fund && npx playwright install chromium && npx playwright test

@@ -98,3 +98,47 @@ jobs:
         run: npm ci && npm run lint && npm test
       - if: steps.detect.outputs.present != 'true'
         run: echo "web/ not present yet; skipping"
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: e2e/go.mod
+          cache-dependency-path: '**/go.sum'
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/playwright/package-lock.json
+      - uses: actions/cache@v4
+        with:
+          path: bin
+          key: tools-${{ runner.os }}-${{ hashFiles('Makefile') }}
+      - run: make tools
+      - name: lint e2e module
+        working-directory: e2e
+        run: GOWORK=off $GITHUB_WORKSPACE/bin/golangci-lint run ./...
+      - name: install Playwright browser
+        working-directory: e2e/playwright
+        run: npm ci --no-audit --no-fund && npx playwright install --with-deps chromium
+      - name: start the stack
+        run: make keys up-app
+      - run: make seed
+      - run: make e2e
+        env:
+          CI: 'true'
+      - name: collect service logs
+        if: failure()
+        run: docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.web.yml --profile app logs --no-color > e2e-service-logs.txt
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-artifacts
+          path: |
+            e2e/playwright/playwright-report
+            e2e/playwright/test-results
+            e2e-service-logs.txt
+          retention-days: 7

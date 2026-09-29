@@ -3090,7 +3090,7 @@ git commit -m "test(e2e): add Playwright cancel-restock, oversell and idempotenc
 - Modify: `.github/workflows/ci.yml` (add the `e2e` job only)
 - Create: `e2e/README.md`
 
-- [ ] **Step 1: Replace the `e2e` target**
+- [x] **Step 1: Replace the `e2e` target**
 
 ```make
 e2e: ## Run API smoke tests + Playwright against a running stack (make up-app seed first)
@@ -3103,7 +3103,7 @@ e2e: ## Run API smoke tests + Playwright against a running stack (make up-app se
 Run: `make e2e`
 Expected: the Go packages print `ok`, then `8 passed`. Exit 0.
 
-- [ ] **Step 2: Add the CI job**
+- [x] **Step 2: Add the CI job**
 
 Append to `.github/workflows/ci.yml` under `jobs:`:
 
@@ -3156,7 +3156,7 @@ Append to `.github/workflows/ci.yml` under `jobs:`:
 Run: `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml')); print('yaml ok')"`
 Expected: `yaml ok`.
 
-- [ ] **Step 3: Write `e2e/README.md`**
+- [x] **Step 3: Write `e2e/README.md`**
 
 Contents:
 - What lives here: the client, seed, API tests, Playwright specs and fixtures.
@@ -3168,7 +3168,7 @@ Contents:
 - How to open a Playwright trace (`npx playwright show-trace test-results/…/trace.zip`).
 - The table mapping the six P1 success criteria to tests (the same as Task 10 Step 2).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add Makefile .github/workflows/ci.yml e2e/README.md
