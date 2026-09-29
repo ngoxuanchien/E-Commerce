@@ -3184,7 +3184,7 @@ git commit -m "ci: run seed, API smoke tests and Playwright against the compose 
 
 Every statement must match the code on this branch. Check each fact against the specs, the service READMEs (`services/catalog/README.md`, `services/order/README.md`), `deploy/docker-compose.yml` and the Makefile. Don't copy it from memory. Use Mermaid for diagrams, since GitHub renders it.
 
-- [ ] **Step 1: `README.md`**, in this order:
+- [x] **Step 1: `README.md`**, in this order:
   1. The title and a one-paragraph pitch: a Shopee-like multi-vendor marketplace, Go microservices + React, built as a portfolio project; P1 covers core buying and selling with COD.
   2. A feature list covering the six P1 success criteria.
   3. An architecture diagram: a Mermaid `flowchart LR` of browser → web → gateway → identity/catalog/order, with Postgres DBs, Redis, Kafka `order.events`, MinIO and Jaeger. Link to `docs/architecture.md`.
@@ -3200,7 +3200,7 @@ Every statement must match the code on this branch. Check each fact against the 
       - A service failing on `no migration found for version N`: the shared `pgdata` volume holds newer migrations from another branch. Check out main or reset volumes with `make down && docker volume rm marketplace_pgdata`, which deletes data.
       - 429 during tests.
 
-- [ ] **Step 2: `docs/architecture.md`**, with these sections:
+- [x] **Step 2: `docs/architecture.md`**, with these sections:
   - Services and ownership: a table with port, database, responsibilities, sync/async interfaces and the owning workstream.
   - Request path through the gateway: header stripping and injection, auth levels, rate limits.
   - Checkout sequence (Mermaid `sequenceDiagram`): buyer → gateway → order (idempotency row → GetSkus → Tx A PENDING orders → ReserveStock per order → Tx C PENDING_CONFIRMATION + OrderCreated outbox → cart cleanup). Include the failure branch (`alt` any reservation fails → ReleaseStock all → Tx B CANCELLED → 409).
@@ -3209,14 +3209,14 @@ Every statement must match the code on this branch. Check each fact against the 
   - Observability: OTLP → Jaeger, and trace propagation over HTTP, gRPC and Kafka headers.
   - Known limitations: the WS2/WS3/WS4 follow-ups that are still open, plus the WS6 Findings.
 
-- [ ] **Step 3: The five ADRs**, each ≤ 1 page with Status / Context / Decision / Consequences. Status is "Accepted", dated 2026-09-28.
+- [x] **Step 3: The five ADRs**, each ≤ 1 page with Status / Context / Decision / Consequences. Status is "Accepted", dated 2026-09-28.
   - 0001: microservices + database per service. Context: a portfolio goal of showcasing service boundaries. Consequences: no cross-DB joins, snapshots in orders, eventual consistency for stock release.
   - 0002: gRPC internally, REST externally. Contracts in `proto/` (buf lint/breaking) and `api/openapi` (source of truth for the web types); the gateway translates nothing, it only proxies REST.
   - 0003: transactional outbox with Kafka. Covers the dual-write problem, `pkg/outbox` relay with `SKIP LOCKED`, at-least-once delivery, `processed_events` dedupe, and `traceparent` in headers.
   - 0004: stock reservation strategy. Covers synchronous reserve at checkout (vs. reserve-on-confirm or optimistic cart), the conditional update without locks held across services, all-or-nothing per checkout with compensation, the sweeper, and the async release on cancel. Also the known limitation that a seller stock PATCH overwrites on-hand stock (memory `ws2-catalog-followups`).
   - 0005: JWT RS256 + refresh rotation. Covers the JWKS-verifying gateway, 15 min access tokens held only in memory, and HttpOnly refresh cookies rotated per use with family revocation on reuse. The role change after opening a shop needs `/refresh`.
 
-- [ ] **Step 4: Check the docs**
+- [x] **Step 4: Check the docs**
 
 Run: `grep -rn "TODO\|TBD" README.md docs/architecture.md docs/adr/`
 Expected: no output.
@@ -3225,7 +3225,7 @@ Check every relative link: `grep -oE '\]\(([^)#]+)' README.md docs/architecture.
 
 Check the Mermaid syntax by pasting each block into `npx --yes @mermaid-js/mermaid-cli`. Example: `npx --yes @mermaid-js/mermaid-cli -i docs/architecture.md -o "$SCRATCH/arch.md"`, where `$SCRATCH` is the session scratchpad; it fails on syntax errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add README.md docs/architecture.md docs/adr
