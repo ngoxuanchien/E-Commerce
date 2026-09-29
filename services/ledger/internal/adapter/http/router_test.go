@@ -94,7 +94,7 @@ func (a *api) do(c *http.Client, in call) (int, map[string]any) {
 	}
 	resp, err := c.Do(req)
 	require.NoError(a.t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var out map[string]any
 	raw, _ := io.ReadAll(resp.Body)
 	if len(raw) > 0 {
@@ -107,7 +107,10 @@ func seller(id uuid.UUID) call { return call{user: id.String(), roles: "buyer,se
 
 func (c call) at(method, path string) call { c.method, c.path = method, path; return c }
 
-func (c call) with(body string, headers map[string]string) call { c.body, c.headers = body, headers; return c }
+func (c call) with(body string, headers map[string]string) call {
+	c.body, c.headers = body, headers
+	return c
+}
 
 func errCode(body map[string]any) string {
 	e, _ := body["error"].(map[string]any)

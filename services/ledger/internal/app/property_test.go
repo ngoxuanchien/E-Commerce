@@ -88,7 +88,9 @@ func (m *ledgerModel) deliver(t *rapid.T, p event.Payload) {
 	m.facts = append(m.facts, p)
 }
 
-func (m *ledgerModel) available(s uuid.UUID) int64 { return m.released[s] - m.requested[s] + m.failed[s] }
+func (m *ledgerModel) available(s uuid.UUID) int64 {
+	return m.released[s] - m.requested[s] + m.failed[s]
+}
 
 func (m *ledgerModel) pay(t *rapid.T) {
 	i := rapid.IntRange(0, len(m.checkouts)-1).Draw(t, "checkout")

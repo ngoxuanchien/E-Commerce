@@ -87,7 +87,7 @@ func TestEventsInWalletOutPayoutEventsOut(t *testing.T) {
 	defer reader.Close()
 	seen := map[event.Type]bool{}
 	deadline := time.Now().Add(60 * time.Second)
-	for !(seen[event.TypePayoutRequested] && seen[event.TypePayoutSettled]) && time.Now().Before(deadline) {
+	for (!seen[event.TypePayoutRequested] || !seen[event.TypePayoutSettled]) && time.Now().Before(deadline) {
 		pctx, pcancel := context.WithTimeout(ctx, 2*time.Second)
 		reader.PollFetches(pctx).EachRecord(func(r *kgo.Record) {
 			assert.Equal(t, seller.String(), string(r.Key))

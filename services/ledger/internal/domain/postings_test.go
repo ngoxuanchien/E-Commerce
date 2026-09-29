@@ -112,12 +112,20 @@ func TestBuildersRejectInvalidInput(t *testing.T) {
 		"capture exceeds":       func() (domain.Journal, error) { return domain.Capture(p, c, 99, []domain.Allocation{ok}) },
 		"capture dup order":     func() (domain.Journal, error) { return domain.Capture(p, c, 1000, []domain.Allocation{ok, ok}) },
 		"capture other payment": func() (domain.Journal, error) { return domain.Capture(id(), c, 100, []domain.Allocation{ok}) },
-		"commission = amount":   func() (domain.Journal, error) { return domain.Release(with(func(a *domain.Allocation) { a.Commission = 100 })) },
-		"negative commission":   func() (domain.Journal, error) { return domain.Release(with(func(a *domain.Allocation) { a.Commission = -1 })) },
-		"alloc zero amount":     func() (domain.Journal, error) { return domain.Refund(id(), with(func(a *domain.Allocation) { a.Amount = 0 })) },
-		"alloc bad provider":    func() (domain.Journal, error) { return domain.Refund(id(), with(func(a *domain.Allocation) { a.Provider = "" })) },
-		"dup refund zero":       func() (domain.Journal, error) { return domain.DuplicateRefund(id(), p, c, "fake", 0) },
-		"payout zero":           func() (domain.Journal, error) { return domain.PayoutRequest(domain.Payout{ID: id(), SellerUserID: s}) },
+		"commission = amount": func() (domain.Journal, error) {
+			return domain.Release(with(func(a *domain.Allocation) { a.Commission = 100 }))
+		},
+		"negative commission": func() (domain.Journal, error) {
+			return domain.Release(with(func(a *domain.Allocation) { a.Commission = -1 }))
+		},
+		"alloc zero amount": func() (domain.Journal, error) {
+			return domain.Refund(id(), with(func(a *domain.Allocation) { a.Amount = 0 }))
+		},
+		"alloc bad provider": func() (domain.Journal, error) {
+			return domain.Refund(id(), with(func(a *domain.Allocation) { a.Provider = "" }))
+		},
+		"dup refund zero": func() (domain.Journal, error) { return domain.DuplicateRefund(id(), p, c, "fake", 0) },
+		"payout zero":     func() (domain.Journal, error) { return domain.PayoutRequest(domain.Payout{ID: id(), SellerUserID: s}) },
 	}
 	for name, build := range cases {
 		_, err := build()
