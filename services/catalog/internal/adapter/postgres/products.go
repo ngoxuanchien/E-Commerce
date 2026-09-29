@@ -31,14 +31,14 @@ func (s *Store) CreateProduct(ctx context.Context, shopID uuid.UUID, c domain.Pr
 		return applyChildren(ctx, q, id, c)
 	})
 	if err != nil {
-		return uuid.Nil, err
+		return uuid.Nil, retryable(err)
 	}
 	return id, nil
 }
 
 // UpdateProduct applies c to productID if it belongs to shopID.
 func (s *Store) UpdateProduct(ctx context.Context, shopID, productID uuid.UUID, c domain.ProductChange) error {
-	return pgxx.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+	return retryable(pgxx.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		if _, err := q.LockShopProduct(ctx, sqlcdb.LockShopProductParams{ID: productID, ShopID: shopID}); err != nil {
 			return notFound(err)
@@ -51,7 +51,7 @@ func (s *Store) UpdateProduct(ctx context.Context, shopID, productID uuid.UUID, 
 			return categoryError(err)
 		}
 		return applyChildren(ctx, q, productID, c)
-	})
+	}))
 }
 
 // ArchiveProduct sets status=archived on productID if it belongs to shopID.
@@ -81,17 +81,18 @@ func applyChildren(ctx context.Context, q *sqlcdb.Queries, productID uuid.UUID, 
 			}
 		}
 	}
+	if c.SetSkus {
+		locked, err := q.LockProductSkus(ctx, productID)
+		if err != nil {
+			return err
+		}
+		if err := applySkus(ctx, q, productID, locked, c.Skus); err != nil {
+			return err
+		}
+	}
 	skus, err := q.ListProductSkus(ctx, productID)
 	if err != nil {
 		return err
-	}
-	if c.SetSkus {
-		if err := applySkus(ctx, q, productID, skus, c.Skus); err != nil {
-			return err
-		}
-		if skus, err = q.ListProductSkus(ctx, productID); err != nil {
-			return err
-		}
 	}
 	current := make([]domain.Sku, len(skus))
 	for i, r := range skus {
@@ -101,8 +102,10 @@ func applyChildren(ctx context.Context, q *sqlcdb.Queries, productID uuid.UUID, 
 }
 
 // applySkus updates SKUs with an id, creates those without, and deactivates
-// existing SKUs missing from in (they are never deleted).
-func applySkus(ctx context.Context, q *sqlcdb.Queries, productID uuid.UUID, existing []sqlcdb.ListProductSkusRow, in []domain.SkuChange) error {
+// existing SKUs missing from in (they are never deleted). existing must
+// already be locked (LockProductSkus), so the order of the writes below
+// cannot cause lock-order deadlocks.
+func applySkus(ctx context.Context, q *sqlcdb.Queries, productID uuid.UUID, existing []sqlcdb.LockProductSkusRow, in []domain.SkuChange) error {
 	owned := make(map[uuid.UUID]bool, len(existing))
 	for _, s := range existing {
 		owned[s.ID] = true

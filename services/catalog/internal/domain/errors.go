@@ -16,6 +16,9 @@ var (
 	ErrNoShop = errors.New("caller has no shop")
 	// ErrUpstreamUnavailable means a dependency (identity-svc) failed or timed out.
 	ErrUpstreamUnavailable = errors.New("upstream unavailable")
+	// ErrRetryable means the operation lost a transient race (deadlock or
+	// serialization failure) and was rolled back; retrying it is safe.
+	ErrRetryable = errors.New("transient conflict, retry")
 )
 
 // ValidationError maps JSON field paths (e.g. "skus[0].price") to messages.

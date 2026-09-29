@@ -64,3 +64,8 @@ WHERE shop_id = sqlc.arg('shop_id')
        OR (created_at, id) < (sqlc.narg('after_created_at')::timestamptz, sqlc.narg('after_id')::uuid))
 ORDER BY created_at DESC, id DESC
 LIMIT sqlc.arg('max_rows');
+
+-- name: LockProductSkus :many
+-- Locks the product's SKUs in id order, the global SKU lock order also used
+-- by ReserveStock/ReleaseStock, so a PATCH cannot deadlock with them.
+SELECT id, name, price, stock, active FROM skus WHERE product_id = $1 ORDER BY id FOR UPDATE;

@@ -335,6 +335,46 @@ func (q *Queries) ListShopProductIDs(ctx context.Context, arg ListShopProductIDs
 	return items, nil
 }
 
+const lockProductSkus = `-- name: LockProductSkus :many
+SELECT id, name, price, stock, active FROM skus WHERE product_id = $1 ORDER BY id FOR UPDATE
+`
+
+type LockProductSkusRow struct {
+	ID     uuid.UUID
+	Name   string
+	Price  int64
+	Stock  int32
+	Active bool
+}
+
+// Locks the product's SKUs in id order, the global SKU lock order also used
+// by ReserveStock/ReleaseStock, so a PATCH cannot deadlock with them.
+func (q *Queries) LockProductSkus(ctx context.Context, productID uuid.UUID) ([]LockProductSkusRow, error) {
+	rows, err := q.db.Query(ctx, lockProductSkus, productID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LockProductSkusRow
+	for rows.Next() {
+		var i LockProductSkusRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Price,
+			&i.Stock,
+			&i.Active,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockShopProduct = `-- name: LockShopProduct :one
 SELECT id FROM products WHERE id = $1 AND shop_id = $2 FOR UPDATE
 `

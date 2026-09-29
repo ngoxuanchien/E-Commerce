@@ -114,6 +114,8 @@ func toStatus(ctx context.Context, err error) error {
 		return status.Error(codes.InvalidArgument, ve.Error())
 	case errors.Is(err, domain.ErrNotFound):
 		return status.Error(codes.NotFound, "not found")
+	case errors.Is(err, domain.ErrRetryable):
+		return status.Error(codes.Unavailable, "concurrent update, retry")
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return status.FromContextError(err).Err()
 	default:

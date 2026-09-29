@@ -23,6 +23,8 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		err = httpx.NewError(httpx.CodeNotFound, "not found")
 	case errors.Is(err, domain.ErrNoShop):
 		err = httpx.NewError(httpx.CodeForbidden, "open a shop first")
+	case errors.Is(err, domain.ErrRetryable):
+		err = httpx.NewError(httpx.CodeUpstreamUnavailable, "temporarily unavailable, please retry").Wrap(err)
 	case errors.Is(err, domain.ErrUpstreamUnavailable):
 		err = httpx.NewError(httpx.CodeUpstreamUnavailable, "identity service unavailable, please retry").Wrap(err)
 	}

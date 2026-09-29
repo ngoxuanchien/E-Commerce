@@ -37,7 +37,7 @@ func (s *Store) SkuInfos(ctx context.Context, ids []uuid.UUID) ([]domain.SkuInfo
 // normalized (merged and sorted by SKU id, so row locks are taken in a
 // global order). A repeated call for the same order is a no-op.
 func (s *Store) ReserveStock(ctx context.Context, orderID uuid.UUID, items []domain.StockItem) error {
-	return pgxx.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+	return retryable(pgxx.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		if err := q.LockOrder(ctx, orderID.String()); err != nil {
 			return err
@@ -75,20 +75,20 @@ func (s *Store) ReserveStock(ctx context.Context, orderID uuid.UUID, items []dom
 			}
 		}
 		return nil
-	})
+	}))
 }
 
 // ReleaseStock returns the reserved stock of orderID; a no-op when nothing is reserved.
 func (s *Store) ReleaseStock(ctx context.Context, orderID uuid.UUID) error {
-	return pgxx.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+	return retryable(pgxx.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
 		return release(ctx, s.q.WithTx(tx), orderID)
-	})
+	}))
 }
 
 // ReleaseStockForEvent releases orderID once per eventID: the event id is
 // recorded in processed_events in the same transaction.
 func (s *Store) ReleaseStockForEvent(ctx context.Context, eventID, orderID uuid.UUID) error {
-	return pgxx.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+	return retryable(pgxx.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		n, err := q.InsertProcessedEvent(ctx, eventID)
 		if err != nil {
@@ -98,7 +98,7 @@ func (s *Store) ReleaseStockForEvent(ctx context.Context, eventID, orderID uuid.
 			return nil // already processed
 		}
 		return release(ctx, q, orderID)
-	})
+	}))
 }
 
 func release(ctx context.Context, q *sqlcdb.Queries, orderID uuid.UUID) error {

@@ -5,6 +5,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -42,6 +43,16 @@ func newID() uuid.UUID { return uuid.Must(uuid.NewV7()) }
 func notFound(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.ErrNotFound
+	}
+	return err
+}
+
+// retryable marks deadlocks (40P01) and serialization failures (40001) with
+// domain.ErrRetryable, keeping the original error as the cause.
+func retryable(err error) error {
+	var pe *pgconn.PgError
+	if errors.As(err, &pe) && (pe.Code == "40P01" || pe.Code == "40001") {
+		return fmt.Errorf("%w: %w", domain.ErrRetryable, err)
 	}
 	return err
 }
