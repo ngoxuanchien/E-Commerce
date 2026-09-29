@@ -91,9 +91,9 @@ docs/superpowers/specs/2026-09-29-marketplace-p2-{ws0-contracts,overview,ws3-ord
   - Constants: `CompletedByBuyer/System`, `ProviderVNPay/Stripe/Fake`, `PaymentMethodCOD/VNPay/Stripe`.
   - New optional fields: `OrderCreated.PaymentMethod`, `CommissionRateBps`, `CommissionAmount`; `OrderCancelled.CheckoutID`, `PaymentMethod`.
 
-- [ ] **Step 1: Read the existing schemas and test** (`api/events/*.json`, `pkg/event/event_test.go`) to match their style: `allOf` envelope, `additionalProperties: false` on `data`, `format: uuid`.
+- [x] **Step 1: Read the existing schemas and test** (`api/events/*.json`, `pkg/event/event_test.go`) to match their style: `allOf` envelope, `additionalProperties: false` on `data`, `format: uuid`.
 
-- [ ] **Step 2: Write the failing tests.** Extend the `cases` map in `TestEncodedEventsMatchJSONSchemas`. Every new struct gets one fully populated case. A duplicate `PaymentSucceeded` gets `Allocations: []event.Allocation{}`, and `PaymentRefunded` gets `OrderID: nil`. Add two P2-shaped P1 payloads, and add a new test proving P1 payloads still validate:
+- [x] **Step 2: Write the failing tests.** Extend the `cases` map in `TestEncodedEventsMatchJSONSchemas`. Every new struct gets one fully populated case. A duplicate `PaymentSucceeded` gets `Allocations: []event.Allocation{}`, and `PaymentRefunded` gets `OrderID: nil`. Add two P2-shaped P1 payloads, and add a new test proving P1 payloads still validate:
 
 ```go
 // in the cases map (key "file#variant" → payload); u() returns a fresh UUIDv7 string, as the existing test does.
@@ -158,12 +158,12 @@ func TestPaymentRefundedNullOrderIDRoundTrips(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run the tests and confirm they fail** (build errors on the missing types).
+- [x] **Step 3: Run the tests and confirm they fail** (build errors on the missing types).
 
 Run: `cd pkg && go test ./event/`
 Expected: FAIL (`undefined: event.OrderCompleted`, …).
 
-- [ ] **Step 4: Implement `pkg/event`.** In `event.go`:
+- [x] **Step 4: Implement `pkg/event`.** In `event.go`:
   - Change the package doc to "order, payment and payout events".
   - Add the topics next to `TopicOrderEvents`.
   - Add the new `Type…` constants to the const block (`TypeOrderCompleted Type = "OrderCompleted"`, and likewise for the other seven).
@@ -317,7 +317,7 @@ type PayoutFailed struct {
 func (PayoutFailed) EventType() Type { return TypePayoutFailed }
 ```
 
-- [ ] **Step 5: Write the schemas.**
+- [x] **Step 5: Write the schemas.**
 
 In `envelope.schema.json`:
 - set `event_type.enum` to all 11 types: `OrderCreated, OrderStatusChanged, OrderCancelled, OrderCompleted, PaymentSucceeded, PaymentFailed, PaymentRefunded, RefundFailed, PayoutRequested, PayoutSettled, PayoutFailed`;
@@ -377,12 +377,12 @@ Every other new schema lists exactly the struct fields above in `required`:
 - **`settled_at`:** `{"type":"string","format":"date-time"}`.
 - **`reason`:** `{"type":"string","minLength":1}`.
 
-- [ ] **Step 6: Run the tests and confirm they pass.**
+- [x] **Step 6: Run the tests and confirm they pass.**
 
 Run: `cd pkg && go test ./event/ && cd ../services/order && go test -count=1 ./internal/app/`
 Expected: PASS. The order-svc run proves its P1 events still validate against the edited schemas.
 
-- [ ] **Step 7: Commit.**
+- [x] **Step 7: Commit.**
 
 ```bash
 git add api/events pkg/event
