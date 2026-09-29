@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -289,4 +290,61 @@ func TestRunRetriesUntilLoadedThenRefreshesPeriodically(t *testing.T) {
 	// No miss-triggered refresh should have happened for k2 (Hits only grew
 	// from Refresh calls in Run's own retry/ticker loop).
 	assert.GreaterOrEqual(t, hitsBeforeCancel, 4)
+}
+
+// hangingServer starts a JWKS server whose handler blocks until the test
+// unblocks it, simulating a hung upstream. The handler is always unblocked
+// in t.Cleanup, before the server is closed, so no goroutine or connection
+// is leaked past the test.
+func hangingServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	unblock := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-unblock
+	}))
+	t.Cleanup(func() {
+		close(unblock)
+		srv.Close()
+	})
+	return srv
+}
+
+func TestRefreshTimesOutOnHangingServer(t *testing.T) {
+	srv := hangingServer(t)
+
+	// A client with no Timeout of its own: only the context bound Refresh
+	// applies internally can save us here.
+	j := NewJWKS(srv.URL,
+		WithHTTPClient(&http.Client{}),
+		withFetchTimeout(20*time.Millisecond),
+	)
+
+	start := time.Now()
+	err := j.Refresh(context.Background())
+	elapsed := time.Since(start)
+
+	assert.Error(t, err)
+	assert.Less(t, elapsed, time.Second, "Refresh must not block indefinitely on a hanging server")
+	assert.Error(t, j.Ready(context.Background()), "Ready must stay false when the only load attempt hung")
+}
+
+func TestKeyMissReturnsPromptlyOnHangingServer(t *testing.T) {
+	srv := hangingServer(t)
+
+	j := NewJWKS(srv.URL,
+		WithHTTPClient(&http.Client{}),
+		withFetchTimeout(20*time.Millisecond),
+	)
+
+	start := time.Now()
+	_, err := j.Key(context.Background(), "unknown")
+	elapsed := time.Since(start)
+
+	assert.ErrorIs(t, err, ErrUnknownKey)
+	assert.Less(t, elapsed, time.Second, "a miss against a hanging JWKS endpoint must not block indefinitely")
+}
+
+func TestNewJWKSDefaultClientHasATimeout(t *testing.T) {
+	j := NewJWKS("http://example.invalid")
+	assert.Equal(t, fetchTimeout, j.httpClient.Timeout, "the default client must not be able to hang forever")
 }

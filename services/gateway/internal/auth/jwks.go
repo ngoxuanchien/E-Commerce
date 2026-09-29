@@ -35,6 +35,13 @@ const MissRefreshInterval = 30 * time.Second
 // guarding against a misbehaving or malicious upstream.
 const maxJWKSBodyBytes = 1 << 20 // 1 MB
 
+// fetchTimeout bounds how long a single JWKS fetch may take. It backs both
+// the default HTTP client's Timeout and a context.WithTimeout applied
+// around every fetch, so a hanging JWKS endpoint cannot stall Run forever
+// or, on the miss path, hold Key's refresh mutex indefinitely — even if a
+// caller-supplied client (via WithHTTPClient) has no timeout of its own.
+const fetchTimeout = 5 * time.Second
+
 // defaultInitialBackoff is Run's default starting delay between failed
 // startup load attempts, before it doubles on each subsequent failure.
 const defaultInitialBackoff = 500 * time.Millisecond
@@ -67,7 +74,9 @@ type Option func(*JWKS)
 
 // WithHTTPClient overrides the HTTP client used to fetch the JWKS document.
 // Intended mainly for tests; production callers may leave this unset (it
-// defaults to http.DefaultClient).
+// defaults to a client with a fetchTimeout Timeout). Every fetch is also
+// wrapped in a context.WithTimeout(fetchTimeout), so a client passed here
+// stays bounded even if it sets no Timeout of its own.
 func WithHTTPClient(c *http.Client) Option {
 	return func(j *JWKS) { j.httpClient = c }
 }
@@ -92,6 +101,14 @@ func WithInitialBackoff(d time.Duration) Option {
 	return func(j *JWKS) { j.initialBackoff = d }
 }
 
+// withFetchTimeout overrides the per-fetch timeout Refresh applies via
+// context.WithTimeout. Unexported: production callers get a fixed
+// fetchTimeout; only tests need to shrink it to exercise the timeout path
+// without waiting out the real default.
+func withFetchTimeout(d time.Duration) Option {
+	return func(j *JWKS) { j.fetchTimeout = d }
+}
+
 // JWKS caches identity's RSA signing keys, fetched from a JWKS endpoint. A
 // failed Refresh never discards a previously loaded key set. The zero value
 // is not usable; construct one with NewJWKS.
@@ -102,6 +119,7 @@ type JWKS struct {
 
 	refreshInterval time.Duration
 	initialBackoff  time.Duration
+	fetchTimeout    time.Duration
 
 	ready atomic.Bool
 
@@ -120,10 +138,11 @@ type JWKS struct {
 func NewJWKS(url string, opts ...Option) *JWKS {
 	j := &JWKS{
 		url:             url,
-		httpClient:      http.DefaultClient,
+		httpClient:      &http.Client{Timeout: fetchTimeout},
 		now:             time.Now,
 		refreshInterval: RefreshInterval,
 		initialBackoff:  defaultInitialBackoff,
+		fetchTimeout:    fetchTimeout,
 		keys:            make(map[string]*rsa.PublicKey),
 	}
 	for _, opt := range opts {
@@ -137,6 +156,9 @@ func NewJWKS(url string, opts ...Option) *JWKS {
 // body over 1 MB, or a document with zero usable keys) the previously
 // cached key set, if any, is left untouched and the error is returned.
 func (j *JWKS) Refresh(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, j.fetchTimeout)
+	defer cancel()
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, j.url, nil)
 	if err != nil {
 		return fmt.Errorf("auth: build JWKS request: %w", err)
