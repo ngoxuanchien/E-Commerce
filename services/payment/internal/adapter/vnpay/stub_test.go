@@ -124,12 +124,14 @@ func (s *apiStub) serve(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-func newProvider(api string, now time.Time) *vnpay.Provider {
-	return vnpay.New(vnpay.Config{
+func testConfig(api string, now time.Time) vnpay.Config {
+	return vnpay.Config{
 		TmnCode: testTmn, HashSecret: testSecret,
 		PayURL: "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html", APIURL: api,
 		PublicBaseURL: "https://gw.test/", Now: func() time.Time { return now },
-	})
+	}
 }
+
+func newProvider(api string, now time.Time) *vnpay.Provider { return vnpay.New(testConfig(api, now)) }
 
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }

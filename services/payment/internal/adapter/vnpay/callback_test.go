@@ -2,6 +2,8 @@ package vnpay_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"log/slog"
 	"net/url"
@@ -171,6 +173,28 @@ func TestIPNCodesInOrder(t *testing.T) {
 		got := e.get(p.ID)
 		assert.Equal(t, domain.StatusFailed, got.Status)
 		assert.Equal(t, "24", got.FailureReason)
+	})
+	t.Run("02 on a duplicate failure IPN, deduped by the event key", func(t *testing.T) {
+		p := e.payment(350_000)
+		q := ipnQuery(p, 350_000, "24", "02", "0")
+		// The key, computed independently: hex(sha256(TxnRef|TransactionNo|ResponseCode|TransactionStatus)).
+		sum := sha256.Sum256([]byte(vnpay.TxnRef(p.ID) + "|0|24|02"))
+		keyRows := func() int {
+			return e.count(`SELECT count(*) FROM provider_events WHERE provider = 'vnpay' AND event_key = $1`, hex.EncodeToString(sum[:]))
+		}
+		require.Zero(t, keyRows())
+
+		require.Equal(t, ack{"00", "Confirm Success"}, e.ipn(q))
+		failed := e.get(p.ID)
+		require.Equal(t, domain.StatusFailed, failed.Status)
+		require.False(t, failed.Status.Final(), "the redelivery must get past the Final() check")
+		require.Equal(t, 1, e.outbox(p), "one PaymentFailed")
+		require.Equal(t, 1, keyRows(), "the first delivery records its event key")
+
+		assert.Equal(t, ack{"02", "Order already confirmed"}, e.ipn(q))
+		assert.Equal(t, 1, e.outbox(p), "no second PaymentFailed")
+		assert.Equal(t, failed.Version, e.get(p.ID).Version)
+		assert.Equal(t, 1, keyRows(), "the redelivery hit the existing provider_events key")
 	})
 	t.Run("response 00 with a non-00 transaction status is a failure", func(t *testing.T) {
 		p := e.payment(350_000)

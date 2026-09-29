@@ -197,11 +197,15 @@ func (c *Creator) create(ctx context.Context, in CreateInput, now time.Time) (do
 		}
 	}
 
+	// One creation time, in whole seconds, for the row and the provider session: Postgres keeps
+	// microseconds and VNPay dates have one-second precision, and VNPay needs vnp_CreateDate (pay URL)
+	// to equal vnp_TransactionDate (querydr, refund) later.
+	createdAt := now.Truncate(time.Second)
 	np := NewPayment{
 		Payment: domain.Payment{
 			ID: uuid.Must(uuid.NewV7()).String(), CheckoutID: co.ID, BuyerID: in.BuyerID,
 			Method: co.PaymentMethod, Provider: provider.Name(), Status: domain.StatusPending,
-			Amount: amount, ExpiresAt: *co.Deadline, CreatedAt: now, UpdatedAt: now,
+			Amount: amount, ExpiresAt: *co.Deadline, CreatedAt: createdAt, UpdatedAt: createdAt,
 		},
 	}
 	for _, o := range payable {
@@ -220,7 +224,7 @@ func (c *Creator) create(ctx context.Context, in CreateInput, now time.Time) (do
 	sess, err := provider.CreateSession(ctx, SessionInput{
 		PaymentID: np.ID, CheckoutID: co.ID, Amount: amount, ExpiresAt: np.ExpiresAt,
 		ReturnURL:   c.returnURL(provider.Name(), np.ID),
-		Description: "Thanh toan don hang " + co.ID, ClientIP: in.ClientIP,
+		Description: "Thanh toan don hang " + co.ID, ClientIP: in.ClientIP, CreatedAt: createdAt,
 	})
 	if err != nil {
 		failed := np.Payment

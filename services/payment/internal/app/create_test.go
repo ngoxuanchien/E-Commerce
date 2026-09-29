@@ -32,6 +32,7 @@ type countingProvider struct {
 	cancelErr error
 	delay     time.Duration // CreateSession takes this long
 	afterOK   func()        // runs after a successful CreateSession
+	lastIn    app.SessionInput
 }
 
 func (c *countingProvider) Cancel(ctx context.Context, p domain.Payment) (bool, error) {
@@ -47,6 +48,7 @@ func (c *countingProvider) Cancel(ctx context.Context, p domain.Payment) (bool, 
 func (c *countingProvider) CreateSession(ctx context.Context, in app.SessionInput) (app.Session, error) {
 	c.mu.Lock()
 	c.sessions++
+	c.lastIn = in
 	err := c.failWith
 	c.mu.Unlock()
 	if c.delay > 0 {
@@ -474,4 +476,20 @@ func TestRetireProviderErrorIs503AndLeavesTheOldAttempt(t *testing.T) {
 	e.stripe.cancelErr = nil
 	second := e.mustCreate(t, "k2", co.id) // the key was released
 	assert.NotEqual(t, first.ID, second.ID)
+}
+
+func TestCreateUsesOneWholeSecondCreationTime(t *testing.T) {
+	e := newCreateEnv(t)
+	e.mu.Lock()
+	e.now = t0.Truncate(time.Second).Add(987_654_321 * time.Nanosecond)
+	e.mu.Unlock()
+	co := e.checkout("STRIPE", 100_000)
+	p := e.mustCreate(t, id(), co.id)
+
+	want := t0.Truncate(time.Second)
+	assert.True(t, p.CreatedAt.Equal(want), "created_at %s is truncated to the second", p.CreatedAt)
+	e.stripe.mu.Lock()
+	in := e.stripe.lastIn
+	e.stripe.mu.Unlock()
+	assert.True(t, in.CreatedAt.Equal(p.CreatedAt), "SessionInput.CreatedAt %s equals the stored created_at %s", in.CreatedAt, p.CreatedAt)
 }

@@ -24,6 +24,9 @@ type SessionInput struct {
 	Amount                           int64
 	ExpiresAt                        time.Time
 	ReturnURL, Description, ClientIP string
+	// CreatedAt is the payment's created_at (whole seconds). VNPay signs it as vnp_CreateDate and later
+	// needs the same value as vnp_TransactionDate; other adapters ignore it.
+	CreatedAt time.Time
 }
 
 // Session is the buyer redirect and the provider's reference for the payment.
