@@ -8,12 +8,19 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ngoxuanchien/e-commerce/pkg/event"
+	"github.com/ngoxuanchien/e-commerce/pkg/idemkey"
 	"github.com/ngoxuanchien/e-commerce/services/ledger/internal/domain"
 )
 
 // Store is the database. InTx runs fn in one transaction, committing on nil.
 type Store interface {
 	InTx(ctx context.Context, fn func(Tx) error) error
+
+	// ClaimKey claims an Idempotency-Key outside any business transaction (pkg/idemkey).
+	ClaimKey(ctx context.Context, scope string, userID uuid.UUID, key string, requestHash []byte, at, staleBefore time.Time) (idemkey.Record, bool, error)
+	// ReleaseKey frees a claim after a transient failure.
+	ReleaseKey(ctx context.Context, scope string, userID uuid.UUID, key string, claimedAt time.Time) error
 }
 
 // Tx is everything a use case may do inside one database transaction.
@@ -35,6 +42,17 @@ type Tx interface {
 	DeletePending(ctx context.Context, orderID uuid.UUID) error
 	// TouchPending counts one more attempt at `at`.
 	TouchPending(ctx context.Context, orderID uuid.UUID, at time.Time) error
+
+	// CompleteKey stores the final response of a claimed key (idemkey.ErrClaimLost if reclaimed).
+	CompleteKey(ctx context.Context, scope string, userID uuid.UUID, key string, claimedAt time.Time, resp Response) error
+
+	InsertPayout(ctx context.Context, p domain.Payout) error
+	// ClaimDuePayout locks the oldest REQUESTED payout requested at or before due, skipping locked ones.
+	ClaimDuePayout(ctx context.Context, due time.Time) (domain.Payout, bool, error)
+	// FinishPayout stores p's final status if the row is still at prevVersion.
+	FinishPayout(ctx context.Context, p domain.Payout, prevVersion int) error
+	// PublishPayoutEvent writes p to the outbox for payout.events, keyed by seller.
+	PublishPayoutEvent(ctx context.Context, sellerID uuid.UUID, p event.Payload, at time.Time) error
 }
 
 // PendingPosting is an OrderCompleted that arrived before its capture.
