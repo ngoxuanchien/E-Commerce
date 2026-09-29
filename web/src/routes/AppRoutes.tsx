@@ -5,6 +5,7 @@ import { NotFoundPage } from '@/components/states';
 import { HomePage } from '@/features/catalog/HomePage';
 import { ProductPage } from '@/features/catalog/ProductPage';
 import { SearchPage } from '@/features/catalog/SearchPage';
+import { ShopPage } from '@/features/shop/ShopPage';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { RegisterPage } from '@/features/auth/RegisterPage';
 
@@ -18,7 +19,7 @@ export function AppRoutes() {
           <Route index element={<HomePage />} />
           <Route path="search" element={<SearchPage />} />
           <Route path="products/:id" element={<ProductPage />} />
-          {/* public routes (Task 12) */}
+          <Route path="shops/:slug" element={<ShopPage />} />
           {/* <Route element={<RequireAuth />}> buyer + seller routes (Tasks 13-18) </Route> */}
           <Route path="*" element={<NotFoundPage />} />
         </Route>
