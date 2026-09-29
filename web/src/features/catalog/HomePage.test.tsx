@@ -4,7 +4,7 @@ import { renderApp } from '@/test/render';
 
 test('shows categories and the newest active products first', async () => {
   renderApp('/');
-  expect(screen.getByRole('heading', { level: 1, name: 'Nhiều sạp hàng, một giỏ hàng.' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { level: 1, name: 'Nhiều sạp hàng, một giỏ hàng.' })).toBeInTheDocument();
   const categories = await screen.findByRole('navigation', { name: 'Danh mục' });
   expect(await within(categories).findByRole('link', { name: 'Thời trang' })).toHaveAttribute('href', '/search?category=thoi-trang');
   const grid = await screen.findByRole('list', { name: 'Sản phẩm' });
