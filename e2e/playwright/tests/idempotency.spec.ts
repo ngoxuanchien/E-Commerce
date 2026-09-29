@@ -59,18 +59,23 @@ test('a checkout whose response is lost is retried with the same key and not dup
   await Promise.all([seller.dispose(), buyer.dispose()]);
 });
 
-// F3 (WS5): after a lost checkout response the page refetches the now-empty
-// cart and replaces the form with "Không có sản phẩm nào để thanh toán",
-// although the orders were placed; only the toast's retry reveals them.
-// Skipped unless E2E_FINDINGS=1.
-test('after a lost checkout response the buyer can still retry from the checkout form', async ({ page }) => {
-  test.skip(process.env.E2E_FINDINGS !== '1', 'finding F3: set E2E_FINDINGS=1 to run the reproduction');
-  const { seller, buyer } = await setup(page);
+// After a lost checkout response the form stays, so the buyer can press
+// "Đặt hàng" again; the same key replays the committed checkout (former
+// finding F3).
+test('after a lost checkout response the buyer retries from the form and gets the same orders', async ({ page }) => {
+  const { seller, buyer, product, keys } = await setup(page);
   await loseFirstCheckoutResponse(page);
 
   await placeOrderButton(page).click();
   await expect(page.getByRole('button', { name: 'Thử lại' })).toBeVisible();
   await expect(page.getByText('Không có sản phẩm nào để thanh toán')).toHaveCount(0);
   await expect(placeOrderButton(page)).toBeEnabled();
+  await placeOrderButton(page).click();
+  await expect(page).toHaveURL(/\/orders\?placed=1$/);
+
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  expect(await buyer.orders()).toHaveLength(1);
+  expect(await seller.stock(product.id)).toBe(4);
   await Promise.all([seller.dispose(), buyer.dispose()]);
 });

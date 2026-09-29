@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../client';
-import { ApiError, unwrap } from '../errors';
+import { ApiError, isRetryable, unwrap } from '../errors';
 import { qk } from '../query-keys';
 import type { CheckoutRequest, CheckoutResponse, Order, OrderStatus } from '../types';
 
@@ -15,8 +15,12 @@ export function useCheckout(handlers: { onSuccess?: (res: CheckoutResponse) => v
       unwrap(api.POST('/api/checkout', { params: { header: { 'Idempotency-Key': idempotencyKey } }, body })),
     onSuccess: (res) => handlers.onSuccess?.(res),
     onError: (err) => handlers.onError?.(err),
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: qk.cart });
+    onSettled: (_res, err) => {
+      // After a retryable failure (network, 503, 429) the server may already have
+      // placed the orders and emptied the cart. Refetching it would replace the
+      // checkout form with an empty state; keep the form so the buyer can retry
+      // with the same Idempotency-Key, and refresh the cart once the retry settles.
+      if (!isRetryable(err)) void queryClient.invalidateQueries({ queryKey: qk.cart });
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
   });

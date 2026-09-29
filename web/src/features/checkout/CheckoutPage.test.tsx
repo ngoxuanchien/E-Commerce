@@ -91,6 +91,24 @@ test('retrying after a 503 reuses the same Idempotency-Key', async () => {
   expect(keys[1]).toBe(keys[0]);
 });
 
+test('a lost checkout response keeps the form so the buyer can retry with the same key', async () => {
+  getDb().state.carts[SEED.users.an] = { [SEED.skus.bowl11]: 1 };
+  const keys = recordCheckoutKeys((n) => {
+    if (n !== 1) return undefined;
+    // The server committed the checkout and emptied the cart, but the response never arrived.
+    getDb().state.carts[SEED.users.an] = {};
+    return HttpResponse.error();
+  });
+  const { user } = renderApp(`/checkout?sku=${SEED.skus.bowl11}`, { as: 'an@example.com' });
+  await fillAddress(user);
+  await user.click(screen.getByRole('button', { name: 'Đặt hàng' }));
+  expect((await screen.findAllByText('Dịch vụ đang tạm gián đoạn. Vui lòng thử lại.')).length).toBeGreaterThan(0);
+  await new Promise((resolve) => setTimeout(resolve, 100)); // let a (wrong) cart refetch land
+  expect(screen.queryByText('Không có sản phẩm nào để thanh toán')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Đặt hàng' })).toBeEnabled();
+  expect(keys).toHaveLength(1);
+});
+
 test('each checkout page visit gets a fresh key', async () => {
   const keys = recordCheckoutKeys();
   for (let i = 0; i < 2; i += 1) {
