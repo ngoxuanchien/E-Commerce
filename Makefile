@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-GO_MODULES ?= pkg gen services/gateway services/identity services/catalog services/order
+GO_MODULES ?= pkg gen services/gateway services/identity services/catalog services/order services/payment services/ledger
 BIN := $(CURDIR)/bin
 export PATH := $(BIN):$(PATH)
 
