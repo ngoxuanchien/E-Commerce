@@ -2335,7 +2335,7 @@ git commit -m "test(e2e): cover cancel restock, oversell guard and checkout idem
 **Interfaces:**
 - Consumes: the Task 3 harness and `jaegerURL`.
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 `e2e/api/trace_test.go`:
 
@@ -2436,12 +2436,12 @@ func randHex(n int) string {
 }
 ```
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 Run: `cd e2e && GOWORK=off go test -count=1 -v -run TestCheckoutTrace ./api/`
 Expected: PASS. If a service is missing from the trace, it's a finding: a missing propagator, an uninstrumented gRPC client or server, or the gateway not extracting the incoming context. Collect evidence with `curl -s localhost:16686/api/services` and `curl -s localhost:16686/api/traces/<id> | jq '.data[].processes'`. Root-cause it in the owning service's `otelx`/`grpcx` wiring and report it.
 
-- [ ] **Step 3: Run the whole API suite, then commit**
+- [x] **Step 3: Run the whole API suite, then commit**
 
 Run: `cd e2e && GOWORK=off go test -count=1 -timeout 15m ./api/`
 Expected: `ok  github.com/ngoxuanchien/e-commerce/e2e/api`
