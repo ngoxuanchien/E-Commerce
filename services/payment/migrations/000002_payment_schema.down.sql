@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS outbox;
+DROP TABLE IF EXISTS idempotency_keys;
+DROP TABLE IF EXISTS processed_events;
+DROP TABLE IF EXISTS fake_sessions;
+DROP TABLE IF EXISTS provider_events;
+DROP TABLE IF EXISTS refunds;
+DROP TABLE IF EXISTS order_cancellations;
+DROP TABLE IF EXISTS payment_allocations;
+DROP TABLE IF EXISTS payments;
