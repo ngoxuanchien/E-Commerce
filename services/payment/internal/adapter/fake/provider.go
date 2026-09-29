@@ -1,0 +1,142 @@
+package fake
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/ngoxuanchien/e-commerce/services/payment/internal/app"
+	"github.com/ngoxuanchien/e-commerce/services/payment/internal/domain"
+)
+
+// Config wires the FAKE adapter. Now, HTTPClient and Logger default when nil.
+type Config struct {
+	PublicBaseURL, WebhookURL, WebhookSecret string
+	WebhookDelay                             time.Duration
+	Now                                      func() time.Time
+	HTTPClient                               *http.Client
+	Logger                                   *slog.Logger
+}
+
+// Provider implements app.Provider.
+type Provider struct {
+	cfg   Config
+	store store
+	wg    sync.WaitGroup
+}
+
+var _ app.Provider = (*Provider)(nil)
+
+// New builds the adapter over the payment database (fake_sessions, payments).
+func New(pool *pgxpool.Pool, cfg Config) *Provider {
+	if cfg.Now == nil {
+		cfg.Now = time.Now
+	}
+	if cfg.HTTPClient == nil {
+		cfg.HTTPClient = &http.Client{Timeout: 10 * time.Second}
+	}
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
+	}
+	return &Provider{cfg: cfg, store: store{pool: pool}}
+}
+
+// Wait blocks until every scheduled webhook delivery has finished (used by tests and shutdown).
+func (p *Provider) Wait() { p.wg.Wait() }
+
+func (p *Provider) Name() string { return "fake" }
+
+func (p *Provider) CreateSession(ctx context.Context, in app.SessionInput) (app.Session, error) {
+	if err := p.store.create(ctx, in.PaymentID); err != nil {
+		return app.Session{}, fmt.Errorf("fake create session: %w", err)
+	}
+	return app.Session{
+		RedirectURL: p.cfg.PublicBaseURL + "/api/payments/fake/checkout/" + in.PaymentID,
+		ProviderRef: "fake_" + in.PaymentID,
+	}, nil
+}
+
+// Page returns what the hosted page shows; app.ErrNotFound when there is no session.
+func (p *Provider) Page(ctx context.Context, paymentID string) (PageData, error) {
+	s, err := p.store.get(ctx, paymentID)
+	if err != nil {
+		return PageData{}, err
+	}
+	return PageData{PaymentID: paymentID, Amount: s.amount, ExpiresAt: s.expires}, nil
+}
+
+// Submit records the buyer's outcome and hooks, then schedules the webhook delivery.
+func (p *Provider) Submit(ctx context.Context, paymentID, outcome string, h Hooks) error {
+	if outcome != outcomeSucceed && outcome != outcomeFail {
+		return fmt.Errorf("fake: unknown outcome %q", outcome)
+	}
+	if err := p.store.submit(ctx, paymentID, outcome, h); err != nil {
+		return err
+	}
+	p.deliver(paymentID, outcome, h)
+	return nil
+}
+
+func (p *Provider) Query(ctx context.Context, pay domain.Payment) (domain.Observed, error) {
+	s, err := p.store.get(ctx, pay.ID)
+	if err != nil {
+		return domain.Observed{}, err
+	}
+	if s.outcome != nil {
+		switch *s.outcome {
+		case outcomeSucceed:
+			return Event{PaymentID: pay.ID, Outcome: "succeed"}.Observed(s.amount), nil
+		case outcomeFail:
+			return Event{PaymentID: pay.ID, Outcome: "fail"}.Observed(s.amount), nil
+		default:
+			return domain.Observed{State: domain.ObservedExpired}, nil
+		}
+	}
+	if !p.cfg.Now().Before(s.expires) {
+		return domain.Observed{State: domain.ObservedExpired}, nil
+	}
+	return domain.Observed{State: domain.ObservedPending}, nil
+}
+
+func (p *Provider) Cancel(ctx context.Context, pay domain.Payment) (bool, error) {
+	s, err := p.store.get(ctx, pay.ID)
+	if err != nil {
+		return false, err
+	}
+	if s.outcome != nil || s.hooks.Cancel == "unsupported" {
+		return false, nil
+	}
+	return p.store.expire(ctx, pay.ID)
+}
+
+func refundRef(refundID string) string { return "fake_rf_" + refundID }
+
+func (p *Provider) Refund(ctx context.Context, in app.RefundInput) (app.RefundObserved, error) {
+	s, err := p.store.get(ctx, in.Payment.ID)
+	if err != nil {
+		return app.RefundObserved{}, err
+	}
+	if s.hooks.Refund == "fail" {
+		return app.RefundObserved{State: app.RefundFailed, Reason: "fake_refund_failed"}, nil
+	}
+	if err := p.store.addRefunded(ctx, in.Payment.ID, in.Amount); err != nil {
+		return app.RefundObserved{}, fmt.Errorf("fake refund: %w", err)
+	}
+	return app.RefundObserved{State: app.RefundSucceeded, ProviderRefundRef: refundRef(in.RefundID)}, nil
+}
+
+func (p *Provider) QueryRefund(ctx context.Context, r app.Refund) (app.RefundObserved, error) {
+	s, err := p.store.get(ctx, r.PaymentID)
+	if err != nil {
+		return app.RefundObserved{}, err
+	}
+	if s.hooks.Refund == "fail" {
+		return app.RefundObserved{State: app.RefundFailed, Reason: "fake_refund_failed"}, nil
+	}
+	return app.RefundObserved{State: app.RefundSucceeded, ProviderRefundRef: refundRef(r.ID)}, nil
+}
