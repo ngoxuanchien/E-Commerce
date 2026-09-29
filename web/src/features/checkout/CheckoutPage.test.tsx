@@ -44,7 +44,7 @@ test('previews one order per shop with the flat shipping fee and places them', a
   await fillAddress(user);
   await user.click(screen.getByRole('button', { name: 'Đặt hàng' }));
 
-  await screen.findByRole('heading', { name: 'Đơn mua' }).catch(() => undefined);
+  await screen.findByRole('heading', { level: 1, name: 'Đơn mua' });
   expect(currentPath()).toBe('/orders?placed=2');
   expect(getDb().state.orders.length).toBe(before + 2);
 });
@@ -70,7 +70,7 @@ test('a double-click sends a single checkout request', async () => {
   const { user } = renderApp(`/checkout?sku=${SEED.skus.bowl11}`, { as: 'an@example.com' });
   await fillAddress(user);
   await user.dblClick(screen.getByRole('button', { name: 'Đặt hàng' }));
-  await screen.findByText(/Đặt hàng thành công|Đơn mua/).catch(() => undefined);
+  await screen.findByRole('heading', { level: 1, name: 'Đơn mua' });
   expect(currentPath()).toBe('/orders?placed=1');
   expect(keys).toHaveLength(1);
 });
@@ -85,7 +85,7 @@ test('retrying after a 503 reuses the same Idempotency-Key', async () => {
   await user.click(screen.getByRole('button', { name: 'Đặt hàng' }));
   expect(await screen.findByText('Dịch vụ đang tạm gián đoạn. Vui lòng thử lại.')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'Đặt hàng' }));
-  await screen.findByText(/Đơn mua/).catch(() => undefined);
+  await screen.findByRole('heading', { level: 1, name: 'Đơn mua' });
   expect(currentPath()).toBe('/orders?placed=1');
   expect(keys).toHaveLength(2);
   expect(keys[1]).toBe(keys[0]);
@@ -98,7 +98,7 @@ test('each checkout page visit gets a fresh key', async () => {
     const { user, unmount } = renderApp(`/checkout?sku=${SEED.skus.bowl11}`, { as: 'an@example.com' });
     await fillAddress(user);
     await user.click(screen.getByRole('button', { name: 'Đặt hàng' }));
-    await screen.findByText(/Đơn mua/).catch(() => undefined);
+    await screen.findByRole('heading', { level: 1, name: 'Đơn mua' });
     unmount();
   }
   expect(keys).toHaveLength(2);

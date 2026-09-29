@@ -9,6 +9,8 @@ import { SearchPage } from '@/features/catalog/SearchPage';
 import { ShopPage } from '@/features/shop/ShopPage';
 import { CartPage } from '@/features/cart/CartPage';
 import { CheckoutPage } from '@/features/checkout/CheckoutPage';
+import { OrderDetailPage } from '@/features/orders/OrderDetailPage';
+import { OrdersPage } from '@/features/orders/OrdersPage';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { RegisterPage } from '@/features/auth/RegisterPage';
 
@@ -26,7 +28,9 @@ export function AppRoutes() {
           <Route element={<RequireAuth />}>
             <Route path="cart" element={<CartPage />} />
             <Route path="checkout" element={<CheckoutPage />} />
-            {/* authenticated routes (Tasks 15-18) */}
+            <Route path="orders" element={<OrdersPage />} />
+            <Route path="orders/:id" element={<OrderDetailPage />} />
+            {/* authenticated routes (Tasks 16-18) */}
           </Route>
           <Route path="*" element={<NotFoundPage />} />
         </Route>

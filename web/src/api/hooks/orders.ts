@@ -1,8 +1,8 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../client';
-import { unwrap } from '../errors';
+import { ApiError, unwrap } from '../errors';
 import { qk } from '../query-keys';
-import type { CheckoutRequest, CheckoutResponse } from '../types';
+import type { CheckoutRequest, CheckoutResponse, Order, OrderStatus } from '../types';
 
 /**
  * Handlers are mutation options (not per-call), so they also run when the global
@@ -19,5 +19,57 @@ export function useCheckout(handlers: { onSuccess?: (res: CheckoutResponse) => v
       void queryClient.invalidateQueries({ queryKey: qk.cart });
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
+  });
+}
+
+export function useMyOrders(status?: OrderStatus) {
+  return useInfiniteQuery({
+    queryKey: qk.orders(status),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => unwrap(api.GET('/api/orders', { params: { query: { status, cursor: pageParam } } })),
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  });
+}
+
+export function useOrder(id: string) {
+  return useQuery({ queryKey: qk.order(id), queryFn: () => unwrap(api.GET('/api/orders/{id}', { params: { path: { id } } })) });
+}
+
+/** After a transition store the returned order and refresh every order list. */
+export function useOrderCacheUpdate() {
+  const queryClient = useQueryClient();
+  const refreshLists = () => {
+    void queryClient.invalidateQueries({ queryKey: ['orders'] });
+    void queryClient.invalidateQueries({ queryKey: ['seller-orders'] });
+  };
+  return {
+    onSuccess: (order: Order) => {
+      queryClient.setQueryData(qk.order(order.id), order);
+      refreshLists();
+    },
+    onError: (err: unknown, variables: { id: string } | string) => {
+      // Someone else moved the order first: show its real state.
+      if (err instanceof ApiError && err.code === 'INVALID_STATE_TRANSITION') {
+        void queryClient.invalidateQueries({ queryKey: qk.order(typeof variables === 'string' ? variables : variables.id) });
+        refreshLists();
+      }
+    },
+  };
+}
+
+export function useCancelMyOrder() {
+  const cache = useOrderCacheUpdate();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      unwrap(api.POST('/api/orders/{id}/cancel', { params: { path: { id } }, body: { reason } })),
+    ...cache,
+  });
+}
+
+export function useCompleteMyOrder() {
+  const cache = useOrderCacheUpdate();
+  return useMutation({
+    mutationFn: (id: string) => unwrap(api.POST('/api/orders/{id}/complete', { params: { path: { id } } })),
+    ...cache,
   });
 }
