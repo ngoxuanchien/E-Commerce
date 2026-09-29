@@ -402,7 +402,7 @@ git commit -m "feat(contracts): P2 event catalogue (order completed, payment, pa
   - `inbox.Execer` interface `{ Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) }`, satisfied by `pgx.Tx`, `*pgxpool.Pool` and `*pgx.Conn`.
   - `inbox.MarkProcessed(ctx context.Context, db Execer, consumer string, eventID string) (firstTime bool, err error)`.
 
-- [ ] **Step 1: Write the failing test** (a Postgres container through `testutil.Postgres`; skipped with `-short`, like the other container tests):
+- [x] **Step 1: Write the failing test** (a Postgres container through `testutil.Postgres`; skipped with `-short`, like the other container tests):
 
 ```go
 package inbox_test
@@ -472,9 +472,9 @@ func TestSchemaIsIdempotent(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the test and confirm it fails.** Run: `cd pkg && go test ./inbox/`. Expected: build failure because package `inbox` has no Go files.
+- [x] **Step 2: Run the test and confirm it fails.** Run: `cd pkg && go test ./inbox/`. Expected: build failure because package `inbox` has no Go files.
 
-- [ ] **Step 3: Implement.** `schema.sql`:
+- [x] **Step 3: Implement.** `schema.sql`:
 
 ```sql
 -- Idempotent-consumer marker (pkg/inbox). Services copy this into one of
@@ -527,9 +527,9 @@ func MarkProcessed(ctx context.Context, db Execer, consumer, eventID string) (fi
 }
 ```
 
-- [ ] **Step 4: Run the tests and confirm they pass.** Run: `cd pkg && go test -race ./inbox/ && go vet ./inbox/`. Expected: PASS.
+- [x] **Step 4: Run the tests and confirm they pass.** Run: `cd pkg && go test -race ./inbox/ && go vet ./inbox/`. Expected: PASS.
 
-- [ ] **Step 5: Commit.** `git add pkg/inbox && git commit -m "feat(pkg): inbox.MarkProcessed, a per-consumer processed_events marker"`
+- [x] **Step 5: Commit.** `git add pkg/inbox && git commit -m "feat(pkg): inbox.MarkProcessed, a per-consumer processed_events marker"`
 
 ---
 
@@ -558,7 +558,7 @@ func MarkProcessed(ctx context.Context, db Execer, consumer, eventID string) (fi
   - `func Release(ctx context.Context, db DB, scope, userID, key string, claimedAt time.Time) error`.
   - `func Purge(ctx context.Context, db DB, before time.Time) (int64, error)`.
 
-- [ ] **Step 1: Write the failing tests.** Use the Task 2 `newPool` pattern, applying `idemkey.SchemaSQL`. Package-level: `const scope = "payment.create"`, `var base = time.Now().UTC().Truncate(time.Microsecond)`, `var never time.Time`.
+- [x] **Step 1: Write the failing tests.** Use the Task 2 `newPool` pattern, applying `idemkey.SchemaSQL`. Package-level: `const scope = "payment.create"`, `var base = time.Now().UTC().Truncate(time.Microsecond)`, `var never time.Time`.
 
 ```go
 func TestClaimCompleteReplay(t *testing.T) {
@@ -684,9 +684,9 @@ func TestClaimTruncatesToMicroseconds(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests and confirm they fail.** Run: `cd pkg && go test ./idemkey/`. Expected: build failure.
+- [x] **Step 2: Run the tests and confirm they fail.** Run: `cd pkg && go test ./idemkey/`. Expected: build failure.
 
-- [ ] **Step 3: Implement.** `schema.sql`:
+- [x] **Step 3: Implement.** `schema.sql`:
 
 ```sql
 -- Idempotency-Key store (pkg/idemkey). created_at is the claim: completing
@@ -845,9 +845,9 @@ func Purge(ctx context.Context, db DB, before time.Time) (int64, error) {
 
 `response` is `jsonb`. If pgx does not encode `[]byte` as jsonb text, pass `json.RawMessage(resp.Body)` in `Complete` and scan into `json.RawMessage` in `Get`.
 
-- [ ] **Step 4: Run the tests and confirm they pass.** Run: `cd pkg && go test -race ./idemkey/ && go vet ./idemkey/`. Expected: PASS.
+- [x] **Step 4: Run the tests and confirm they pass.** Run: `cd pkg && go test -race ./idemkey/ && go vet ./idemkey/`. Expected: PASS.
 
-- [ ] **Step 5: Commit.** `git add pkg/idemkey && git commit -m "feat(pkg): idemkey Idempotency-Key store with claim-guarded complete/release and orphan reclaim"`
+- [x] **Step 5: Commit.** `git add pkg/idemkey && git commit -m "feat(pkg): idemkey Idempotency-Key store with claim-guarded complete/release and orphan reclaim"`
 
 ---
 
