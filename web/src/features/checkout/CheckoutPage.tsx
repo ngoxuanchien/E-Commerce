@@ -17,7 +17,6 @@ import { Input } from '@/components/ui/input';
 import { useAuth } from '@/features/auth/auth-context';
 import { groupForCheckout } from '@/features/cart/cart-summary';
 import { addressSchema } from './address-schema';
-import { SHIPPING_FEE_FLAT } from './shipping';
 
 const ADDRESS_FIELDS: Array<{ name: keyof Address; label: string; autoComplete: string; wide?: boolean; inputMode?: 'tel' }> = [
   { name: 'full_name', label: 'Họ và tên người nhận', autoComplete: 'name' },
@@ -72,7 +71,7 @@ export function CheckoutPage() {
       </EmptyState>
     );
   }
-  const total = groups.reduce((sum, g) => sum + g.subtotal + SHIPPING_FEE_FLAT, 0);
+  const total = groups.reduce((sum, g) => sum + g.subtotal + g.shipping_fee, 0);
 
   const placeOrder = (address: Address) => {
     checkout.mutate(
@@ -123,7 +122,7 @@ export function CheckoutPage() {
               </ul>
               <dl className="space-y-1 border-t pt-3 text-sm">
                 <div className="flex justify-between"><dt>Tạm tính</dt><dd><Price value={g.subtotal} /></dd></div>
-                <div className="flex justify-between"><dt>Phí vận chuyển</dt><dd><Price value={SHIPPING_FEE_FLAT} /></dd></div>
+                <div className="flex justify-between"><dt>Phí vận chuyển</dt><dd><Price value={g.shipping_fee} /></dd></div>
               </dl>
             </div>
           </section>

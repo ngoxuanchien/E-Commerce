@@ -9,6 +9,7 @@ import { paginate } from './paginate';
 import { buildSeed } from './seed';
 
 export const STORAGE_KEY = 'marketplace-mock-db:v1';
+/** Stand-in for order-svc's SHIPPING_FEE_FLAT: reported per cart shop and charged per order. */
 export const SHIPPING_FEE_FLAT = 30_000;
 export const MOCK_ASSET_BASE = 'http://localhost:9000/product-images';
 const RESERVED_SLUGS = ['me', 'new', 'admin', 'seller'];
@@ -325,6 +326,11 @@ export class MockDb {
         if (!s.name?.trim()) fields[`skus[${i}].name`] = 'required';
         if (!Number.isInteger(s.price) || s.price < 1000 || s.price > 1_000_000_000) fields[`skus[${i}].price`] = 'must be 1000-1000000000';
         if (!Number.isInteger(s.stock) || s.stock < 0 || s.stock > 100_000) fields[`skus[${i}].stock`] = 'must be 0-100000';
+        if (requireAll || !s.id) {
+          if (s.expected_stock !== undefined) fields[`skus[${i}].expected_stock`] = 'must not be set for a new SKU';
+        } else if (!Number.isInteger(s.expected_stock) || s.expected_stock! < 0) {
+          fields[`skus[${i}].expected_stock`] = 'is required when id is set';
+        }
       });
     }
     fail(fields);
@@ -351,6 +357,13 @@ export class MockDb {
     if (!p) throw notFound('product');
     if (Object.keys(input).length === 0) throw validation({ body: 'at least one field is required' });
     this.validateProduct(shop.id, input, false);
+    if (input.skus !== undefined) {
+      const stale = input.skus.flatMap((s) => {
+        const current = p.skus.find((x) => x.id === s.id);
+        return current && s.expected_stock !== current.stock ? [{ sku_id: current.id, expected_stock: s.expected_stock, stock: current.stock }] : [];
+      });
+      if (stale.length > 0) throw new MockError(409, 'CONFLICT', 'stock changed since the product was loaded; reload and retry', { skus: stale });
+    }
     if (input.category_id !== undefined) p.category_id = input.category_id;
     if (input.name !== undefined) p.name = input.name.trim();
     if (input.description !== undefined) p.description = input.description;
@@ -424,7 +437,7 @@ export class MockDb {
         image_url: this.firstImage(ctx.product), unit_price: ctx.sku.price, quantity, stock: ctx.sku.stock, available,
       };
       if (available) subtotal += item.unit_price * quantity;
-      const group = groups.get(ctx.shop.id) ?? { shop: this.shopRef(ctx.shop), items: [] };
+      const group = groups.get(ctx.shop.id) ?? { shop: this.shopRef(ctx.shop), items: [], shipping_fee: SHIPPING_FEE_FLAT };
       group.items.push(item);
       groups.set(ctx.shop.id, group);
     }

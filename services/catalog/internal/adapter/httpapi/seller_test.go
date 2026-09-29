@@ -83,7 +83,7 @@ func TestSellerProductLifecycle(t *testing.T) {
 	// PATCH: update M, drop L (deactivated), add XL.
 	res := h.call(http.MethodPatch, "/api/seller/products/"+p.ID, &seller, map[string]any{
 		"skus": []map[string]any{
-			{"id": p.Skus[0].ID, "name": "Size M", "price": 140_000, "stock": 3},
+			{"id": p.Skus[0].ID, "name": "Size M", "price": 140_000, "stock": 3, "expected_stock": 10},
 			sku("Size XL", 160_000, 2),
 		},
 	})
@@ -112,6 +112,42 @@ func TestSellerProductLifecycle(t *testing.T) {
 	assert.Equal(t, "archived", page.Items[0].Status)
 }
 
+func TestSellerPatchComparesExpectedStock(t *testing.T) {
+	h := newHarness(t)
+	_, seller := h.openShop(newUser(), "stale-form")
+	p := h.createProduct(seller, productBody("active", sku("Size M", 150_000, 10)))
+	patch := func(fields map[string]any) result {
+		s := map[string]any{"id": p.Skus[0].ID, "name": "Size M", "price": 150_000, "stock": 20}
+		for k, v := range fields {
+			s[k] = v
+		}
+		return h.call(http.MethodPatch, "/api/seller/products/"+p.ID, &seller, map[string]any{"skus": []map[string]any{s}})
+	}
+
+	res := patch(nil)
+	assert.Equal(t, http.StatusBadRequest, res.Status)
+	assert.Contains(t, res.fields(t), "skus[0].expected_stock")
+
+	res = patch(map[string]any{"expected_stock": 12})
+	require.Equal(t, http.StatusConflict, res.Status, string(res.Body))
+	assert.Equal(t, "CONFLICT", res.code(t))
+	var body struct {
+		Error struct {
+			Details struct {
+				Skus []map[string]any `json:"skus"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	res.decode(t, &body)
+	assert.Equal(t, []map[string]any{{"sku_id": p.Skus[0].ID, "expected_stock": 12.0, "stock": 10.0}}, body.Error.Details.Skus)
+
+	res = patch(map[string]any{"expected_stock": 10})
+	require.Equal(t, http.StatusOK, res.Status, string(res.Body))
+	var up productResp
+	res.decode(t, &up)
+	assert.Equal(t, int32(20), up.Skus[0].Stock)
+}
+
 func TestSellerCannotTouchAnotherShopsProduct(t *testing.T) {
 	h := newHarness(t)
 	_, owner := h.openShop(newUser(), "owner-shop")
@@ -125,7 +161,7 @@ func TestSellerCannotTouchAnotherShopsProduct(t *testing.T) {
 	// A SKU id from another shop's product is rejected and nothing changes.
 	res := h.call(http.MethodPatch, "/api/seller/products/"+theirs.ID, &intruder, map[string]any{
 		"name": "Tên mới đây",
-		"skus": []map[string]any{{"id": p.Skus[0].ID, "name": "Hijack", "price": 1_000, "stock": 0}},
+		"skus": []map[string]any{{"id": p.Skus[0].ID, "name": "Hijack", "price": 1_000, "stock": 0, "expected_stock": 10}},
 	})
 	assert.Equal(t, http.StatusBadRequest, res.Status)
 	assert.Contains(t, res.fields(t), "skus[0].id")

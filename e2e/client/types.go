@@ -109,8 +109,9 @@ type CartItem struct {
 }
 
 type CartShop struct {
-	Shop  ShopRef    `json:"shop"`
-	Items []CartItem `json:"items"`
+	Shop        ShopRef    `json:"shop"`
+	Items       []CartItem `json:"items"`
+	ShippingFee int64      `json:"shipping_fee"`
 }
 
 type Cart struct {

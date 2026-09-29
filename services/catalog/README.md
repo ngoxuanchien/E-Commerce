@@ -57,6 +57,13 @@ internal/testsupport        Postgres container per test binary, database per tes
 9. `upload_url` = `PUBLIC_ASSET_BASE_URL` (path-style bucket URL) because `MINIO_ENDPOINT` is internal. Browser CORS on the bucket is a deploy concern.
 10. Seller without a shop → 403 on `/api/seller/*`, 404 on `/api/shops/me`. Non-UUID `X-User-Id` → 401.
 11. Poison Kafka records are logged and skipped; database errors are retried.
+12. **Seller stock edits use compare-and-set on `expected_stock`** (decided 2026-09-29 in P1.5; it replaces the WS2 "PATCH sets stock directly" risk).
+    - **The problem:** a PATCH that includes `skus` always writes each SKU's `stock`. A form loaded before an order reserved units would silently re-add those units and oversell.
+    - **The rule:** every SKU with `id` in a PATCH must carry `expected_stock`, the stock the client last read (400 otherwise). New SKUs and POST must not carry it (400).
+    - **How it is checked:** `applySkus` compares the value with the row locked by `LockProductSkus ... FOR UPDATE`, the same lock `ReserveStock`/`ReleaseStock` take. The check and the write therefore cannot interleave with a reservation.
+    - **On a mismatch:** the whole PATCH rolls back (409 `CONFLICT`, `details.skus = [{sku_id, expected_stock, stock}]`) and the client reloads.
+    - **Why not a version field:** a per-SKU `version` column would add a migration, and would also reject edits after unrelated changes. What matters is stock, and stock is already the value both parties read.
+    - **Why not deltas:** a `stock_delta` field would change what `stock` means in the API.
 
 ## Tests
 

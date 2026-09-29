@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -158,12 +159,113 @@ func TestCheckout(t *testing.T) {
 	t.Run("same key still in progress is a conflict", func(t *testing.T) {
 		buyer := uid()
 		in := checkoutInput(buyer, "busy")
-		_, created, err := e.store.BeginIdempotency(ctx, buyer, "busy", app.RequestHash(in), e.clock.Now())
+		_, created, err := e.store.BeginIdempotency(ctx, buyer, "busy", app.RequestHash(in), e.clock.Now(), time.Time{})
 		require.NoError(t, err)
 		require.True(t, created)
 		_, err = svc.Checkout(ctx, in, (&recorder{}).encode)
 		assert.ErrorIs(t, err, app.ErrIdempotencyInProgress)
 	})
+
+	t.Run("a key orphaned for longer than ClaimTimeout is reclaimed", func(t *testing.T) {
+		reclaiming := app.NewCheckoutService(e.store, e.carts, e.catalog, app.CheckoutConfig{
+			ShippingFee: 30_000, Now: e.clock.Now, ClaimTimeout: 3 * time.Minute,
+		})
+		buyer := uid()
+		s := e.fake.AddSku(catalogfake.NewShop("Orphan"), 10_000, 5)
+		e.cartSet(t, buyer, s.GetSkuId(), 1)
+		in := checkoutInput(buyer, "orphan")
+		// A pod crashed right after claiming the key.
+		_, created, err := e.store.BeginIdempotency(ctx, buyer, "orphan", app.RequestHash(in), e.clock.Now().Add(-2*time.Minute), time.Time{})
+		require.NoError(t, err)
+		require.True(t, created)
+
+		_, err = reclaiming.Checkout(ctx, in, (&recorder{}).encode)
+		require.ErrorIs(t, err, app.ErrIdempotencyInProgress, "younger than ClaimTimeout: maybe still running")
+
+		e.clock.Advance(2 * time.Minute)
+		resp, err := reclaiming.Checkout(ctx, in, (&recorder{}).encode)
+		require.NoError(t, err)
+		assert.Len(t, createdOrderIDs(t, resp), 1)
+		replay, err := reclaiming.Checkout(ctx, in, (&recorder{}).encode)
+		require.NoError(t, err)
+		assert.JSONEq(t, string(resp.Body), string(replay.Body), "the reclaiming run's response is stored")
+	})
+
+	// A zombie run is stuck in ReserveStock while a retry of the same request
+	// takes its key over; whatever the retry then does, the zombie must not
+	// store or return anything and must cancel and release its own orders.
+	zombieCases := []struct {
+		name  string
+		stock int32 // < 2 → the zombie's reservation fails (Tx B path)
+		retry func(t *testing.T, buyer string, claim time.Time)
+		check func(t *testing.T, rec app.IdempotencyRecord, created bool)
+	}{
+		{
+			name: "retry still running", stock: 5,
+			retry: func(*testing.T, string, time.Time) {},
+			check: func(t *testing.T, rec app.IdempotencyRecord, created bool) {
+				assert.False(t, created, "the key still belongs to the retry")
+				assert.Nil(t, rec.Response)
+			},
+		},
+		{
+			name: "retry completed", stock: 5,
+			retry: func(t *testing.T, buyer string, claim time.Time) {
+				assert.NoError(t, e.store.InTx(ctx, func(tx app.Tx) error {
+					return tx.CompleteIdempotencyKey(ctx, buyer, "zombie", claim, app.Response{Status: 201, Body: []byte(`{"retry":true}`)})
+				}))
+			},
+			check: func(t *testing.T, rec app.IdempotencyRecord, created bool) {
+				assert.False(t, created)
+				require.NotNil(t, rec.Response)
+				assert.JSONEq(t, `{"retry":true}`, string(rec.Response.Body), "the retry's answer is not replaced")
+			},
+		},
+		{
+			name: "retry released the key", stock: 5,
+			retry: func(t *testing.T, buyer string, claim time.Time) {
+				assert.NoError(t, e.store.DeleteIdempotencyKey(ctx, buyer, "zombie", claim))
+			},
+			check: func(t *testing.T, _ app.IdempotencyRecord, created bool) {
+				assert.True(t, created, "the zombie left no orphaned claim behind")
+			},
+		},
+		{
+			name: "zombie's reservation fails", stock: 1,
+			retry: func(*testing.T, string, time.Time) {},
+			check: func(t *testing.T, rec app.IdempotencyRecord, created bool) {
+				assert.False(t, created)
+				assert.Nil(t, rec.Response, "the zombie's rejection is not stored under the retry's claim")
+			},
+		},
+	}
+	for _, tc := range zombieCases {
+		t.Run("a run whose key was reclaimed cleans up after itself: "+tc.name, func(t *testing.T) {
+			buyer := uid()
+			s := e.fake.AddSku(catalogfake.NewShop("Zombie"), 10_000, tc.stock)
+			e.cartSet(t, buyer, s.GetSkuId(), 2)
+			in := checkoutInput(buyer, "zombie")
+			hook := &sweepDuringReserve{Catalog: e.catalog, run: func() {
+				later := e.clock.Now().Add(10 * time.Minute)
+				rec, created, err := e.store.BeginIdempotency(ctx, buyer, "zombie", app.RequestHash(in), later, later.Add(-time.Minute))
+				assert.NoError(t, err)
+				assert.True(t, created)
+				tc.retry(t, buyer, rec.ClaimedAt)
+				e.clock.Advance(time.Second) // the zombie resumes later than it claimed
+			}}
+			zombie := app.NewCheckoutService(e.store, e.carts, hook, app.CheckoutConfig{ShippingFee: 30_000, Now: e.clock.Now})
+
+			_, err := zombie.Checkout(ctx, in, (&recorder{}).encode)
+			require.ErrorIs(t, err, app.ErrIdempotencyClaimLost)
+			orders := buyerOrders(t, e, buyer)
+			require.Len(t, orders, 1)
+			assert.Equal(t, domain.StatusCancelled, orders[0].Status, "cancelled now, not left to the sweeper")
+			assert.Equal(t, tc.stock, e.fake.Stock(s.GetSkuId()), "its reservation is released")
+			rec, created, err := e.store.BeginIdempotency(ctx, buyer, "zombie", app.RequestHash(in), e.clock.Now(), time.Time{})
+			require.NoError(t, err)
+			tc.check(t, rec, created)
+		})
+	}
 
 	t.Run("empty cart is a stored rejection without catalog calls", func(t *testing.T) {
 		buyer, rec := uid(), &recorder{}

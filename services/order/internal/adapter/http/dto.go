@@ -29,8 +29,9 @@ type cartItemDTO struct {
 }
 
 type cartShopDTO struct {
-	Shop  shopRefDTO    `json:"shop"`
-	Items []cartItemDTO `json:"items"`
+	Shop        shopRefDTO    `json:"shop"`
+	Items       []cartItemDTO `json:"items"`
+	ShippingFee int64         `json:"shipping_fee"`
 }
 
 type cartDTO struct {
@@ -93,7 +94,7 @@ type checkoutResponseDTO struct {
 func toCartDTO(c domain.Cart) cartDTO {
 	out := cartDTO{Shops: make([]cartShopDTO, 0, len(c.Shops)), Subtotal: c.Subtotal}
 	for _, s := range c.Shops {
-		shop := cartShopDTO{Shop: shopRefDTO{ID: s.Shop.ID, Name: s.Shop.Name, Slug: s.Shop.Slug}, Items: make([]cartItemDTO, 0, len(s.Items))}
+		shop := cartShopDTO{Shop: shopRefDTO{ID: s.Shop.ID, Name: s.Shop.Name, Slug: s.Shop.Slug}, Items: make([]cartItemDTO, 0, len(s.Items)), ShippingFee: s.ShippingFee}
 		for _, it := range s.Items {
 			shop.Items = append(shop.Items, cartItemDTO{
 				SkuID: it.SkuID, ProductID: it.ProductID, ProductName: it.ProductName, VariantName: it.VariantName,

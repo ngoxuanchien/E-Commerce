@@ -121,12 +121,12 @@ func TestSweeper(t *testing.T) {
 
 	t.Run("expired idempotency keys are purged", func(t *testing.T) {
 		user, hash := uid(), []byte("h")
-		_, _, err := e.store.BeginIdempotency(ctx, user, "k", hash, e.clock.Now())
+		_, _, err := e.store.BeginIdempotency(ctx, user, "k", hash, e.clock.Now(), time.Time{})
 		require.NoError(t, err)
 		e.clock.Advance(25 * time.Hour)
 		_, err = sw.RunOnce(ctx)
 		require.NoError(t, err)
-		_, created, err := e.store.BeginIdempotency(ctx, user, "k", hash, e.clock.Now())
+		_, created, err := e.store.BeginIdempotency(ctx, user, "k", hash, e.clock.Now(), time.Time{})
 		require.NoError(t, err)
 		assert.True(t, created)
 	})

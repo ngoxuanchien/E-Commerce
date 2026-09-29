@@ -28,6 +28,7 @@ export interface components {
                 /**
                  * @description VALIDATION_ERROR: {"fields": {"<json path>": "<message>"}}.
                  *     OUT_OF_STOCK: {"shortages": [{"sku_id", "requested", "available"}]}.
+                 *     CONFLICT on a seller product PATCH with a stale expected_stock: {"skus": [{"sku_id", "expected_stock", "stock"}]}.
                  */
                 details?: {
                     [key: string]: unknown;

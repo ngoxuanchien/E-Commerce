@@ -44,3 +44,6 @@ playwright/.cache/
 # Misc
 tmp/
 *.log
+
+# Stray `go build` output of the gateway (go build ./cmd/server in services/gateway)
+services/gateway/server

@@ -26,6 +26,9 @@ var (
 	base = time.Now().UTC().Truncate(time.Microsecond)
 )
 
+// never is a staleBefore that reclaims no idempotency key.
+var never time.Time
+
 func id() string { return uuid.Must(uuid.NewV7()).String() }
 
 func newStore(t *testing.T) (*postgres.Store, *pgxpool.Pool) {
@@ -259,50 +262,110 @@ func TestStore(t *testing.T) {
 
 	t.Run("idempotency key lifecycle", func(t *testing.T) {
 		user, key, hash := id(), "key-1", []byte("hash-a")
-		rec, created, err := s.BeginIdempotency(ctx, user, key, hash, base)
+		rec, created, err := s.BeginIdempotency(ctx, user, key, hash, base, never)
 		require.NoError(t, err)
 		assert.True(t, created)
 		assert.Nil(t, rec.Response)
+		assert.Equal(t, base, rec.ClaimedAt)
 
-		rec, created, err = s.BeginIdempotency(ctx, user, key, []byte("hash-b"), base)
+		rec, created, err = s.BeginIdempotency(ctx, user, key, []byte("hash-b"), base, never)
 		require.NoError(t, err)
 		assert.False(t, created)
 		assert.Equal(t, hash, rec.RequestHash)
 		assert.Nil(t, rec.Response, "still in progress")
 
 		resp := app.Response{Status: 201, Body: []byte(`{"checkout_id":"x","orders":[]}`)}
-		require.NoError(t, s.InTx(ctx, func(tx app.Tx) error { return tx.CompleteIdempotencyKey(ctx, user, key, resp) }))
-		rec, created, err = s.BeginIdempotency(ctx, user, key, hash, base)
+		require.NoError(t, s.InTx(ctx, func(tx app.Tx) error { return tx.CompleteIdempotencyKey(ctx, user, key, base, resp) }))
+		rec, created, err = s.BeginIdempotency(ctx, user, key, hash, base, never)
 		require.NoError(t, err)
 		assert.False(t, created)
 		require.NotNil(t, rec.Response)
 		assert.Equal(t, 201, rec.Response.Status)
 		assert.JSONEq(t, string(resp.Body), string(rec.Response.Body))
 
-		_, created, err = s.BeginIdempotency(ctx, id(), key, hash, base)
+		_, created, err = s.BeginIdempotency(ctx, id(), key, hash, base, never)
 		require.NoError(t, err)
 		assert.True(t, created, "keys are scoped per user")
 
-		require.NoError(t, s.DeleteIdempotencyKey(ctx, user, key))
-		_, created, err = s.BeginIdempotency(ctx, user, key, hash, base)
+		require.NoError(t, s.DeleteIdempotencyKey(ctx, user, key, base))
+		_, created, err = s.BeginIdempotency(ctx, user, key, hash, base, never)
 		require.NoError(t, err)
 		assert.True(t, created)
 	})
 
+	t.Run("an orphaned in-progress key is reclaimed once stale", func(t *testing.T) {
+		user, hash := id(), []byte("hash-a")
+		orphanedAt := base.Add(-10 * time.Minute)
+		_, created, err := s.BeginIdempotency(ctx, user, "k", hash, orphanedAt, never)
+		require.NoError(t, err)
+		require.True(t, created)
+
+		_, created, err = s.BeginIdempotency(ctx, user, "k", hash, base, orphanedAt)
+		require.NoError(t, err)
+		assert.False(t, created, "not older than staleBefore")
+		_, created, err = s.BeginIdempotency(ctx, user, "k", []byte("hash-b"), base, base)
+		require.NoError(t, err)
+		assert.False(t, created, "a different request never takes over the key")
+
+		rec, created, err := s.BeginIdempotency(ctx, user, "k", hash, base, base.Add(-5*time.Minute))
+		require.NoError(t, err)
+		assert.True(t, created, "same request, stale and without a response")
+		assert.Equal(t, base, rec.ClaimedAt)
+
+		_, created, err = s.BeginIdempotency(ctx, user, "k", hash, base.Add(time.Second), base.Add(-5*time.Minute))
+		require.NoError(t, err)
+		assert.False(t, created, "the reclaimed key is fresh again")
+	})
+
+	t.Run("a completed key is never reclaimed", func(t *testing.T) {
+		user, hash := id(), []byte("h")
+		old := base.Add(-time.Hour)
+		_, _, err := s.BeginIdempotency(ctx, user, "k", hash, old, never)
+		require.NoError(t, err)
+		require.NoError(t, s.InTx(ctx, func(tx app.Tx) error {
+			return tx.CompleteIdempotencyKey(ctx, user, "k", old, app.Response{Status: 201, Body: []byte(`{}`)})
+		}))
+		rec, created, err := s.BeginIdempotency(ctx, user, "k", hash, base, base)
+		require.NoError(t, err)
+		assert.False(t, created)
+		assert.NotNil(t, rec.Response)
+	})
+
+	t.Run("only the current claim may complete or release a key", func(t *testing.T) {
+		user, hash := id(), []byte("h")
+		old := base.Add(-time.Hour)
+		_, _, err := s.BeginIdempotency(ctx, user, "k", hash, old, never)
+		require.NoError(t, err)
+		_, created, err := s.BeginIdempotency(ctx, user, "k", hash, base, base) // reclaimed
+		require.NoError(t, err)
+		require.True(t, created)
+
+		err = s.InTx(ctx, func(tx app.Tx) error {
+			return tx.CompleteIdempotencyKey(ctx, user, "k", old, app.Response{Status: 201, Body: []byte(`{}`)})
+		})
+		require.ErrorIs(t, err, app.ErrIdempotencyClaimLost, "the orphaned run lost its claim")
+		require.NoError(t, s.DeleteIdempotencyKey(ctx, user, "k", old))
+
+		rec, created, err := s.BeginIdempotency(ctx, user, "k", hash, base, never)
+		require.NoError(t, err)
+		assert.False(t, created, "the stale run's release did not free the new claim")
+		assert.Nil(t, rec.Response, "nor did its completion land")
+	})
+
 	t.Run("expired idempotency keys are deleted", func(t *testing.T) {
 		old, fresh, hash := id(), id(), []byte("h")
-		_, _, err := s.BeginIdempotency(ctx, old, "k", hash, base.Add(-25*time.Hour))
+		_, _, err := s.BeginIdempotency(ctx, old, "k", hash, base.Add(-25*time.Hour), never)
 		require.NoError(t, err)
-		_, _, err = s.BeginIdempotency(ctx, fresh, "k", hash, base)
+		_, _, err = s.BeginIdempotency(ctx, fresh, "k", hash, base, never)
 		require.NoError(t, err)
 
 		n, err := s.DeleteIdempotencyKeysBefore(ctx, base.Add(-24*time.Hour))
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, n, int64(1))
-		_, created, err := s.BeginIdempotency(ctx, old, "k", hash, base)
+		_, created, err := s.BeginIdempotency(ctx, old, "k", hash, base, never)
 		require.NoError(t, err)
 		assert.True(t, created)
-		_, created, err = s.BeginIdempotency(ctx, fresh, "k", hash, base)
+		_, created, err = s.BeginIdempotency(ctx, fresh, "k", hash, base, never)
 		require.NoError(t, err)
 		assert.False(t, created)
 	})

@@ -23,12 +23,15 @@ export function lineIssue(item: CartItem, shortages: Shortage[]): string | null 
   return remaining > 0 ? `Chỉ còn ${remaining} sản phẩm` : 'Đã hết hàng';
 }
 
-export function groupForCheckout(cart: Cart, skuIds: string[]): Array<{ shop: ShopRef; items: CartItem[]; subtotal: number }> {
+export function groupForCheckout(
+  cart: Cart,
+  skuIds: string[],
+): Array<{ shop: ShopRef; items: CartItem[]; subtotal: number; shipping_fee: number }> {
   const wanted = new Set(skuIds);
   return cart.shops
     .map((s) => {
       const items = s.items.filter((i) => i.available && wanted.has(i.sku_id));
-      return { shop: s.shop, items, subtotal: items.reduce((sum, i) => sum + i.unit_price * i.quantity, 0) };
+      return { shop: s.shop, items, subtotal: items.reduce((sum, i) => sum + i.unit_price * i.quantity, 0), shipping_fee: s.shipping_fee };
     })
     .filter((g) => g.items.length > 0);
 }

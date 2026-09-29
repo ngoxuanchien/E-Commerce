@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,12 +42,12 @@ type faultyTx struct {
 	completed *bool
 }
 
-func (t *faultyTx) CompleteIdempotencyKey(ctx context.Context, userID, key string, resp app.Response) error {
+func (t *faultyTx) CompleteIdempotencyKey(ctx context.Context, userID, key string, claimedAt time.Time, resp app.Response) error {
 	if t.store.failComplete.CompareAndSwap(true, false) {
 		return errInjected
 	}
 	*t.completed = true
-	return t.Tx.CompleteIdempotencyKey(ctx, userID, key, resp)
+	return t.Tx.CompleteIdempotencyKey(ctx, userID, key, claimedAt, resp)
 }
 
 func TestCheckoutTxCFailure(t *testing.T) {

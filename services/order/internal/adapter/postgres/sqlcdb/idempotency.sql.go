@@ -12,9 +12,9 @@ import (
 	"github.com/google/uuid"
 )
 
-const completeIdempotencyKey = `-- name: CompleteIdempotencyKey :exec
+const completeIdempotencyKey = `-- name: CompleteIdempotencyKey :execrows
 UPDATE idempotency_keys SET response = $1, status_code = $2
-WHERE user_id = $3 AND key = $4
+WHERE user_id = $3 AND key = $4 AND created_at = $5
 `
 
 type CompleteIdempotencyKeyParams struct {
@@ -22,29 +22,35 @@ type CompleteIdempotencyKeyParams struct {
 	StatusCode *int32
 	UserID     uuid.UUID
 	Key        string
+	ClaimedAt  time.Time
 }
 
-func (q *Queries) CompleteIdempotencyKey(ctx context.Context, arg CompleteIdempotencyKeyParams) error {
-	_, err := q.db.Exec(ctx, completeIdempotencyKey,
+func (q *Queries) CompleteIdempotencyKey(ctx context.Context, arg CompleteIdempotencyKeyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, completeIdempotencyKey,
 		arg.Response,
 		arg.StatusCode,
 		arg.UserID,
 		arg.Key,
+		arg.ClaimedAt,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteIdempotencyKey = `-- name: DeleteIdempotencyKey :exec
-DELETE FROM idempotency_keys WHERE user_id = $1 AND key = $2
+DELETE FROM idempotency_keys WHERE user_id = $1 AND key = $2 AND created_at = $3
 `
 
 type DeleteIdempotencyKeyParams struct {
-	UserID uuid.UUID
-	Key    string
+	UserID    uuid.UUID
+	Key       string
+	CreatedAt time.Time
 }
 
 func (q *Queries) DeleteIdempotencyKey(ctx context.Context, arg DeleteIdempotencyKeyParams) error {
-	_, err := q.db.Exec(ctx, deleteIdempotencyKey, arg.UserID, arg.Key)
+	_, err := q.db.Exec(ctx, deleteIdempotencyKey, arg.UserID, arg.Key, arg.CreatedAt)
 	return err
 }
 
@@ -102,6 +108,36 @@ func (q *Queries) InsertIdempotencyKey(ctx context.Context, arg InsertIdempotenc
 		arg.Key,
 		arg.RequestHash,
 		arg.CreatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const reclaimIdempotencyKey = `-- name: ReclaimIdempotencyKey :execrows
+UPDATE idempotency_keys SET created_at = $1
+WHERE user_id = $2 AND key = $3 AND request_hash = $4
+  AND response IS NULL AND created_at < $5
+`
+
+type ReclaimIdempotencyKeyParams struct {
+	ClaimedAt   time.Time
+	UserID      uuid.UUID
+	Key         string
+	RequestHash []byte
+	StaleBefore time.Time
+}
+
+// Takes over a key whose run died before storing a response: same request,
+// no response, claimed before @stale_before. created_at is the claim.
+func (q *Queries) ReclaimIdempotencyKey(ctx context.Context, arg ReclaimIdempotencyKeyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reclaimIdempotencyKey,
+		arg.ClaimedAt,
+		arg.UserID,
+		arg.Key,
+		arg.RequestHash,
+		arg.StaleBefore,
 	)
 	if err != nil {
 		return 0, err

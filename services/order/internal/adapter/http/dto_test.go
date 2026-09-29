@@ -25,6 +25,12 @@ func TestEmptyCollectionsAreArrays(t *testing.T) {
 	assert.JSONEq(t, `{"items":[],"next_cursor":null}`, marshal(t, toPageDTO(app.Page{})))
 }
 
+func TestCartDTOShopsCarryShippingFee(t *testing.T) {
+	cart := domain.Cart{Shops: []domain.CartShop{{Shop: domain.ShopRef{ID: "s1", Name: "Shop", Slug: "shop"}, ShippingFee: 30_000}}}
+	assert.JSONEq(t, `{"shops":[{"shop":{"id":"s1","name":"Shop","slug":"shop"},"items":[],"shipping_fee":30000}],"subtotal":0}`,
+		marshal(t, toCartDTO(cart)))
+}
+
 func TestOrderDTONullsAndShape(t *testing.T) {
 	at := time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC)
 	pending := domain.StatusPending
