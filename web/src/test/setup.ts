@@ -21,8 +21,9 @@ if (typeof Element !== 'undefined') {
   Element.prototype.releasePointerCapture ??= () => {};
   Element.prototype.setPointerCapture ??= () => {};
 }
-URL.createObjectURL ??= () => 'blob:mock';
-URL.revokeObjectURL ??= () => {};
+// Node's own URL.createObjectURL rejects jsdom's File, so always replace it.
+URL.createObjectURL = () => 'blob:mock';
+URL.revokeObjectURL = () => {};
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
 beforeEach(() => setAuthFailureHandler(() => {}));

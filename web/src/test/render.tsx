@@ -30,7 +30,8 @@ export const currentPath = () => screen.getByTestId('location').textContent;
 export function renderApp(path: InitialEntry, options: { as?: string } = {}) {
   if (options.as) signIn(options.as);
   const queryClient = createQueryClient({ retry: false });
-  const user = userEvent.setup();
+  // applyAccept: false so tests can hand <input accept> files it would reject and check our own validation.
+  const user = userEvent.setup({ applyAccept: false });
   const utils = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>

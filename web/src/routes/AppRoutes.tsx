@@ -14,6 +14,8 @@ import { OrdersPage } from '@/features/orders/OrdersPage';
 import { SellerLayout } from '@/components/layout/SellerLayout';
 import { OpenShopPage } from '@/features/shop/OpenShopPage';
 import { SellerShopPage } from '@/features/shop/SellerShopPage';
+import { ProductFormPage } from '@/features/seller-products/ProductFormPage';
+import { SellerProductsPage } from '@/features/seller-products/SellerProductsPage';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { RegisterPage } from '@/features/auth/RegisterPage';
 
@@ -38,7 +40,10 @@ export function AppRoutes() {
               <Route element={<SellerLayout />}>
                 <Route index element={<Navigate to="products" replace />} />
                 <Route path="shop" element={<SellerShopPage />} />
-                {/* seller routes (Tasks 17-18) */}
+                <Route path="products" element={<SellerProductsPage />} />
+                <Route path="products/new" element={<ProductFormPage />} />
+                <Route path="products/:id" element={<ProductFormPage />} />
+                {/* seller routes (Task 18) */}
               </Route>
             </Route>
           </Route>
