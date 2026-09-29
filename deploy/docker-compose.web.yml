@@ -7,6 +7,10 @@ services:
       context: ../web
     ports:
       - "127.0.0.1:3000:80"
+    networks:
+      default:
+        # The gateway trusts this address as its only proxy (TRUSTED_PROXIES).
+        ipv4_address: 172.30.203.10
     depends_on:
       gateway:
         condition: service_healthy
