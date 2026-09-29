@@ -2463,7 +2463,7 @@ git commit -m "test(e2e): assert a checkout trace spans gateway, order and catal
   - In `support/api.ts`: `GATEWAY_URL`, `WEB_URL`, `PASSWORD`, `runId(): string`, `withRateLimitRetry(send)`, `class ApiUser` with `static register(fullName, email)`, `account: Account`, `openShop(name, slug)`, `createProduct(name, stock, price?)`, `product(id)`, `stock(productId)`, `setCartItem(skuId, qty)`, `orders()`, `status(path)`, `dispose()`; types `Account`, `Product`, `Order`.
   - In `support/ui.ts`: `signIn(page, account)`, `registerViaUi(page, account)`, `loginViaUi(page, account)`, `logout(page, fullName)`, `search(page, q)`, `addToCart(page, productName, variant?)`, `openCheckout(page)`, `placeOrderButton(page)`, `OUT_OF_STOCK_MESSAGE`.
 
-- [ ] **Step 1: Scaffold the project**
+- [x] **Step 1: Scaffold the project**
 
 `e2e/playwright/package.json`:
 
@@ -2535,7 +2535,7 @@ export default defineConfig({
 Run: `cd e2e/playwright && npm install && npx playwright install chromium`
 Expected: `package-lock.json` is created and Chromium is installed.
 
-- [ ] **Step 2: Write the support modules**
+- [x] **Step 2: Write the support modules**
 
 `e2e/playwright/support/api.ts`:
 
@@ -2754,7 +2754,7 @@ export function placeOrderButton(page: Page) {
 
 Before running, verify every UI string used here and in the specs by grepping `web/src`. Example: `grep -rn "Đã nhận được hàng\|Hoàn thành\|Thêm phân loại\|Lý do huỷ" web/src`. The strings above come from `web/e2e/helpers.ts` and `web/src` as of 982c77c.
 
-- [ ] **Step 3: Write the auth spec**
+- [x] **Step 3: Write the auth spec**
 
 `e2e/playwright/tests/auth.spec.ts`:
 
@@ -2797,7 +2797,7 @@ test('a buyer cannot open the seller center', async ({ page }) => {
 });
 ```
 
-- [ ] **Step 4: Write the happy path spec**
+- [x] **Step 4: Write the happy path spec**
 
 `e2e/playwright/tests/happy-path.spec.ts`:
 
@@ -2896,7 +2896,7 @@ test('seller opens a shop and lists a product; buyer buys from two shops; the or
 
 The seller tab in `/seller/orders` might filter to "Chờ xác nhận" and hide an order after it's confirmed. Check `web/src/features/seller-orders` and follow the tabs the way the web's own `web/e2e/seller.spec.ts` does. The web spec passes with the article staying visible across actions. If the real app behaves differently, adapt the navigation, not the assertions about status.
 
-- [ ] **Step 5: Run the specs against the stack**
+- [x] **Step 5: Run the specs against the stack**
 
 Run: `cd e2e/playwright && npx tsc --noEmit && npx playwright test tests/auth.spec.ts tests/happy-path.spec.ts`
 Expected: `3 passed`.
@@ -2908,7 +2908,7 @@ Triage failures with Global Constraints' Findings protocol. Likely real-stack is
 
 For each one, reproduce it with a minimal failing check (Playwright trace plus a `curl` of the same request), record it, and report it.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add e2e/playwright
