@@ -1862,18 +1862,18 @@ Expected: PASS, 0 lint issues, both images build.
   - Kafka topics `payment.events` and `payout.events`;
   - `make stripe-listen`.
 
-- [ ] **Step 1: Run the observable checks first and see them fail:**
+- [x] **Step 1: Run the observable checks first and see them fail:**
 
 ```bash
 git check-ignore -q deploy/secrets/payment.env.example && echo IGNORED || echo NOT_IGNORED   # today: IGNORED (must become NOT_IGNORED)
 docker compose -f deploy/docker-compose.yml config --services | grep -cE '^(db-init|payment|ledger)$'   # today: 0 (must become 3)
 ```
 
-- [ ] **Step 2: `.gitignore` and `init.sql`.**
+- [x] **Step 2: `.gitignore` and `init.sql`.**
   - `.gitignore`: replace the line `deploy/secrets/` with a comment, then `deploy/secrets/*` and `!deploy/secrets/*.example`. The comment says git can't re-include a file inside an excluded directory.
   - `deploy/postgres/init.sql`: append `CREATE DATABASE payment_db;` and `CREATE DATABASE ledger_db;`, and add a header line noting that existing volumes get new databases from the `db-init` compose job.
 
-- [ ] **Step 3: Create `deploy/secrets/payment.env.example`:**
+- [x] **Step 3: Create `deploy/secrets/payment.env.example`:**
 
 ```bash
 # Copy to deploy/secrets/payment.env (gitignored) and fill in to use the real
@@ -1896,7 +1896,7 @@ STRIPE_MIN_AMOUNT=10000
 
 Check `STRIPE_MIN_AMOUNT`'s meaning and default against WS1' §5.2 and match it.
 
-- [ ] **Step 4: Compose.** Add `db-init` right after `postgres`:
+- [x] **Step 4: Compose.** Add `db-init` right after `postgres`:
 
 ```yaml
   # init.sql only runs on an empty volume, and pgdata is shared across
@@ -1990,14 +1990,14 @@ Add after `order`:
   - environment: add `PAYMENT_URL: http://payment:8084` and `LEDGER_URL: http://ledger:8085`;
   - `depends_on`: add `payment` and `ledger` with `condition: service_healthy`. This is a gap fill recorded in Task 8.
 
-- [ ] **Step 5: Makefile `stripe-listen`.** Add it to `.PHONY` and add:
+- [x] **Step 5: Makefile `stripe-listen`.** Add it to `.PHONY` and add:
 
 ```make
 stripe-listen: ## Forward Stripe test-mode webhooks to the local gateway (prints the whsec_ secret for deploy/secrets/payment.env)
 	stripe listen --forward-to localhost:8080/api/payments/stripe/webhook
 ```
 
-- [ ] **Step 6: Verify on the EXISTING P1 volume** (Review Focus 4). The `marketplace` project owns the shared `pgdata`. The run is additive only: it creates two new databases and doesn't change any P1 service.
+- [x] **Step 6: Verify on the EXISTING P1 volume** (Review Focus 4). The `marketplace` project owns the shared `pgdata`. The run is additive only: it creates two new databases and doesn't change any P1 service.
 
 ```bash
 docker compose -f deploy/docker-compose.yml config -q
@@ -2014,7 +2014,7 @@ Expected:
 - the topics include all three;
 - all six `healthcheck` calls (which probe `/readyz`) exit 0.
 
-- [ ] **Step 7: Verify on a FRESH volume.** Stop the `marketplace` stack first **without `-v`**, because the host ports and the pinned subnet can't be shared:
+- [x] **Step 7: Verify on a FRESH volume.** Stop the `marketplace` stack first **without `-v`**, because the host ports and the pinned subnet can't be shared:
 
 ```bash
 docker compose -p marketplace -f deploy/docker-compose.yml -f deploy/docker-compose.web.yml --profile app down
@@ -2025,9 +2025,9 @@ docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.web.yml --p
 unset COMPOSE_PROJECT_NAME
 ```
 
-- [ ] **Step 8: Re-run the Step 1 checks.** Expected: `payment.env.example` is NOT_IGNORED, `git check-ignore deploy/secrets/payment.env` still succeeds, and 3 services are listed.
+- [x] **Step 8: Re-run the Step 1 checks.** Expected: `payment.env.example` is NOT_IGNORED, `git check-ignore deploy/secrets/payment.env` still succeeds, and 3 services are listed.
 
-- [ ] **Step 9: Commit.** `git add deploy .gitignore Makefile && git commit -m "feat(deploy): db-init job, payment/ledger services and topics, provider env and secrets placeholder, stripe-listen"`
+- [x] **Step 9: Commit.** `git add deploy .gitignore Makefile && git commit -m "feat(deploy): db-init job, payment/ledger services and topics, provider env and secrets placeholder, stripe-listen"`
 
 ---
 
