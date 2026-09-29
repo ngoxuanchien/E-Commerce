@@ -47,6 +47,7 @@ Candidate to confirm in Task 3: **F1 — browser traffic shares one rate-limit b
 |---|---|---|---|---|---|---|
 | F1 | WS0 (`deploy/docker-compose.yml`) | Every browser user shares one gateway rate-limit bucket: site-wide 10 logins/min and 20 req/s for all traffic through the web app | `TRUSTED_PROXIES: ""` on the gateway, so `ratelimit.ClientIP.Resolve` (`services/gateway/internal/ratelimit/clientip.go`) ignores the `X-Forwarded-For` that nginx (`web/nginx.conf`, `$proxy_add_x_forwarded_for`) appends and keys every request on the peer = web container IP (172.18.0.11) | `E2E_FINDINGS=1 go test -run TestBrowserClientsHaveSeparateLoginBuckets ./api/` → 11 logins from 11 distinct X-Forwarded-For clients via :3000, 11th answered 429 (`Should be zero, but was 1`) | Set the gateway's `TRUSTED_PROXIES` to the compose network (e.g. give the network a fixed subnet and trust it, or trust the `web` service address) | reported |
 | F2 | WS0 (`api/openapi/*.yaml`) | Public operations (`GET /api/categories`, `GET /api/products`, `GET /api/products/{id}`, `GET /api/shops/{slug}`, `POST /api/auth/{register,login}`) do not document the 401 that the gateway returns for an invalid bearer token (WS4 §3 "fail loudly"), so contract validation rejects a correct response and generated web types don't model it | Contract omission: those operations list only 200/4xx business codes + 429 | `E2E_FINDINGS=1 go test -run TestPublicRoutesDocumentInvalidToken401 ./api/` → `response violates contract: GET /api/products -> 401: status is not supported` | Add `'401': $ref: 'common.yaml#/components/responses/Unauthenticated'` (or the existing unauthenticated response) to every public operation | reported |
+| F3 | WS5 (`web/src/features/checkout/CheckoutPage.tsx`) | When the checkout response is lost (network error after the server committed), the buyer sees "Không có sản phẩm nào để thanh toán" instead of the form; the orders exist but the page says there is nothing to buy. Only the transient "Thử lại" toast replays the request (same key) and shows the orders | `useCheckout`'s `onSettled` invalidates the cart query; the refetched cart no longer contains the purchased lines (the server removed them), so `groupForCheckout(...)` is empty and the page renders the empty state | `E2E_FINDINGS=1 npx playwright test tests/idempotency.spec.ts -g "still retry"` → `getByText('Không có sản phẩm nào để thanh toán')` has count 1; debug capture: MAIN text = empty state, toast = 'Dịch vụ đang tạm gián đoạn. Vui lòng thử lại. / Thử lại' | Keep the checkout form (and its lines snapshot) while a retryable error is pending, e.g. don't invalidate the cart on a retryable error, or render from the submitted snapshot until the retry settles; alternatively show a notice linking to /orders | reported |
 
 ---
 
@@ -2925,7 +2926,7 @@ git commit -m "test(e2e): add Playwright auth and happy-path specs against the r
 **Interfaces:**
 - Consumes: `support/api.ts` and `support/ui.ts` from Task 6.
 
-- [ ] **Step 1: Write the cancel spec**
+- [x] **Step 1: Write the cancel spec**
 
 `e2e/playwright/tests/cancel-restock.spec.ts`:
 
@@ -2962,7 +2963,7 @@ test('a buyer cancels a pending order and the stock returns within 5 s', async (
 });
 ```
 
-- [ ] **Step 2: Write the oversell spec**
+- [x] **Step 2: Write the oversell spec**
 
 `e2e/playwright/tests/oversell.spec.ts`:
 
@@ -3005,7 +3006,7 @@ test('two buyers race for the last unit: exactly one order is placed', async ({ 
 });
 ```
 
-- [ ] **Step 3: Write the idempotency spec**
+- [x] **Step 3: Write the idempotency spec**
 
 `e2e/playwright/tests/idempotency.spec.ts`:
 
@@ -3068,12 +3069,12 @@ test('a checkout whose response is lost is retried with the same key and not dup
 });
 ```
 
-- [ ] **Step 4: Run the full Playwright suite twice**
+- [x] **Step 4: Run the full Playwright suite twice**
 
 Run: `cd e2e/playwright && npx tsc --noEmit && npx playwright test && npx playwright test`
 Expected: `8 passed` both times.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add e2e/playwright/tests
