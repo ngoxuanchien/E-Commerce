@@ -58,7 +58,12 @@ func (h *handlers) getProduct(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) getShop(w http.ResponseWriter, r *http.Request) {
-	shop, err := h.Shops.BySlug(r.Context(), r.PathValue("slug"))
+	slug := r.PathValue("slug")
+	if !domain.ValidText(slug) {
+		writeError(w, r, domain.ErrNotFound) // cannot match any stored slug
+		return
+	}
+	shop, err := h.Shops.BySlug(r.Context(), slug)
 	if err != nil {
 		writeError(w, r, err)
 		return

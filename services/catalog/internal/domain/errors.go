@@ -64,9 +64,19 @@ func (f fieldErrors) err() error {
 	return &ValidationError{Fields: f}
 }
 
-// checkChars validates the rune length of s against [minLen, maxLen].
+const msgText = "must be valid UTF-8 text without NUL characters"
+
+// ValidText reports whether s can be stored in Postgres text: valid UTF-8
+// without NUL bytes (anything else is rejected by the database with an error).
+func ValidText(s string) bool {
+	return utf8.ValidString(s) && !strings.ContainsRune(s, 0)
+}
+
+// checkChars validates that s is storable text of rune length [minLen, maxLen].
 func checkChars(f fieldErrors, field, s string, minLen, maxLen int) {
 	switch n := utf8.RuneCountInString(s); {
+	case !ValidText(s):
+		f.add(field, msgText)
 	case n == 0 && minLen > 0:
 		f.add(field, msgRequired)
 	case n < minLen:

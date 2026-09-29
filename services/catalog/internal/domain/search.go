@@ -55,6 +55,11 @@ type SearchParams struct {
 func (p SearchParams) Normalize() (SearchParams, error) {
 	f := fieldErrors{}
 	p.Query = strings.TrimSpace(p.Query)
+	for field, v := range map[string]string{"q": p.Query, "category": p.CategorySlug, "shop": p.ShopSlug} {
+		if !ValidText(v) {
+			f.add(field, msgText)
+		}
+	}
 	if utf8.RuneCountInString(p.Query) > maxQueryChars {
 		f.add("q", "must be at most 200 characters")
 	}
