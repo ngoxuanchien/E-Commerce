@@ -102,6 +102,11 @@ func (s *CheckoutService) Checkout(ctx context.Context, in CheckoutInput, enc En
 	}
 	resp, err := s.run(ctx, in, enc)
 	if err != nil {
+		var keep *keepKeyError
+		if errors.As(err, &keep) {
+			s.cfg.Logger.ErrorContext(ctx, "checkout failed before compensation; key stays claimed", "buyer_id", in.BuyerID, "error", err)
+			return Response{}, err
+		}
 		if derr := s.store.DeleteIdempotencyKey(ctx, in.BuyerID, in.IdempotencyKey); derr != nil {
 			s.cfg.Logger.ErrorContext(ctx, "release idempotency key failed", "buyer_id", in.BuyerID, "error", derr)
 		}
@@ -293,13 +298,63 @@ func (s *CheckoutService) commit(ctx context.Context, in CheckoutInput, enc Enco
 		return Response{}, ErrCheckoutExpired
 	}
 	if err != nil {
-		return Response{}, err
+		return s.recoverCommit(ctx, in, res.Orders, lines, err)
 	}
-	if err := s.carts.Remove(ctx, in.BuyerID, skuIDsOf(lines)...); err != nil {
-		s.cfg.Logger.WarnContext(ctx, "clear purchased cart lines failed", "buyer_id", in.BuyerID, "error", err)
-	}
+	s.clearCart(ctx, in.BuyerID, lines)
 	return resp, nil
 }
+
+// recoverCommit handles a Tx C failure other than a lost race. The commit may
+// have succeeded with only its acknowledgement lost, so a stored response
+// wins. Otherwise the reservations are released and the orders cancelled now
+// rather than left to the sweeper, so the client's retry does not run into
+// its own held stock. If the cancellation cannot be written, the key stays
+// claimed until the sweeper has cleaned up.
+func (s *CheckoutService) recoverCommit(ctx context.Context, in CheckoutInput, orders []domain.Order, lines []domain.Line, cause error) (Response, error) {
+	rec, created, err := s.store.BeginIdempotency(ctx, in.BuyerID, in.IdempotencyKey, RequestHash(in), s.cfg.Now())
+	if err == nil && !created && rec.Response != nil {
+		s.clearCart(ctx, in.BuyerID, lines)
+		return *rec.Response, nil
+	}
+	s.releaseAll(ctx, orders)
+	fresh := make([]domain.Order, 0, len(orders))
+	for _, o := range orders {
+		stored, err := s.store.GetOrder(ctx, o.ID) // the in-memory copy reflects the rolled-back Tx C
+		if err != nil {
+			return Response{}, &keepKeyError{err: errors.Join(cause, err)}
+		}
+		if stored.Status == domain.StatusPending {
+			fresh = append(fresh, stored)
+		}
+	}
+	now := s.cfg.Now()
+	err = s.store.InTx(ctx, func(tx Tx) error {
+		for i := range fresh {
+			if err := applyTransition(ctx, tx, &fresh[i], domain.ActionCancel, domain.SystemActor(), domain.CancelReserveFailed, now); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return Response{}, &keepKeyError{err: errors.Join(cause, err)}
+	}
+	return Response{}, cause
+}
+
+// clearCart removes purchased lines from the cart, best effort.
+func (s *CheckoutService) clearCart(ctx context.Context, buyerID string, lines []domain.Line) {
+	if err := s.carts.Remove(ctx, buyerID, skuIDsOf(lines)...); err != nil {
+		s.cfg.Logger.WarnContext(ctx, "clear purchased cart lines failed", "buyer_id", buyerID, "error", err)
+	}
+}
+
+// keepKeyError marks a failure after which the idempotency key must stay
+// claimed: the checkout's outcome is not yet compensated.
+type keepKeyError struct{ err error }
+
+func (e *keepKeyError) Error() string { return e.err.Error() }
+func (e *keepKeyError) Unwrap() error { return e.err }
 
 // releaseAll releases every order's stock, best effort.
 func (s *CheckoutService) releaseAll(ctx context.Context, orders []domain.Order) {
