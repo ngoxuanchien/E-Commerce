@@ -28,6 +28,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Category'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
         '429':
           $ref: 'common.yaml#/components/responses/RateLimited'
         5XX:
@@ -79,6 +81,8 @@ paths:
                 $ref: '#/components/schemas/ProductSummaryPage'
         '400':
           $ref: 'common.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
         '429':
           $ref: 'common.yaml#/components/responses/RateLimited'
         5XX:
@@ -102,6 +106,8 @@ paths:
                 $ref: '#/components/schemas/Product'
         '404':
           $ref: 'common.yaml#/components/responses/NotFound'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
         '429':
           $ref: 'common.yaml#/components/responses/RateLimited'
         5XX:
@@ -218,6 +224,8 @@ paths:
                 $ref: '#/components/schemas/Shop'
         '404':
           $ref: 'common.yaml#/components/responses/NotFound'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
         '429':
           $ref: 'common.yaml#/components/responses/RateLimited'
         5XX:

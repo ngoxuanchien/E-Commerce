@@ -187,6 +187,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description Missing or invalid credentials (UNAUTHENTICATED). */
+        Unauthenticated: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Conflict with current state (CONFLICT, OUT_OF_STOCK, INVALID_STATE_TRANSITION). */
         Conflict: {
             headers: {
@@ -218,15 +227,6 @@ export interface components {
         };
         /** @description INTERNAL (500) or UPSTREAM_UNAVAILABLE (503). */
         ServerError: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/json": components["schemas"]["Error"];
-            };
-        };
-        /** @description Missing or invalid credentials (UNAUTHENTICATED). */
-        Unauthenticated: {
             headers: {
                 [name: string]: unknown;
             };
@@ -279,6 +279,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthenticated"];
             409: components["responses"]["Conflict"];
             413: components["responses"]["PayloadTooLarge"];
             429: components["responses"]["RateLimited"];
@@ -365,6 +366,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Unauthenticated"];
             429: components["responses"]["RateLimited"];
             "5XX": components["responses"]["ServerError"];
         };

@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,10 +27,9 @@ func TestGatewayAuthBoundaries(t *testing.T) {
 	err = w.buyers[0].Do(ctx(t), http.MethodGet, "/api/seller/products", nil, nil, spoof)
 	assert.True(t, client.IsCode(err, "FORBIDDEN"), "X-User-Roles from the client must not grant seller: %v", err)
 
-	// An invalid token fails loudly even on a public route (WS4 §3). The
-	// contract does not document this 401 yet (finding F2), so this call
-	// skips contract validation.
-	bad := client.New(gatewayURL, client.RetryRateLimited{MaxWait: 3 * time.Minute})
+	// An invalid token fails loudly even on a public route (WS4 §3), and the
+	// contract documents that 401 (former finding F2).
+	bad := client.New(gatewayURL, newTransport(t))
 	bad.SetToken("not-a-jwt")
 	_, err = bad.SearchProducts(ctx(t), url.Values{})
 	assert.True(t, client.IsCode(err, "UNAUTHENTICATED"), "garbage token on public route: %v", err)
