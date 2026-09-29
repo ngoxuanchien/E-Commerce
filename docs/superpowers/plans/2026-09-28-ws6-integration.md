@@ -45,6 +45,8 @@ Candidate to confirm in Task 3: **F1 — browser traffic shares one rate-limit b
 
 | Id | Owner | Symptom | Root cause | Evidence | Suggested fix | Status |
 |---|---|---|---|---|---|---|
+| F1 | WS0 (`deploy/docker-compose.yml`) | Every browser user shares one gateway rate-limit bucket: site-wide 10 logins/min and 20 req/s for all traffic through the web app | `TRUSTED_PROXIES: ""` on the gateway, so `ratelimit.ClientIP.Resolve` (`services/gateway/internal/ratelimit/clientip.go`) ignores the `X-Forwarded-For` that nginx (`web/nginx.conf`, `$proxy_add_x_forwarded_for`) appends and keys every request on the peer = web container IP (172.18.0.11) | `E2E_FINDINGS=1 go test -run TestBrowserClientsHaveSeparateLoginBuckets ./api/` → 11 logins from 11 distinct X-Forwarded-For clients via :3000, 11th answered 429 (`Should be zero, but was 1`) | Set the gateway's `TRUSTED_PROXIES` to the compose network (e.g. give the network a fixed subnet and trust it, or trust the `web` service address) | reported |
+| F2 | WS0 (`api/openapi/*.yaml`) | Public operations (`GET /api/categories`, `GET /api/products`, `GET /api/products/{id}`, `GET /api/shops/{slug}`, `POST /api/auth/{register,login}`) do not document the 401 that the gateway returns for an invalid bearer token (WS4 §3 "fail loudly"), so contract validation rejects a correct response and generated web types don't model it | Contract omission: those operations list only 200/4xx business codes + 429 | `E2E_FINDINGS=1 go test -run TestPublicRoutesDocumentInvalidToken401 ./api/` → `response violates contract: GET /api/products -> 401: status is not supported` | Add `'401': $ref: 'common.yaml#/components/responses/Unauthenticated'` (or the existing unauthenticated response) to every public operation | reported |
 
 ---
 
@@ -1558,7 +1560,7 @@ git commit -m "feat(e2e): add idempotent seed program behind make seed"
   - `stockOf(t, productID, skuID) int`, `newKey() string`, `runID() string`, `ctx(t) context.Context`, `envOr(key, def) string`.
   - Constants and vars `password`, `shippingFee = 30_000`, `gatewayURL`, `jaegerURL`.
 
-- [ ] **Step 1: Write the harness**
+- [x] **Step 1: Write the harness**
 
 `e2e/api/main_test.go`:
 
@@ -1799,7 +1801,7 @@ Notes:
 - `ContractTransport` calls `t.Fatalf` only while loading the specs. The shared world's clients stay usable after the first test ends, because the transports never touch `t` again.
 - `ctx(t)` returns `t.Context()`. Shared clients created during test A take that test's context only per call, never at construction, so they're safe to use in test B.
 
-- [ ] **Step 2: Write the flow test**
+- [x] **Step 2: Write the flow test**
 
 `e2e/api/flow_test.go`:
 
@@ -1919,7 +1921,7 @@ func TestCheckoutAcrossTwoShopsAndLifecycle(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Write the auth test**
+- [x] **Step 3: Write the auth test**
 
 `e2e/api/auth_test.go`:
 
@@ -1993,18 +1995,18 @@ func TestRefreshRotationReuseDetectionAndLogout(t *testing.T) {
 
 `cookiejar.Cookies` returns name/value only, and re-setting it on `refreshURL` scopes it to that path. If the identity service rejects the replayed cookie for a reason other than reuse (for example, the path doesn't match `/api/auth`), set the cookie on `gatewayURL + "/api/auth/"` instead.
 
-- [ ] **Step 4: Run the API tests against the running stack**
+- [x] **Step 4: Run the API tests against the running stack**
 
 Run: `cd e2e && GOWORK=off go test -count=1 -v -run 'TestCheckoutAcrossTwoShops|TestGatewayAuth|TestRefreshRotation' ./api/`
 Expected: PASS. The first run may pause on 429s while the world is built; that's expected (`RetryRateLimited`).
 
-- [ ] **Step 5: Triage failures with the Findings protocol**
+- [x] **Step 5: Triage failures with the Findings protocol**
 
 For each failure: is it a test bug (wrong assumption about UI copy, contract, or behavior the spec leaves open), or a service/contract bug?
 - **Test bug:** fix the test.
 - **Contract violation** (a `response violates contract` error from `ContractTransport`) **or a behavior bug:** use superpowers:systematic-debugging. Collect the failing request/response, `docker compose … logs <svc>`, and the owning code line. Add a row to "Findings". Move the reproducing assertion into `findings_test.go`, gated by `requireFindings`, so the main test keeps covering everything else.
 
-- [ ] **Step 6: Write the findings harness and the F1 reproduction**
+- [x] **Step 6: Write the findings harness and the F1 reproduction**
 
 `e2e/api/findings_test.go`:
 
@@ -2057,7 +2059,7 @@ func TestBrowserClientsHaveSeparateLoginBuckets(t *testing.T) {
 
 This test burns the web origin's login bucket, so don't run it right before Playwright.
 
-- [ ] **Step 7: Confirm or drop F1**
+- [x] **Step 7: Confirm or drop F1**
 
 Run: `cd e2e && E2E_FINDINGS=1 GOWORK=off go test -count=1 -v -run TestBrowserClientsHaveSeparateLoginBuckets ./api/`
 - If it FAILS with `limited > 0`, F1 is confirmed. Add the evidence to the table: the output, the `TRUSTED_PROXIES: ""` line in `deploy/docker-compose.yml`, and `services/gateway/internal/ratelimit/clientip.go` `Resolve`. Report it to the user.
@@ -2065,7 +2067,7 @@ Run: `cd e2e && E2E_FINDINGS=1 GOWORK=off go test -count=1 -v -run TestBrowserCl
 
 Then wait 60 s before running any Playwright tests.
 
-- [ ] **Step 8: Lint and commit**
+- [x] **Step 8: Lint and commit**
 
 Run: `cd e2e && ../bin/golangci-lint run ./... && GOWORK=off go vet ./...`
 
