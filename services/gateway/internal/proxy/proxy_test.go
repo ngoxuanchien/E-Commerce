@@ -107,7 +107,7 @@ func TestProxyForwardsPathAndQueryUnchanged(t *testing.T) {
 
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, rawTarget, gotRequestURI)
@@ -126,7 +126,7 @@ func TestProxyPassesUpstreamResponsesThrough(t *testing.T) {
 
 	resp, err := http.Get(proxyServer.URL + "/api/orders")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	got, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
@@ -145,7 +145,7 @@ func TestProxyUpstreamDownIs503(t *testing.T) {
 
 	resp, err := http.Get(proxyServer.URL + "/api/orders")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	assertErrorCode(t, resp, "UPSTREAM_UNAVAILABLE")
@@ -166,7 +166,7 @@ func TestProxyUpstreamTimeoutIs503(t *testing.T) {
 	resp, err := http.Get(proxyServer.URL + "/api/orders")
 	elapsed := time.Since(start)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	assertErrorCode(t, resp, "UPSTREAM_UNAVAILABLE")
@@ -205,7 +205,7 @@ func TestProxyMapsBodyLimitTo413(t *testing.T) {
 
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode)
 	assertErrorCode(t, resp, "PAYLOAD_TOO_LARGE")

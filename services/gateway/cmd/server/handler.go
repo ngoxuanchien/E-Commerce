@@ -40,7 +40,7 @@ func newHandler(g *gateway) (http.Handler, error) {
 		return nil, err
 	}
 
-	var api http.Handler = dispatch
+	api := dispatch
 	api = bodyLimit(httpx.MaxBodyBytes)(api)
 	api = ratelimit.Middleware(g.general, g.login, g.clientIP)(api)
 	api = cors.Middleware(g.origins)(api)

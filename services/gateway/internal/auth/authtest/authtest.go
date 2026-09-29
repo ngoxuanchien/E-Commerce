@@ -142,7 +142,7 @@ func NewServer(t *testing.T, keys ...*Key) *Server {
 		w.WriteHeader(status)
 		_, _ = w.Write(body)
 	}))
-	t.Cleanup(s.Server.Close)
+	t.Cleanup(s.Close)
 	return s
 }
 

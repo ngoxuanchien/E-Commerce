@@ -207,7 +207,7 @@ func TestParseKeySetSkipsUnusableKeys(t *testing.T) {
 		"kid": "small-key",
 		"use": "sig",
 		"alg": "RS256",
-		"n":   base64.RawURLEncoding.EncodeToString(smallKey.PublicKey.N.Bytes()),
+		"n":   base64.RawURLEncoding.EncodeToString(smallKey.N.Bytes()),
 		"e":   base64.RawURLEncoding.EncodeToString([]byte{1, 0, 1}),
 	}
 
