@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
 	"slices"
@@ -141,7 +142,7 @@ func (s *CheckoutService) run(ctx context.Context, in CheckoutInput, enc Encoder
 		return Response{}, err
 	}
 	if err := s.reserveAll(ctx, orders); err != nil {
-		return Response{}, err // compensation: Task 11
+		return s.abort(ctx, in, enc, orders, err)
 	}
 	return s.commit(ctx, in, enc, CheckoutResult{CheckoutID: checkoutID, Orders: orders}, lines)
 }
@@ -205,6 +206,41 @@ func (s *CheckoutService) reserveAll(ctx context.Context, orders []domain.Order)
 	}
 	wg.Wait()
 	return mergeReserveErrors(errs)
+}
+
+// abort compensates a failed reservation (WS3 §4 step 7): release every order
+// of the checkout, then Tx B cancels them all (system, OUT_OF_STOCK or
+// RESERVE_FAILED). Release failures are only logged: the OrderCancelled events
+// written in Tx B make catalog release the stock asynchronously.
+func (s *CheckoutService) abort(ctx context.Context, in CheckoutInput, enc Encoder, orders []domain.Order, cause error) (Response, error) {
+	s.releaseAll(ctx, orders)
+	reason := domain.CancelReserveFailed
+	var oos *OutOfStockError
+	if errors.As(cause, &oos) {
+		reason = domain.CancelOutOfStock
+	}
+	store := storable(cause)
+	now := s.cfg.Now()
+	var resp Response
+	err := s.store.InTx(ctx, func(tx Tx) error {
+		for i := range orders {
+			if err := applyTransition(ctx, tx, &orders[i], domain.ActionCancel, domain.SystemActor(), reason, now); err != nil {
+				return err
+			}
+		}
+		if !store {
+			return nil
+		}
+		resp = enc(CheckoutResult{}, cause)
+		return tx.CompleteIdempotencyKey(ctx, in.BuyerID, in.IdempotencyKey, resp)
+	})
+	if err != nil {
+		return Response{}, fmt.Errorf("cancel orders after failed reservation: %w", err)
+	}
+	if !store {
+		return Response{}, cause
+	}
+	return resp, nil
 }
 
 // mergeReserveErrors prefers OUT_OF_STOCK (with every shop's shortages) over
