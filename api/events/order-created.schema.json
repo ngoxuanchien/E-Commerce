@@ -15,6 +15,9 @@
         "shop_id": { "type": "string", "format": "uuid" },
         "seller_user_id": { "type": "string", "format": "uuid" },
         "total": { "type": "integer", "minimum": 0 },
+        "payment_method": { "enum": ["COD", "VNPAY", "STRIPE"] },
+        "commission_rate_bps": { "type": "integer", "minimum": 0 },
+        "commission_amount": { "type": "integer", "minimum": 0 },
         "items": {
           "type": "array",
           "minItems": 1,

@@ -1,5 +1,5 @@
 // Package event defines the Kafka event contract (api/events/*.schema.json):
-// the envelope, the order event payloads, and encode/decode helpers.
+// the envelope, the order, payment and payout event payloads, and encode/decode helpers.
 package event
 
 import (
@@ -14,6 +14,12 @@ import (
 // TopicOrderEvents is the topic for all order events; the message key is the order ID.
 const TopicOrderEvents = "order.events"
 
+// TopicPaymentEvents carries payment-svc events; the key is the checkout ID.
+const TopicPaymentEvents = "payment.events"
+
+// TopicPayoutEvents carries ledger-svc payout events; the key is the seller user ID.
+const TopicPayoutEvents = "payout.events"
+
 // Version is the only envelope version defined in P1.
 const Version = 1
 
@@ -24,6 +30,34 @@ const (
 	TypeOrderCreated       Type = "OrderCreated"
 	TypeOrderStatusChanged Type = "OrderStatusChanged"
 	TypeOrderCancelled     Type = "OrderCancelled"
+	TypeOrderCompleted     Type = "OrderCompleted"
+	TypePaymentSucceeded   Type = "PaymentSucceeded"
+	TypePaymentFailed      Type = "PaymentFailed"
+	TypePaymentRefunded    Type = "PaymentRefunded"
+	TypeRefundFailed       Type = "RefundFailed"
+	TypePayoutRequested    Type = "PayoutRequested"
+	TypePayoutSettled      Type = "PayoutSettled"
+	TypePayoutFailed       Type = "PayoutFailed"
+)
+
+// Values of OrderCompleted.CompletedBy.
+const (
+	CompletedByBuyer  = "buyer"
+	CompletedBySystem = "system"
+)
+
+// Payment providers (payment.events "provider").
+const (
+	ProviderVNPay  = "vnpay"
+	ProviderStripe = "stripe"
+	ProviderFake   = "fake"
+)
+
+// Checkout payment methods (order events "payment_method").
+const (
+	PaymentMethodCOD    = "COD"
+	PaymentMethodVNPay  = "VNPAY"
+	PaymentMethodStripe = "STRIPE"
 )
 
 // Values of OrderCancelled.CancelledBy.
@@ -67,6 +101,10 @@ type OrderCreated struct {
 	SellerUserID string      `json:"seller_user_id"`
 	Total        int64       `json:"total"`
 	Items        []OrderItem `json:"items"`
+
+	PaymentMethod     string `json:"payment_method,omitempty"`      // P2; absent in P1 payloads
+	CommissionRateBps int32  `json:"commission_rate_bps,omitempty"` // P2; 0 for COD
+	CommissionAmount  int64  `json:"commission_amount,omitempty"`   // P2; 0 for COD
 }
 
 func (OrderCreated) EventType() Type { return TypeOrderCreated }
@@ -85,6 +123,9 @@ type OrderCancelled struct {
 	OrderID     string `json:"order_id"`
 	Reason      string `json:"reason"`
 	CancelledBy string `json:"cancelled_by"`
+
+	CheckoutID    string `json:"checkout_id,omitempty"`    // P2
+	PaymentMethod string `json:"payment_method,omitempty"` // P2
 }
 
 func (OrderCancelled) EventType() Type { return TypeOrderCancelled }

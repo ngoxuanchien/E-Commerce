@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RefundFailed",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "const": "RefundFailed"
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "refund_id",
+        "payment_id",
+        "checkout_id",
+        "order_id",
+        "amount",
+        "provider",
+        "reason"
+      ],
+      "properties": {
+        "refund_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "payment_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "checkout_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "order_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provider": {
+          "enum": [
+            "vnpay",
+            "stripe",
+            "fake"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PaymentRefunded",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "const": "PaymentRefunded"
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "refund_id",
+        "payment_id",
+        "checkout_id",
+        "order_id",
+        "amount",
+        "provider"
+      ],
+      "properties": {
+        "refund_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "payment_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "checkout_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "order_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provider": {
+          "enum": [
+            "vnpay",
+            "stripe",
+            "fake"
+          ]
+        }
+      }
+    }
+  }
+}

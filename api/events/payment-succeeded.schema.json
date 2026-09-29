@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PaymentSucceeded",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "const": "PaymentSucceeded"
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "payment_id",
+        "checkout_id",
+        "buyer_id",
+        "provider",
+        "provider_ref",
+        "amount",
+        "allocations"
+      ],
+      "properties": {
+        "payment_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "checkout_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "buyer_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "provider": {
+          "enum": [
+            "vnpay",
+            "stripe",
+            "fake"
+          ]
+        },
+        "provider_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "allocations": {
+          "type": "array",
+          "description": "Per-order shares; empty for a DUPLICATE payment (refunded automatically).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "order_id",
+              "seller_user_id",
+              "amount",
+              "commission_amount"
+            ],
+            "properties": {
+              "order_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "seller_user_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "amount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "commission_amount": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

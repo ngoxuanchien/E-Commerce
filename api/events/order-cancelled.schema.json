@@ -11,7 +11,9 @@
       "properties": {
         "order_id": { "type": "string", "format": "uuid" },
         "reason": { "type": "string", "minLength": 1 },
-        "cancelled_by": { "enum": ["buyer", "seller", "system"] }
+        "cancelled_by": { "enum": ["buyer", "seller", "system"] },
+        "checkout_id": { "type": "string", "format": "uuid" },
+        "payment_method": { "enum": ["COD", "VNPAY", "STRIPE"] }
       }
     }
   }
