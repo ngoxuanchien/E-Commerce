@@ -174,26 +174,30 @@ func (c *FakeCallbacks) submit(w http.ResponseWriter, r *http.Request) {
 }
 
 // returnURL is the browser return: it syncs the payment with the provider's current state, then
-// redirects to the result page. A failed sync is logged; the result page and the reconciler catch up.
+// always redirects to the result page (payment.yaml documents only 302; an unknown or unparseable id
+// lands on the page without an id). A failed sync is logged; the result page and the reconciler catch up.
 func (c *FakeCallbacks) returnURL(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseID(r.URL.Query().Get("payment_id"))
 	if !ok {
-		writeError(w, r, httpx.ValidationError(map[string]string{"payment_id": "must be a payment id"}))
+		http.Redirect(w, r, "/checkout/result", http.StatusFound)
 		return
 	}
+	defer http.Redirect(w, r, resultURL(id), http.StatusFound)
 	p, err := c.Store.GetPayment(r.Context(), id)
 	if err != nil {
-		writeError(w, r, err)
+		if !errors.Is(err, app.ErrNotFound) {
+			c.Logger.ErrorContext(r.Context(), "fake return: load payment", "payment_id", id, "error", err)
+		}
 		return
 	}
-	if p.Provider == fakeProviderName {
-		if obs, err := c.Provider.Query(r.Context(), p); err != nil {
-			c.Logger.ErrorContext(r.Context(), "fake return: query", "payment_id", id, "error", err)
-		} else if _, err := c.Observer.ApplyObserved(r.Context(), fakeProviderName, "", id, obs); err != nil {
-			c.Logger.ErrorContext(r.Context(), "fake return: apply", "payment_id", id, "error", err)
-		}
+	if p.Provider != fakeProviderName {
+		return
 	}
-	http.Redirect(w, r, resultURL(id), http.StatusFound)
+	if obs, err := c.Provider.Query(r.Context(), p); err != nil {
+		c.Logger.ErrorContext(r.Context(), "fake return: query", "payment_id", id, "error", err)
+	} else if _, err := c.Observer.ApplyObserved(r.Context(), fakeProviderName, "", id, obs); err != nil {
+		c.Logger.ErrorContext(r.Context(), "fake return: apply", "payment_id", id, "error", err)
+	}
 }
 
 // webhook applies a signed FAKE event. The signature is checked over the raw bytes before they are parsed.

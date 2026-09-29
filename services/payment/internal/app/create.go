@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ngoxuanchien/e-commerce/pkg/idemkey"
 	"github.com/ngoxuanchien/e-commerce/services/payment/internal/domain"
@@ -38,6 +40,7 @@ var (
 	ErrOrdersUnavailable = errors.New("order service unavailable")
 	ErrKeyReused         = errors.New("idempotency key reused with a different request")
 	ErrKeyInProgress     = errors.New("a request with this idempotency key is in progress")
+	ErrCreateInProgress  = errors.New("a payment for this checkout is being created")
 )
 
 // StateError is a business rejection that is stored and replayed (HTTP 409).
@@ -66,10 +69,17 @@ type CreateInput struct{ BuyerID, IdempotencyKey, CheckoutID, ClientIP string }
 // Encoder renders a result or a storable error as the HTTP response that is stored for replays.
 type Encoder func(domain.Payment, error) idemkey.Response
 
+// CreateDB is the idempotency store plus a way to pin one connection for the per-checkout lock.
+// *pgxpool.Pool satisfies it.
+type CreateDB interface {
+	idemkey.DB
+	Acquire(ctx context.Context) (*pgxpool.Conn, error)
+}
+
 // Creator implements CreatePayment (spec §6).
 type Creator struct {
 	store     Store
-	db        idemkey.DB
+	db        CreateDB
 	orders    Orders
 	providers Providers
 	obs       *Observer
@@ -77,7 +87,7 @@ type Creator struct {
 	now       func() time.Time
 }
 
-func NewCreator(store Store, db idemkey.DB, orders Orders, providers Providers, obs *Observer, cfg CreateConfig, now func() time.Time) *Creator {
+func NewCreator(store Store, db CreateDB, orders Orders, providers Providers, obs *Observer, cfg CreateConfig, now func() time.Time) *Creator {
 	return &Creator{store: store, db: db, orders: orders, providers: providers, obs: obs, cfg: cfg, now: now}
 }
 
@@ -154,6 +164,15 @@ func (c *Creator) create(ctx context.Context, in CreateInput, now time.Time) (do
 	if co.Deadline == nil || !now.Before(*co.Deadline) {
 		return domain.Payment{}, &StateError{Reason: "DEADLINE_PASSED"}
 	}
+	// Steps 6-10 run under a per-checkout advisory lock on a pinned connection, so a concurrent
+	// create can neither retire this attempt nor collide with it on payments_one_open.
+	fin := context.WithoutCancel(ctx)
+	unlock, err := c.lockCheckout(ctx, fin, co.ID)
+	if err != nil {
+		return domain.Payment{}, err
+	}
+	defer unlock()
+
 	prior, err := c.store.ListCheckoutPayments(ctx, co.ID)
 	if err != nil {
 		return domain.Payment{}, err
@@ -191,6 +210,10 @@ func (c *Creator) create(ctx context.Context, in CreateInput, now time.Time) (do
 		})
 	}
 	if err := c.store.InTx(ctx, func(tx Tx) error { return tx.InsertPayment(ctx, np) }); err != nil {
+		var pe *pgconn.PgError
+		if errors.As(err, &pe) && pe.Code == "23505" && pe.ConstraintName == "payments_one_open" {
+			return domain.Payment{}, ErrCreateInProgress // backstop: another create got in
+		}
 		return domain.Payment{}, fmt.Errorf("insert payment: %w", err)
 	}
 
@@ -199,7 +222,6 @@ func (c *Creator) create(ctx context.Context, in CreateInput, now time.Time) (do
 		ReturnURL:   c.returnURL(provider.Name(), np.ID),
 		Description: "Thanh toan don hang " + co.ID, ClientIP: in.ClientIP,
 	})
-	fin := context.WithoutCancel(ctx)
 	if err != nil {
 		failed := np.Payment
 		failed.Status, failed.FailureReason, failed.UpdatedAt = domain.StatusFailed, reasonProvider, c.now()
@@ -211,12 +233,38 @@ func (c *Creator) create(ctx context.Context, in CreateInput, now time.Time) (do
 		}
 		return domain.Payment{}, fmt.Errorf("%w: create session: %w", ErrProviderUnavailable, err)
 	}
-	if err := c.store.InTx(ctx, func(tx Tx) error {
-		return tx.SetSession(ctx, np.ID, sess.ProviderRef, sess.RedirectURL)
+	// The provider session exists: record it even if the buyer has given up.
+	if err := c.store.InTx(fin, func(tx Tx) error {
+		return tx.SetSession(fin, np.ID, sess.ProviderRef, sess.RedirectURL)
 	}); err != nil {
 		return domain.Payment{}, fmt.Errorf("set session: %w", err)
 	}
-	return c.store.GetPayment(ctx, np.ID)
+	return c.store.GetPayment(fin, np.ID)
+}
+
+// lockCheckout takes a session-level advisory lock for the checkout without waiting. The returned
+// func releases it (on a context that survives cancellation) and returns the connection.
+func (c *Creator) lockCheckout(ctx, fin context.Context, checkoutID string) (func(), error) {
+	conn, err := c.db.Acquire(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("acquire lock connection: %w", err)
+	}
+	var got bool
+	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock(hashtextextended($1, 0))`, checkoutID).Scan(&got); err != nil {
+		conn.Release()
+		return nil, fmt.Errorf("lock checkout: %w", err)
+	}
+	if !got {
+		conn.Release()
+		return nil, ErrCreateInProgress
+	}
+	return func() {
+		var ok bool
+		if err := conn.QueryRow(fin, `SELECT pg_advisory_unlock(hashtextextended($1, 0))`, checkoutID).Scan(&ok); err != nil || !ok {
+			_ = conn.Conn().Close(fin) // never return a connection that may still hold the lock
+		}
+		conn.Release()
+	}, nil
 }
 
 // retire cancels a checkout's open attempt: Cancel, then Query, then apply what the provider
@@ -228,11 +276,11 @@ func (c *Creator) retire(ctx context.Context, p domain.Payment) error {
 		return fmt.Errorf("no provider %q for payment %s", p.Provider, p.ID)
 	}
 	if _, err := prov.Cancel(ctx, p); err != nil {
-		return err
+		return fmt.Errorf("%w: cancel %s: %w", ErrProviderUnavailable, p.ID, err)
 	}
 	obs, err := prov.Query(ctx, p)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: query %s: %w", ErrProviderUnavailable, p.ID, err)
 	}
 	if _, err := c.obs.ApplyObserved(ctx, p.Provider, "", p.ID, obs); err != nil {
 		return err

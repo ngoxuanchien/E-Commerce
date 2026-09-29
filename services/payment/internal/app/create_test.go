@@ -27,8 +27,21 @@ import (
 // countingProvider is a Stripe stand-in that counts session creations and can fail them.
 type countingProvider struct {
 	stubProvider
-	sessions int
-	failWith error
+	sessions  int
+	failWith  error
+	cancelErr error
+	delay     time.Duration // CreateSession takes this long
+	afterOK   func()        // runs after a successful CreateSession
+}
+
+func (c *countingProvider) Cancel(ctx context.Context, p domain.Payment) (bool, error) {
+	c.mu.Lock()
+	err := c.cancelErr
+	c.mu.Unlock()
+	if err != nil {
+		return false, err
+	}
+	return c.stubProvider.Cancel(ctx, p)
 }
 
 func (c *countingProvider) CreateSession(ctx context.Context, in app.SessionInput) (app.Session, error) {
@@ -36,10 +49,17 @@ func (c *countingProvider) CreateSession(ctx context.Context, in app.SessionInpu
 	c.sessions++
 	err := c.failWith
 	c.mu.Unlock()
+	if c.delay > 0 {
+		time.Sleep(c.delay)
+	}
 	if err != nil {
 		return app.Session{}, err
 	}
-	return c.stubProvider.CreateSession(ctx, in)
+	sess, serr := c.stubProvider.CreateSession(ctx, in)
+	if c.afterOK != nil {
+		c.afterOK()
+	}
+	return sess, serr
 }
 
 func (c *countingProvider) count() int {
@@ -376,4 +396,82 @@ func TestGetIsScopedToTheOwner(t *testing.T) {
 	assert.ErrorIs(t, err, app.ErrNotFound)
 	_, err = e.creator.Get(ctx, e.buyer, id())
 	assert.ErrorIs(t, err, app.ErrNotFound)
+}
+
+func TestConcurrentCreatesForOneCheckoutAreSerialised(t *testing.T) {
+	e := newCreateEnv(t)
+	e.stripe.delay = 300 * time.Millisecond // the winner holds the checkout while the loser arrives
+	for round := range 10 {
+		co := e.checkout("STRIPE", 100_000)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		resps := make([]idemkey.Response, 2)
+		errs := make([]error, 2)
+		for i := range 2 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				resps[i], errs[i] = e.create("k-"+id(), co.id)
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		var winners, busy int
+		var winnerID string
+		for i := range 2 {
+			switch {
+			case errs[i] == nil && resps[i].Status == 201:
+				winners++
+				var b struct{ ID string }
+				require.NoError(t, json.Unmarshal(resps[i].Body, &b))
+				winnerID = b.ID
+			case errors.Is(errs[i], app.ErrCreateInProgress):
+				busy++
+			default:
+				t.Fatalf("round %d: unexpected outcome %d %v %s", round, resps[i].Status, errs[i], resps[i].Body)
+			}
+		}
+		require.Equal(t, 1, winners, "round %d", round)
+		require.Equal(t, 1, busy, "round %d", round)
+		w, err := e.store.GetPayment(ctx, winnerID)
+		require.NoError(t, err)
+		assert.Equal(t, domain.StatusPending, w.Status, "the winner's attempt was not retired by the loser")
+		assert.NotEmpty(t, w.RedirectURL)
+		assert.NotEmpty(t, w.ProviderRef)
+	}
+}
+
+func TestSessionIsStoredEvenIfTheRequestIsCancelled(t *testing.T) {
+	e := newCreateEnv(t)
+	co := e.checkout("STRIPE", 100_000)
+	cctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	e.stripe.afterOK = cancel // the buyer gives up right after the provider session exists
+
+	_, err := e.creator.Create(cctx, app.CreateInput{BuyerID: e.buyer, IdempotencyKey: "k", CheckoutID: co.id}, enc)
+	require.NoError(t, err)
+	ps, err := e.store.ListCheckoutPayments(ctx, co.id)
+	require.NoError(t, err)
+	require.Len(t, ps, 1)
+	assert.NotEmpty(t, ps[0].ProviderRef)
+	assert.NotEmpty(t, ps[0].RedirectURL)
+}
+
+func TestRetireProviderErrorIs503AndLeavesTheOldAttempt(t *testing.T) {
+	e := newCreateEnv(t)
+	co := e.checkout("STRIPE", 100_000)
+	first := e.mustCreate(t, "k1", co.id)
+	e.stripe.cancelErr = errors.New("stripe down")
+
+	_, err := e.create("k2", co.id)
+	require.ErrorIs(t, err, app.ErrProviderUnavailable)
+	old, err := e.store.GetPayment(ctx, first.ID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusPending, old.Status, "the old attempt is unchanged")
+
+	e.stripe.cancelErr = nil
+	second := e.mustCreate(t, "k2", co.id) // the key was released
+	assert.NotEqual(t, first.ID, second.ID)
 }

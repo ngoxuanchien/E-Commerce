@@ -36,6 +36,8 @@ func toAppError(err error) *httpx.AppError {
 		return httpx.NewError(httpx.CodeIdempotencyKeyReused, "Idempotency-Key was already used with a different request")
 	case errors.Is(err, app.ErrKeyInProgress), errors.Is(err, idemkey.ErrClaimLost):
 		return httpx.NewError(httpx.CodeConflict, "a request with this Idempotency-Key is in progress")
+	case errors.Is(err, app.ErrCreateInProgress):
+		return httpx.NewError(httpx.CodeConflict, "a payment for this checkout is being created")
 	case errors.Is(err, app.ErrOrdersUnavailable):
 		return httpx.NewError(httpx.CodeUpstreamUnavailable, "order service is unavailable, retry shortly").Wrap(err)
 	case errors.Is(err, app.ErrProviderUnavailable):

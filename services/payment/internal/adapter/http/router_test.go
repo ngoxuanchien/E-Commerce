@@ -398,8 +398,18 @@ func TestFakeReturnSyncsAndRedirects(t *testing.T) {
 	require.Equal(t, 302, done.Status)
 	assert.Equal(t, "SUCCEEDED", h.status(id), "the return route applied the provider's answer")
 
-	// payment.yaml documents only 302 for this route, so the 404 is checked outside the contract.
-	assert.Equal(t, 404, h.do(h.raw, "GET", "/api/payments/fake/return?payment_id="+newID(), nil, nil).Status)
+	// Never a 404: an unknown payment still lands on the result page.
+	ghost := newID()
+	unknown := h.do(h.strict, "GET", "/api/payments/fake/return?payment_id="+ghost, nil, nil)
+	require.Equal(t, 302, unknown.Status)
+	assert.Equal(t, "/checkout/result?payment_id="+ghost, unknown.Header.Get("Location"))
+
+	// The contract forbids an unparseable or missing id, so these go through the raw client.
+	for _, q := range []string{"?payment_id=nope", ""} {
+		r := h.do(h.raw, "GET", "/api/payments/fake/return"+q, nil, nil)
+		require.Equal(t, 302, r.Status, q)
+		assert.Equal(t, "/checkout/result", r.Header.Get("Location"), q)
+	}
 }
 
 func TestFakeWebhookRejectsBadSignaturesWithoutApplyingAnything(t *testing.T) {
