@@ -143,6 +143,21 @@ func TestVerifyRejectsInvalidTokens(t *testing.T) {
 			c.Roles = []string{"buyer,seller"}
 			return k1.Sign(t, c)
 		}(),
+		"role contains a space": func() string {
+			c := validClaims()
+			c.Roles = []string{"sel ler"}
+			return k1.Sign(t, c)
+		}(),
+		"empty role": func() string {
+			c := validClaims()
+			c.Roles = []string{""}
+			return k1.Sign(t, c)
+		}(),
+		"role contains a tab": func() string {
+			c := validClaims()
+			c.Roles = []string{"sel\tler"}
+			return k1.Sign(t, c)
+		}(),
 		"roles given as a string": func() string {
 			claims := jwt.MapClaims{
 				"iss":   authtest.Issuer,

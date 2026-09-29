@@ -77,6 +77,24 @@ func TestUnknownKidTriggersRefresh(t *testing.T) {
 	assert.Equal(t, 2, srv.Hits())
 }
 
+func TestUnknownKidRefreshSurvivesCancelledContext(t *testing.T) {
+	k1 := authtest.NewKey(t, "k1")
+	k2 := authtest.NewKey(t, "k2")
+	srv := authtest.NewServer(t, k1)
+
+	j := NewJWKS(srv.URL)
+	require.NoError(t, j.Refresh(context.Background()))
+	srv.SetKeys(k1, k2)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	pub, err := j.Key(ctx, "k2")
+	require.NoError(t, err)
+	assert.NotNil(t, pub)
+	assert.Equal(t, 2, srv.Hits())
+}
+
 func TestUnknownKidRefreshIsThrottled(t *testing.T) {
 	k1 := authtest.NewKey(t, "k1")
 	k2 := authtest.NewKey(t, "k2")

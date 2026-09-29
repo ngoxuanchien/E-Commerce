@@ -286,7 +286,11 @@ func (j *JWKS) Key(ctx context.Context, kid string) (*rsa.PublicKey, error) {
 	}
 	j.lastMiss = now
 
-	if err := j.Refresh(ctx); err != nil {
+	// The refresh outlives a client that disconnects mid-request, otherwise
+	// it would burn the miss slot without loading anything; Refresh bounds
+	// the fetch with fetchTimeout.
+	if err := j.Refresh(context.WithoutCancel(ctx)); err != nil {
+		slog.WarnContext(ctx, "jwks: refresh on unknown key id failed", "error", err)
 		return nil, ErrUnknownKey
 	}
 

@@ -3,10 +3,12 @@ package proxy_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"testing"
 	"time"
@@ -149,6 +151,36 @@ func TestProxyUpstreamDownIs503(t *testing.T) {
 
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	assertErrorCode(t, resp, "UPSTREAM_UNAVAILABLE")
+}
+
+// roundTripFunc adapts a function to http.RoundTripper.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestProxyUpstreamDownDoesNotLogQueryString(t *testing.T) {
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	// A transport that fails with a *url.Error, whose text embeds the full
+	// upstream URL including its query string.
+	cause := errors.New("connection refused")
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return nil, &url.Error{Op: "Get", URL: r.URL.String(), Err: cause}
+	})
+	target, err := proxy.ParseTarget("http://upstream.internal:8080")
+	require.NoError(t, err)
+	p := proxy.New(target, transport)
+
+	rec := httptest.NewRecorder()
+	p.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/orders?token=secret", nil))
+
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	assert.NotContains(t, logs.String(), "secret")
+	assert.Contains(t, logs.String(), "connection refused")
+	assert.Contains(t, logs.String(), "upstream.internal:8080")
 }
 
 func TestProxyUpstreamTimeoutIs503(t *testing.T) {

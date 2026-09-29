@@ -97,8 +97,25 @@ func New(target *url.URL, transport http.RoundTripper) *httputil.ReverseProxy {
 				// response to.
 				slog.DebugContext(r.Context(), "proxy: client request cancelled", "error", err)
 			default:
-				httpx.WriteError(w, r, httpx.NewError(httpx.CodeUpstreamUnavailable, "upstream service unavailable").Wrap(err))
+				httpx.WriteError(w, r, httpx.NewError(httpx.CodeUpstreamUnavailable, "upstream service unavailable").Wrap(redactURLError(err)))
 			}
 		},
 	}
+}
+
+// redactURLError strips the query string, fragment and userinfo from the URL
+// embedded in a *url.Error, which would otherwise end up in the logs (the
+// forwarded query may carry tokens). The inner error stays unwrappable.
+func redactURLError(err error) error {
+	var ue *url.Error
+	if !errors.As(err, &ue) {
+		return err
+	}
+	redacted := ue.URL
+	if u, perr := url.Parse(ue.URL); perr == nil {
+		redacted = (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path}).String()
+	} else {
+		redacted = "<unparsable url>"
+	}
+	return fmt.Errorf("%s %s: %w", ue.Op, redacted, ue.Err)
 }
