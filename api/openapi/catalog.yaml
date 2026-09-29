@@ -603,8 +603,21 @@ components:
     ProductInput:
       allOf:
         - $ref: '#/components/schemas/ProductPatch'
+        # The required members are declared again (constraints live in ProductPatch) so code
+        # generators such as openapi-typescript can mark them required.
         - type: object
           required: [category_id, name, status, skus]
+          properties:
+            category_id:
+              $ref: 'common.yaml#/components/schemas/Id'
+            name:
+              type: string
+            status:
+              $ref: '#/components/schemas/ProductStatus'
+            skus:
+              type: array
+              items:
+                $ref: '#/components/schemas/SkuInput'
     UploadRequest:
       type: object
       required: [content_type]

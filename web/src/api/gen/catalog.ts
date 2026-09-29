@@ -250,7 +250,12 @@ export interface components {
             image_keys?: string[];
             skus?: components["schemas"]["SkuInput"][];
         };
-        ProductInput: components["schemas"]["ProductPatch"] & Record<string, unknown>;
+        ProductInput: components["schemas"]["ProductPatch"] & {
+            category_id: components["schemas"]["Id"];
+            name: string;
+            status: components["schemas"]["ProductStatus"];
+            skus: components["schemas"]["SkuInput"][];
+        };
         UploadRequest: {
             /** @enum {string} */
             content_type: "image/jpeg" | "image/png" | "image/webp";
