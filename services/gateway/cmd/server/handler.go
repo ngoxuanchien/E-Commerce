@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path"
+	"strings"
 
 	"github.com/ngoxuanchien/e-commerce/pkg/authctx"
 	"github.com/ngoxuanchien/e-commerce/pkg/httpx"
@@ -70,6 +72,10 @@ func (g *gateway) dispatcher() (http.Handler, error) {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !allowedMethod(r.Method) || !canonicalPath(r.URL.Path) {
+			httpx.WriteError(w, r, httpx.NewError(httpx.CodeNotFound, "route not found"))
+			return
+		}
 		i, ok := g.routes.Match(r.Method, r.URL.Path)
 		if !ok {
 			httpx.WriteError(w, r, httpx.NewError(httpx.CodeNotFound, "route not found"))
@@ -78,6 +84,27 @@ func (g *gateway) dispatcher() (http.Handler, error) {
 		logInfoFrom(r.Context()).route = g.routes[i].Pattern
 		chains[i].ServeHTTP(w, r)
 	}), nil
+}
+
+// allowedMethod reports whether the gateway proxies method at all.
+func allowedMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
+		http.MethodPatch, http.MethodDelete, http.MethodOptions:
+		return true
+	}
+	return false
+}
+
+// canonicalPath reports whether p is already clean: no empty, "." or ".."
+// segments, allowing one trailing slash on a non-root path. ServeMux redirects
+// unclean paths for most methods but not for CONNECT, so the dispatcher must
+// not let one be matched against a broader route than the upstream resolves.
+func canonicalPath(p string) bool {
+	if p == "/" {
+		return true
+	}
+	return path.Clean(p) == strings.TrimSuffix(p, "/")
 }
 
 // recordUser hands the verified user ID to the access log.

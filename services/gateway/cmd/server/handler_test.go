@@ -226,6 +226,29 @@ func TestNonCanonicalPathsCannotDowngradeAuth(t *testing.T) {
 			assert.Equal(t, cleaned, rec.Header().Get("Location"), target)
 		}
 	})
+
+	t.Run("CONNECT skips ServeMux cleaning but is still rejected", func(t *testing.T) {
+		for _, target := range []string{
+			"/api/products/../seller/products",
+			"/api//seller/products",
+			"/api/./seller/products",
+		} {
+			rec := h.do("CONNECT", target, withToken(buyer))
+			requireError(t, rec, http.StatusNotFound, httpx.CodeNotFound)
+		}
+	})
+
+	t.Run("unsupported methods never reach auth or an upstream", func(t *testing.T) {
+		for _, method := range []string{"TRACE", "PROPFIND", "CONNECT"} {
+			rec := h.do(method, "/api/products", withToken(buyer))
+			requireError(t, rec, http.StatusNotFound, httpx.CodeNotFound)
+		}
+	})
+
+	t.Run("canonical paths with a trailing slash still route", func(t *testing.T) {
+		rec := h.do("GET", "/api/cart/", withToken(buyer))
+		assert.NotEqual(t, http.StatusNotFound, rec.Code)
+	})
 	assert.Zero(t, h.hitCount(routes.Catalog))
 }
 
