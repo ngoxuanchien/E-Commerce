@@ -62,7 +62,14 @@ func TestOrderAPI(t *testing.T) {
 	t.Run("checkout is all-or-nothing on shortage", h.testCheckoutOutOfStock)
 	t.Run("checkout 503 frees the idempotency key", h.testCheckoutCatalogDownThenRetry)
 	t.Run("checkout with an empty cart", h.testCheckoutEmptyCart)
-	// Task 15 adds the lifecycle, sweeper, pagination and readiness scenarios here.
+	t.Run("lifecycle to COMPLETED", h.testLifecycle)
+	t.Run("buyer cannot cancel a confirmed order", h.testBuyerCannotCancelConfirmed)
+	t.Run("strangers get 404 and non-sellers 403", h.testStrangers)
+	t.Run("concurrent confirm and cancel: exactly one wins", h.testConcurrentConfirmCancel)
+	t.Run("upper-case ids are canonicalized", h.testUppercaseIDs)
+	t.Run("order lists paginate", h.testPagination)
+	t.Run("sweeper cancels a crashed checkout in time", h.testSweeperCancelsCrashedCheckout)
+	t.Run("readiness covers postgres, redis and kafka", h.testReadiness)
 	t.Run("every published event matches its schema", h.testEventsValid)
 }
 
