@@ -59,6 +59,7 @@ export async function unwrap<T>(request: Promise<{ data?: T; error?: unknown; re
   try {
     result = await request;
   } catch (cause) {
+    if (cause instanceof ApiError) throw cause; // e.g. a refresh that failed as RATE_LIMITED
     throw new ApiError(0, 'UPSTREAM_UNAVAILABLE', cause instanceof Error ? cause.message : 'network error');
   }
   if (!result.response.ok) throw ApiError.from(result.response.status, result.error);

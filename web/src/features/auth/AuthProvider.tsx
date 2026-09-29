@@ -21,9 +21,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Restore the session from the HttpOnly refresh cookie (single-flight, so StrictMode's double effect is safe).
   useEffect(() => {
     let active = true;
-    void refreshSession().finally(() => {
-      if (active) setStatus('ready');
-    });
+    // An unreachable refresh (5xx/429/network) leaves the user anonymous for now; a later request retries it.
+    void refreshSession()
+      .catch(() => null)
+      .finally(() => {
+        if (active) setStatus('ready');
+      });
     return () => {
       active = false;
     };
@@ -55,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         queryClient.clear();
         navigate('/');
       },
-      reloadSession: async () => (await refreshSession())?.user ?? null,
+      reloadSession: async () => (await refreshSession())?.user ?? null, // throws if refresh is unreachable
     }),
     [status, session, queryClient, navigate],
   );

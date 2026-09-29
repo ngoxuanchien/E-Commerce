@@ -1,4 +1,5 @@
 import { apiBaseUrl } from './base-url';
+import { ApiError } from './errors';
 import type { TokenResponse, User } from './types';
 
 export type Session = { accessToken: string; user: User };
@@ -35,13 +36,20 @@ export function subscribeSession(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+/**
+ * null = the session is gone (401: missing, expired or reused refresh token).
+ * Throws a retryable ApiError when refresh is unreachable (network, 429, 5xx): the session stays.
+ */
 async function requestRefresh(): Promise<TokenResponse | null> {
+  let res: Response;
   try {
-    const res = await fetch(new Request(`${apiBaseUrl()}/api/auth/refresh`, { method: 'POST', credentials: 'include' }));
-    return res.ok ? ((await res.json()) as TokenResponse) : null;
-  } catch {
-    return null;
+    res = await fetch(new Request(`${apiBaseUrl()}/api/auth/refresh`, { method: 'POST', credentials: 'include' }));
+  } catch (cause) {
+    throw new ApiError(0, 'UPSTREAM_UNAVAILABLE', cause instanceof Error ? cause.message : 'network error');
   }
+  if (res.status === 401) return null;
+  if (!res.ok) throw ApiError.from(res.status, await res.json().catch(() => null));
+  return (await res.json()) as TokenResponse;
 }
 
 let inflight: Promise<TokenResponse | null> | null = null;

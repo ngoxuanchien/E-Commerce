@@ -72,4 +72,13 @@ describe('createAuthFetch', () => {
     expect(refresh).not.toHaveBeenCalled();
     expect(seen[1].headers.get('Authorization')).toBe('Bearer fresh');
   });
+
+  test('when the refresh endpoint is unreachable the request fails as retryable and the user stays logged in', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => unauthorized()));
+    const onAuthFailure = vi.fn();
+    const unreachable = Object.assign(new Error('down'), { code: 'UPSTREAM_UNAVAILABLE' });
+    const authFetch = createAuthFetch({ getToken: () => 'stale', refresh: async () => { throw unreachable; }, onAuthFailure });
+    await expect(authFetch(new Request(`${origin}/api/cart`))).rejects.toBe(unreachable);
+    expect(onAuthFailure).not.toHaveBeenCalled();
+  });
 });

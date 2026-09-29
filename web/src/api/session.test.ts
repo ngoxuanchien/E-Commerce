@@ -1,7 +1,8 @@
 import { afterEach, expect, test, vi } from 'vitest';
-import { clearSession, getAccessToken, getSession, refreshSession, subscribeSession } from './session';
+import type { User } from './types';
+import { clearSession, getAccessToken, getSession, refreshSession, setSession, subscribeSession } from './session';
 
-const user = { id: 'u1', email: 'an@example.com', full_name: 'An', roles: ['buyer'], created_at: '2026-09-28T00:00:00Z' };
+const user: User = { id: 'u1', email: 'an@example.com', full_name: 'An', roles: ['buyer'], created_at: '2026-09-28T00:00:00Z' };
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -38,7 +39,13 @@ test('a failed refresh clears the session and a later refresh makes a new reques
   expect(fetchMock).toHaveBeenCalledTimes(2);
 });
 
-test('network errors during refresh resolve to null instead of throwing', async () => {
+test('a 503 or network error on refresh keeps the session and rejects with a retryable error', async () => {
+  setSession({ access_token: 'at-keep', token_type: 'Bearer', expires_in: 900, user });
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":{"code":"UPSTREAM_UNAVAILABLE","message":"down"}}', { status: 503 })));
+  await expect(refreshSession()).rejects.toMatchObject({ code: 'UPSTREAM_UNAVAILABLE', retryable: true });
   vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
-  await expect(refreshSession()).resolves.toBeNull();
+  await expect(refreshSession()).rejects.toMatchObject({ code: 'UPSTREAM_UNAVAILABLE' });
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":{"code":"RATE_LIMITED","message":"slow"}}', { status: 429 })));
+  await expect(refreshSession()).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+  expect(getAccessToken()).toBe('at-keep');
 });
