@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package payment.v1;
+
+option go_package = "github.com/ngoxuanchien/e-commerce/gen/payment/v1;paymentv1";
+
+// PaymentInternal is payment-svc's service-to-service API (not exposed publicly).
+service PaymentInternal {
+  // CancelCheckoutPayments makes sure no attempt of the checkout can still
+  // succeed, then reports whether one did. Idempotent. UNAVAILABLE when a
+  // provider can't be asked; the caller retries later.
+  rpc CancelCheckoutPayments(CancelCheckoutPaymentsRequest) returns (CancelCheckoutPaymentsResponse);
+}
+
+message CancelCheckoutPaymentsRequest {
+  string checkout_id = 1;
+}
+
+message CancelCheckoutPaymentsResponse {
+  Outcome outcome = 1;
+}
+
+// Outcome of CancelCheckoutPayments.
+enum Outcome {
+  OUTCOME_UNSPECIFIED = 0;
+  // No attempt succeeded; none can succeed any more.
+  OUTCOME_NOT_PAID = 1;
+  // An attempt succeeded; the checkout is paid.
+  OUTCOME_PAID = 2;
+}

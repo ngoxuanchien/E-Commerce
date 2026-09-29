@@ -6,5 +6,7 @@ use (
 	./services/catalog
 	./services/gateway
 	./services/identity
+	./services/ledger
 	./services/order
+	./services/payment
 )

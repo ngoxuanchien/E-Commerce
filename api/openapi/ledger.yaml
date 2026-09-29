@@ -1,0 +1,239 @@
+openapi: 3.1.0
+info:
+  title: Marketplace Ledger API
+  version: 2.0.0
+  description: Seller wallet and payouts served by ledger-svc. WS0' §3.3.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: seller
+    description: Seller wallet and payouts (requires role seller).
+paths:
+  /api/seller/wallet:
+    get:
+      tags: [seller]
+      operationId: getSellerWallet
+      summary: The caller's wallet balances.
+      x-required-role: seller
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Wallet'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /api/seller/wallet/entries:
+    get:
+      tags: [seller]
+      operationId: listSellerWalletEntries
+      summary: The caller's wallet entries, newest first.
+      x-required-role: seller
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/Limit'
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletEntryPage'
+        '400':
+          $ref: 'common.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+  /api/seller/payouts:
+    post:
+      tags: [seller]
+      operationId: createSellerPayout
+      summary: Request a payout from the available balance.
+      x-required-role: seller
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayoutRequest'
+      responses:
+        '201':
+          description: The payout.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payout'
+        '400':
+          description: Amount below PAYOUT_MIN_AMOUNT (50,000 VND by default) (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema:
+                $ref: 'common.yaml#/components/schemas/Error'
+        '409':
+          description: INSUFFICIENT_FUNDS. details.available is the current available balance.
+          content:
+            application/json:
+              schema:
+                $ref: 'common.yaml#/components/schemas/Error'
+        '422':
+          description: IDEMPOTENCY_KEY_REUSED - the key was used with a different request.
+          content:
+            application/json:
+              schema:
+                $ref: 'common.yaml#/components/schemas/Error'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+    get:
+      tags: [seller]
+      operationId: listSellerPayouts
+      summary: The caller's payouts, newest first.
+      x-required-role: seller
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [REQUESTED, SETTLED, FAILED]
+        - $ref: 'common.yaml#/components/parameters/Limit'
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutPage'
+        '400':
+          $ref: 'common.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthenticated'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+        '429':
+          $ref: 'common.yaml#/components/responses/RateLimited'
+        5XX:
+          $ref: 'common.yaml#/components/responses/ServerError'
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: 'common.yaml#/components/securitySchemes/bearerAuth'
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 100
+  schemas:
+    Wallet:
+      type: object
+      required: [available, pending_payout, in_escrow, currency]
+      properties:
+        available:
+          $ref: 'common.yaml#/components/schemas/Money'
+        pending_payout:
+          $ref: 'common.yaml#/components/schemas/Money'
+        in_escrow:
+          $ref: 'common.yaml#/components/schemas/Money'
+        currency:
+          type: string
+          const: VND
+    WalletEntry:
+      type: object
+      required: [id, transaction_id, kind, amount, order_id, payout_id, created_at]
+      properties:
+        id:
+          $ref: 'common.yaml#/components/schemas/Id'
+        transaction_id:
+          $ref: 'common.yaml#/components/schemas/Id'
+        kind:
+          type: string
+          enum: [RELEASE, PAYOUT_REQUEST, PAYOUT_FAIL]
+        amount:
+          type: integer
+          format: int64
+          description: Signed from the seller's view — RELEASE positive, PAYOUT_REQUEST negative, PAYOUT_FAIL positive.
+        order_id:
+          type: [string, 'null']
+          format: uuid
+        payout_id:
+          type: [string, 'null']
+          format: uuid
+        created_at:
+          $ref: 'common.yaml#/components/schemas/Timestamp'
+    WalletEntryPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletEntry'
+        next_cursor:
+          type: [string, 'null']
+    PayoutRequest:
+      type: object
+      additionalProperties: false
+      required: [amount]
+      properties:
+        amount:
+          $ref: 'common.yaml#/components/schemas/Money'
+    Payout:
+      type: object
+      required: [id, amount, status, failure_reason, requested_at, settled_at]
+      properties:
+        id:
+          $ref: 'common.yaml#/components/schemas/Id'
+        amount:
+          $ref: 'common.yaml#/components/schemas/Money'
+        status:
+          type: string
+          enum: [REQUESTED, SETTLED, FAILED]
+        failure_reason:
+          type: [string, 'null']
+        requested_at:
+          $ref: 'common.yaml#/components/schemas/Timestamp'
+        settled_at:
+          type: [string, 'null']
+          format: date-time
+    PayoutPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Payout'
+        next_cursor:
+          type: [string, 'null']

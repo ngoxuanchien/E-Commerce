@@ -3,7 +3,7 @@
   "title": "OrderStatusChanged",
   "allOf": [{ "$ref": "envelope.schema.json" }],
   "$defs": {
-    "status": { "enum": ["PENDING", "PENDING_CONFIRMATION", "CONFIRMED", "SHIPPING", "DELIVERED", "COMPLETED", "CANCELLED"] }
+    "status": { "enum": ["AWAITING_PAYMENT", "PENDING", "PENDING_CONFIRMATION", "CONFIRMED", "SHIPPING", "DELIVERED", "COMPLETED", "CANCELLED"] }
   },
   "properties": {
     "event_type": { "const": "OrderStatusChanged" },

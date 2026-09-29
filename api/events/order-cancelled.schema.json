@@ -11,7 +11,9 @@
       "properties": {
         "order_id": { "type": "string", "format": "uuid" },
         "reason": { "type": "string", "minLength": 1 },
-        "cancelled_by": { "enum": ["buyer", "seller", "system"] }
+        "cancelled_by": { "enum": ["buyer", "seller", "system"] },
+        "checkout_id": { "type": "string", "format": "uuid", "description": "Absent on events produced before WS3' (P1 order-svc). Consumers treat a missing payment_method as COD and skip the event." },
+        "payment_method": { "enum": ["COD", "VNPAY", "STRIPE"], "description": "Absent on events produced before WS3' (P1 order-svc). Consumers treat a missing payment_method as COD and skip the event." }
       }
     }
   }

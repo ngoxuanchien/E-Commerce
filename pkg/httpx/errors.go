@@ -16,6 +16,7 @@ const (
 	CodeNotFound               = "NOT_FOUND"
 	CodeConflict               = "CONFLICT"
 	CodeOutOfStock             = "OUT_OF_STOCK"
+	CodeInsufficientFunds      = "INSUFFICIENT_FUNDS"
 	CodeInvalidStateTransition = "INVALID_STATE_TRANSITION"
 	CodeIdempotencyKeyReused   = "IDEMPOTENCY_KEY_REUSED"
 	CodeRateLimited            = "RATE_LIMITED"
@@ -31,6 +32,7 @@ var codeStatus = map[string]int{
 	CodeNotFound:               http.StatusNotFound,
 	CodeConflict:               http.StatusConflict,
 	CodeOutOfStock:             http.StatusConflict,
+	CodeInsufficientFunds:      http.StatusConflict,
 	CodeInvalidStateTransition: http.StatusConflict,
 	CodeIdempotencyKeyReused:   http.StatusUnprocessableEntity,
 	CodeRateLimited:            http.StatusTooManyRequests,

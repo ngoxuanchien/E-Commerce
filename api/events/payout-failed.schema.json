@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PayoutFailed",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "const": "PayoutFailed"
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "payout_id",
+        "seller_user_id",
+        "amount",
+        "reason"
+      ],
+      "properties": {
+        "payout_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "seller_user_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

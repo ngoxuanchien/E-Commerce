@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OrderCompleted",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "const": "OrderCompleted"
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order_id",
+        "checkout_id",
+        "seller_user_id",
+        "payment_method",
+        "total",
+        "commission_amount",
+        "completed_by"
+      ],
+      "properties": {
+        "order_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "checkout_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "seller_user_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "payment_method": {
+          "enum": [
+            "COD",
+            "VNPAY",
+            "STRIPE"
+          ]
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "commission_amount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed_by": {
+          "enum": [
+            "buyer",
+            "system"
+          ]
+        }
+      }
+    }
+  }
+}

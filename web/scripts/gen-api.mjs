@@ -3,7 +3,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import openapiTS, { astToString } from 'openapi-typescript';
 
-const SPECS = ['common', 'identity', 'catalog', 'order'];
+const SPECS = ['common', 'identity', 'catalog', 'order', 'payment', 'ledger'];
 const specDir = new URL('../../api/openapi/', import.meta.url);
 const outDir = new URL('../src/api/gen/', import.meta.url);
 const check = process.argv.includes('--check');

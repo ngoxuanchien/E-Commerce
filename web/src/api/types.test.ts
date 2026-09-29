@@ -5,7 +5,7 @@ test('generated types match the OpenAPI contract', () => {
   expectTypeOf<Product['min_price']>().toEqualTypeOf<number | null>();
   expectTypeOf<CartItem['image_url']>().toEqualTypeOf<string | null>();
   expectTypeOf<OrderStatus>().toEqualTypeOf<
-    'PENDING' | 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'SHIPPING' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED'
+    'PENDING' | 'AWAITING_PAYMENT' | 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'SHIPPING' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED'
   >();
   expectTypeOf<TokenResponse['token_type']>().toEqualTypeOf<'Bearer'>();
   expectTypeOf<ErrorCode>().toExtend<string>();

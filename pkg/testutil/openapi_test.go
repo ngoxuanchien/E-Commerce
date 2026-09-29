@@ -32,6 +32,22 @@ func TestContractsLoad(t *testing.T) {
 	}
 }
 
+func TestAllOpenAPISpecsLoad(t *testing.T) {
+	for _, name := range []string{"common", "identity", "catalog", "order", "payment", "ledger"} {
+		t.Run(name, func(t *testing.T) {
+			doc := testutil.LoadOpenAPI(t, filepath.Join(specDir, name+".yaml"))
+			if name != "payment" {
+				return
+			}
+			op := doc.Paths.Find("/api/payments/vnpay/ipn").Get
+			require.NotNil(t, op)
+			assert.EqualValues(t, true, op.Extensions["x-provider-callback"], "provider callbacks are marked")
+			require.NotNil(t, op.Security)
+			assert.Empty(t, *op.Security, "provider callbacks are public")
+		})
+	}
+}
+
 func TestContractTransport(t *testing.T) {
 	var respBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

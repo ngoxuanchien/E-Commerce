@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PayoutSettled",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "const": "PayoutSettled"
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "payout_id",
+        "seller_user_id",
+        "amount",
+        "settled_at"
+      ],
+      "properties": {
+        "payout_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "seller_user_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "settled_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

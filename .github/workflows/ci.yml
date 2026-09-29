@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [pkg, gen, services/gateway, services/identity, services/catalog, services/order]
+        module: [pkg, gen, services/gateway, services/identity, services/catalog, services/order, services/payment, services/ledger]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6

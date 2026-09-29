@@ -30,6 +30,27 @@ services:
       timeout: 3s
       retries: 30
 
+  # init.sql only runs on an empty volume, and pgdata is shared across
+  # worktrees and clones: this job creates any missing database on every up.
+  db-init:
+    image: postgres:17-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: marketplace
+      PGPASSWORD: marketplace
+      PGDATABASE: postgres
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        for db in identity_db catalog_db order_db payment_db ledger_db; do
+          echo "SELECT 'CREATE DATABASE $$db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$$db')\gexec" | psql -v ON_ERROR_STOP=1 -q
+        done
+    restart: "no"
+
   redis:
     image: redis:7-alpine
     healthcheck:
@@ -66,7 +87,11 @@ services:
         condition: service_healthy
     entrypoint: ["/bin/sh", "-c"]
     command:
-      - /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic order.events --partitions 3 --replication-factor 1
+      - |
+        set -e
+        for t in order.events payment.events payout.events; do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic $$t --partitions 3 --replication-factor 1
+        done
     restart: "no"
 
   minio:
@@ -116,8 +141,8 @@ services:
     volumes:
       - ./secrets/jwt_private.pem:/run/secrets/jwt_private.pem:ro
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
 
   catalog:
     <<: *go-service
@@ -138,8 +163,8 @@ services:
       MINIO_BUCKET: product-images
       PUBLIC_ASSET_BASE_URL: http://localhost:9000/product-images
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
       kafka-init:
         condition: service_completed_successfully
       minio-init:
@@ -160,13 +185,72 @@ services:
       KAFKA_BROKERS: kafka:9092
       CATALOG_GRPC_ADDR: catalog:9082
       SHIPPING_FEE_FLAT: "30000"
-      SWEEPER_INTERVAL: 60s
+      SWEEPER_INTERVAL: ${SWEEPER_INTERVAL:-60s}
+      PAYMENT_GRPC_ADDR: payment:9084
+      ONLINE_PAYMENT_METHODS: VNPAY,STRIPE
+      COMMISSION_RATE_BPS: "500"
+      PAYMENT_TIMEOUT: ${PAYMENT_TIMEOUT:-30m}
+      AUTO_COMPLETE_AFTER: ${AUTO_COMPLETE_AFTER:-72h}
       PENDING_TIMEOUT: 2m
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+
+  payment:
+    <<: *go-service
+    build:
+      context: ..
+      dockerfile: services/payment/Dockerfile
+    environment:
+      <<: *common-env
+      SERVICE_NAME: payment
+      HTTP_ADDR: ":8084"
+      GRPC_ADDR: ":9084"
+      DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/payment_db?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      ORDER_GRPC_ADDR: order:9083
+      PUBLIC_BASE_URL: http://localhost:3000
+      PROVIDER_VNPAY: ${PROVIDER_VNPAY:-fake}
+      PROVIDER_STRIPE: ${PROVIDER_STRIPE:-fake}
+      FAKE_WEBHOOK_URL: http://gateway:8080/api/payments/fake/webhook
+      FAKE_WEBHOOK_SECRET: dev-fake-secret
+      FAKE_WEBHOOK_DELAY: ${FAKE_WEBHOOK_DELAY:-500ms}
+      RECONCILE_INTERVAL: ${RECONCILE_INTERVAL:-60s}
+      RECONCILE_MIN_AGE: ${RECONCILE_MIN_AGE:-2m}
+      REFUND_MAX_ATTEMPTS: "8"
+    # Provider credentials (VNPAY_*, STRIPE_*): see secrets/payment.env.example.
+    env_file:
+      - path: ./secrets/payment.env
+        required: false
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+
+  ledger:
+    <<: *go-service
+    build:
+      context: ..
+      dockerfile: services/ledger/Dockerfile
+    environment:
+      <<: *common-env
+      SERVICE_NAME: ledger
+      HTTP_ADDR: ":8085"
+      GRPC_ADDR: ":9085"
+      DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/ledger_db?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      PAYOUT_MIN_AMOUNT: "50000"
+      PAYOUT_SETTLE_INTERVAL: ${PAYOUT_SETTLE_INTERVAL:-30s}
+      PAYOUT_SETTLE_DELAY: ${PAYOUT_SETTLE_DELAY:-1m}
+      PENDING_POSTING_INTERVAL: 10s
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
       kafka-init:
         condition: service_completed_successfully
 
@@ -182,6 +266,8 @@ services:
       IDENTITY_URL: http://identity:8081
       CATALOG_URL: http://catalog:8082
       ORDER_URL: http://order:8083
+      PAYMENT_URL: http://payment:8084
+      LEDGER_URL: http://ledger:8085
       IDENTITY_JWKS_URL: http://identity:8081/.well-known/jwks.json
       CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:5173
       UPSTREAM_TIMEOUT: 10s
@@ -198,6 +284,10 @@ services:
       catalog:
         condition: service_healthy
       order:
+        condition: service_healthy
+      payment:
+        condition: service_healthy
+      ledger:
         condition: service_healthy
 
 networks:
