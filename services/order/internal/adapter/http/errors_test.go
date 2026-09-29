@@ -40,6 +40,7 @@ func TestToAppError(t *testing.T) {
 		{"catalog down", fmt.Errorf("%w: boom", app.ErrCatalogUnavailable), 503, httpx.CodeUpstreamUnavailable, nil},
 		{"key in progress", app.ErrIdempotencyInProgress, 409, httpx.CodeConflict, nil},
 		{"key reused", app.ErrIdempotencyKeyReused, 422, httpx.CodeIdempotencyKeyReused, nil},
+		{"key reclaimed", app.ErrIdempotencyClaimLost, 409, httpx.CodeConflict, nil},
 		{"invalid transition", fmt.Errorf("%w: x", domain.ErrInvalidTransition), 409, httpx.CodeInvalidStateTransition, nil},
 		{"concurrent update", app.ErrConcurrentUpdate, 409, httpx.CodeConflict, nil},
 		{"checkout expired", app.ErrCheckoutExpired, 409, httpx.CodeConflict, nil},

@@ -12,17 +12,28 @@ import (
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/app"
 )
 
-func (s *Store) BeginIdempotency(ctx context.Context, userID, key string, requestHash []byte, at time.Time) (app.IdempotencyRecord, bool, error) {
+func (s *Store) BeginIdempotency(ctx context.Context, userID, key string, requestHash []byte, at, staleBefore time.Time) (app.IdempotencyRecord, bool, error) {
 	uid, err := mustParseUUID(userID)
 	if err != nil {
 		return app.IdempotencyRecord{}, false, err
 	}
+	at = at.Truncate(time.Microsecond) // the claim is compared with created_at, which Postgres stores in µs
+	claimed := app.IdempotencyRecord{RequestHash: requestHash, ClaimedAt: at}
 	n, err := s.q.InsertIdempotencyKey(ctx, sqlcdb.InsertIdempotencyKeyParams{UserID: uid, Key: key, RequestHash: requestHash, CreatedAt: at})
 	if err != nil {
 		return app.IdempotencyRecord{}, false, fmt.Errorf("insert idempotency key: %w", err)
 	}
 	if n == 1 {
-		return app.IdempotencyRecord{RequestHash: requestHash}, true, nil
+		return claimed, true, nil
+	}
+	n, err = s.q.ReclaimIdempotencyKey(ctx, sqlcdb.ReclaimIdempotencyKeyParams{
+		ClaimedAt: at, UserID: uid, Key: key, RequestHash: requestHash, StaleBefore: staleBefore,
+	})
+	if err != nil {
+		return app.IdempotencyRecord{}, false, fmt.Errorf("reclaim idempotency key: %w", err)
+	}
+	if n == 1 {
+		return claimed, true, nil
 	}
 	row, err := s.q.GetIdempotencyKey(ctx, sqlcdb.GetIdempotencyKeyParams{UserID: uid, Key: key})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -33,19 +44,19 @@ func (s *Store) BeginIdempotency(ctx context.Context, userID, key string, reques
 	if err != nil {
 		return app.IdempotencyRecord{}, false, fmt.Errorf("get idempotency key: %w", err)
 	}
-	rec := app.IdempotencyRecord{RequestHash: row.RequestHash}
+	rec := app.IdempotencyRecord{RequestHash: row.RequestHash, ClaimedAt: row.CreatedAt}
 	if row.StatusCode != nil {
 		rec.Response = &app.Response{Status: int(*row.StatusCode), Body: row.Response}
 	}
 	return rec, false, nil
 }
 
-func (s *Store) DeleteIdempotencyKey(ctx context.Context, userID, key string) error {
+func (s *Store) DeleteIdempotencyKey(ctx context.Context, userID, key string, claimedAt time.Time) error {
 	uid, err := mustParseUUID(userID)
 	if err != nil {
 		return err
 	}
-	if err := s.q.DeleteIdempotencyKey(ctx, sqlcdb.DeleteIdempotencyKeyParams{UserID: uid, Key: key}); err != nil {
+	if err := s.q.DeleteIdempotencyKey(ctx, sqlcdb.DeleteIdempotencyKeyParams{UserID: uid, Key: key, CreatedAt: claimedAt}); err != nil {
 		return fmt.Errorf("delete idempotency key: %w", err)
 	}
 	return nil
@@ -59,16 +70,20 @@ func (s *Store) DeleteIdempotencyKeysBefore(ctx context.Context, before time.Tim
 	return n, nil
 }
 
-func (t *txStore) CompleteIdempotencyKey(ctx context.Context, userID, key string, resp app.Response) error {
+func (t *txStore) CompleteIdempotencyKey(ctx context.Context, userID, key string, claimedAt time.Time, resp app.Response) error {
 	uid, err := mustParseUUID(userID)
 	if err != nil {
 		return err
 	}
 	code := int32(resp.Status)
-	if err := t.q.CompleteIdempotencyKey(ctx, sqlcdb.CompleteIdempotencyKeyParams{
-		Response: resp.Body, StatusCode: &code, UserID: uid, Key: key,
-	}); err != nil {
+	n, err := t.q.CompleteIdempotencyKey(ctx, sqlcdb.CompleteIdempotencyKeyParams{
+		Response: resp.Body, StatusCode: &code, UserID: uid, Key: key, ClaimedAt: claimedAt,
+	})
+	if err != nil {
 		return fmt.Errorf("complete idempotency key: %w", err)
+	}
+	if n == 0 {
+		return app.ErrIdempotencyClaimLost
 	}
 	return nil
 }

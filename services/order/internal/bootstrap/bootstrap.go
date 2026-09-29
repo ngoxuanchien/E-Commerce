@@ -70,7 +70,8 @@ func New(cfg Config, d Deps) *App {
 		API: httpadapter.NewRouter(httpadapter.Services{
 			Cart: app.NewCartService(carts, cat, cfg.ShippingFeeFlat, d.Logger),
 			Checkout: app.NewCheckoutService(store, carts, cat, app.CheckoutConfig{
-				ShippingFee: cfg.ShippingFeeFlat, Now: d.Now, Logger: d.Logger,
+				ShippingFee: cfg.ShippingFeeFlat, ClaimTimeout: cfg.PendingTimeout + cfg.SweeperInterval,
+				Now: d.Now, Logger: d.Logger,
 			}),
 			Orders: app.NewOrderService(store, d.Now),
 		}),

@@ -35,7 +35,7 @@ touches stock itself: it reserves and releases it through catalog-svc's
 
 ## Checkout and sweeper
 
-1. Claim `(buyer, Idempotency-Key)` with a hash of the normalized request.
+1. Claim `(buyer, Idempotency-Key)` with a hash of the normalized request (or reclaim it from a dead run, decision 17).
 2. Load the selected cart lines, fetch current SKU data, build one `PENDING` order per shop.
 3. **Tx A** inserts the orders (so a crash from here on is recoverable).
 4. Reserve stock for every order concurrently.
@@ -67,7 +67,7 @@ Gaps in the WS3 spec, resolved without any contract change:
 14. **Timestamps** of orders and history come from the app clock (UTC, µs) so API responses equal what is stored; the outbox keeps its DB default.
 15. **Retries** (3 s per attempt, 2 retries, backoff 100 ms × attempt) apply to all three catalog RPCs — all are idempotent.
 16. **Seller notes:** the optional `reason` on confirm/ship/deliver is stored as the history `note`.
-17. **Idempotency rows orphaned by a crash** stay "in progress" (409) until the 24 h purge; the orders themselves are cancelled by the sweeper.
+17. **Idempotency rows orphaned by a crash** are reclaimed. `created_at` is the claim. A retry of the *same* request takes over a key that has had no response for `PENDING_TIMEOUT + SWEEPER_INTERVAL`, because by then the sweeper has cancelled whatever the dead run left `PENDING`. Before that, the key answers 409 "in progress". A different request never takes a key over (422). Completing or releasing a key requires the caller's own claim. A run whose key was reclaimed therefore cannot commit: its Tx C rolls back, it releases and cancels its own orders, and it answers 409. Known gap: the claim is taken slightly before Tx A, so a reclaim can race a sweep of the dead run's orders by that margin. The retry then sees stock that is still held and gets `OUT_OF_STOCK`, but stock stays correct.
 
 ## Testing
 

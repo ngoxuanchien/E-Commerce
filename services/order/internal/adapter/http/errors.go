@@ -63,6 +63,8 @@ func toAppError(err error) *httpx.AppError {
 		return httpx.NewError(httpx.CodeUpstreamUnavailable, "catalog service is unavailable").Wrap(err)
 	case errors.Is(err, app.ErrIdempotencyInProgress):
 		return httpx.NewError(httpx.CodeConflict, "a request with this Idempotency-Key is still in progress")
+	case errors.Is(err, app.ErrIdempotencyClaimLost):
+		return httpx.NewError(httpx.CodeConflict, "a newer request took over this Idempotency-Key; retry to get its result")
 	case errors.Is(err, app.ErrIdempotencyKeyReused):
 		return httpx.NewError(httpx.CodeIdempotencyKeyReused, "Idempotency-Key was already used with a different request")
 	case errors.Is(err, domain.ErrInvalidTransition):

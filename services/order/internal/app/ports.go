@@ -39,10 +39,14 @@ type Store interface {
 	// ListOrders returns up to q.Limit orders, newest first, with items and
 	// history, strictly after q.After when set.
 	ListOrders(ctx context.Context, q ListQuery) ([]domain.Order, error)
-	// BeginIdempotency claims (userID, key). created reports whether this call
-	// inserted the row; otherwise rec describes the existing row.
-	BeginIdempotency(ctx context.Context, userID, key string, requestHash []byte, at time.Time) (rec IdempotencyRecord, created bool, err error)
-	DeleteIdempotencyKey(ctx context.Context, userID, key string) error
+	// BeginIdempotency claims (userID, key) at `at`. created reports whether
+	// this call holds the claim now: it inserted the row, or took over an
+	// orphaned one (same requestHash, no response, claimed before
+	// staleBefore; the zero time never reclaims). Otherwise rec describes the
+	// existing row.
+	BeginIdempotency(ctx context.Context, userID, key string, requestHash []byte, at, staleBefore time.Time) (rec IdempotencyRecord, created bool, err error)
+	// DeleteIdempotencyKey releases the key if claimedAt is still its claim.
+	DeleteIdempotencyKey(ctx context.Context, userID, key string, claimedAt time.Time) error
 	DeleteIdempotencyKeysBefore(ctx context.Context, before time.Time) (int64, error)
 }
 
@@ -60,7 +64,9 @@ type Tx interface {
 	// `before` (FOR UPDATE SKIP LOCKED). Items and history are not loaded.
 	ClaimStalePending(ctx context.Context, before time.Time, limit int) ([]domain.Order, error)
 	// CompleteIdempotencyKey stores the final response for (userID, key).
-	CompleteIdempotencyKey(ctx context.Context, userID, key string, resp Response) error
+	// ErrIdempotencyClaimLost when claimedAt is no longer the key's claim (a
+	// newer request reclaimed it), which rolls the transaction back.
+	CompleteIdempotencyKey(ctx context.Context, userID, key string, claimedAt time.Time, resp Response) error
 }
 
 // Party selects whose orders a list returns.
@@ -97,4 +103,5 @@ type Response struct {
 type IdempotencyRecord struct {
 	RequestHash []byte
 	Response    *Response
+	ClaimedAt   time.Time // when the owning request claimed the key
 }
