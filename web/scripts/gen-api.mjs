@@ -14,7 +14,8 @@ await mkdir(outDir, { recursive: true });
 for (const name of SPECS) {
   // emptyObjectsUnknown: ProductInput is `allOf: [ProductPatch, {required: [...]}]`; the default renders the
   // required-only member as Record<string, never>, which turns every ProductPatch field into `never`.
-  const ast = await openapiTS(new URL(`${name}.yaml`, specDir), { emptyObjectsUnknown: true });
+  // defaultNonNullable: false keeps fields with a `default` (e.g. SkuInput.active) optional in request bodies.
+  const ast = await openapiTS(new URL(`${name}.yaml`, specDir), { emptyObjectsUnknown: true, defaultNonNullable: false });
   const code = header + astToString(ast);
   const target = new URL(`${name}.ts`, outDir);
   if (check) {

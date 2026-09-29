@@ -204,7 +204,7 @@ export interface components {
             /** Format: int32 */
             stock: number;
             /** @default true */
-            active: boolean;
+            active?: boolean;
         };
         ProductImage: {
             object_key: string;
