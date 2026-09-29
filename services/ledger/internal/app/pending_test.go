@@ -68,3 +68,24 @@ func TestPendingJobTouchesAndAlertsWhenStale(t *testing.T) {
 	assert.Equal(t, 2, attempts)
 	assert.True(t, h.logged("still waiting for its capture"))
 }
+
+func TestPendingJobClaimsUntouchedRowsFirst(t *testing.T) {
+	h := newHarness(t)
+	a := newCheckout("fake", orderSpec{amount: 100000, commission: 5000})
+	b := newCheckout("fake", orderSpec{amount: 60000, commission: 3000})
+	h.deliver(a.completed(0))
+	h.clock.Advance(time.Second)
+	h.deliver(b.completed(0))
+	job := app.NewPendingJob(h.store, h.events, app.PendingConfig{Interval: time.Second, BatchSize: 1, Now: h.clock.Now, Logger: h.logger})
+
+	n, err := job.RunOnce(ctx) // touches A only
+	require.NoError(t, err)
+	assert.Zero(t, n)
+	h.captureDirectly(b)
+
+	n, err = job.RunOnce(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+	assert.Equal(t, int64(-57000), h.balance(wallet(b.orders[0].seller)))
+	assert.Equal(t, 1, h.count("pending_postings"), "A is still waiting")
+}

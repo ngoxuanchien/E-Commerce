@@ -188,3 +188,17 @@ func TestUnrelatedEventTypesAreIgnored(t *testing.T) {
 	assert.Zero(t, h.count("processed_events"))
 	assert.Zero(t, h.count("journal_transactions"))
 }
+
+func TestRefundOfAnotherPaymentIsRejected(t *testing.T) {
+	h := newHarness(t)
+	c := newCheckout("fake", orderSpec{amount: 100000, commission: 5000})
+	h.deliver(c.succeeded())
+	before := h.count("journal_transactions")
+	ref := c.refunded(0)
+	ref.PaymentID = newID().String()
+	h.deliver(ref)
+
+	assert.Equal(t, int64(-100000), h.balance(escrow(c.orders[0].id)))
+	assert.Equal(t, before, h.count("journal_transactions"))
+	assert.True(t, h.logged("refund for another payment"))
+}

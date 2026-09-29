@@ -13,7 +13,7 @@ import (
 )
 
 const claimPending = `-- name: ClaimPending :many
-SELECT order_id, event, attempts, created_at, last_attempt_at FROM pending_postings ORDER BY created_at, order_id LIMIT $1 FOR UPDATE SKIP LOCKED
+SELECT order_id, event, attempts, created_at, last_attempt_at FROM pending_postings ORDER BY last_attempt_at NULLS FIRST, created_at, order_id LIMIT $1 FOR UPDATE SKIP LOCKED
 `
 
 func (q *Queries) ClaimPending(ctx context.Context, batchSize int32) ([]PendingPosting, error) {

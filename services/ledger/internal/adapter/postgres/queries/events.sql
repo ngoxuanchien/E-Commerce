@@ -15,7 +15,7 @@ ON CONFLICT (order_id) DO NOTHING;
 SELECT * FROM pending_postings WHERE order_id = ANY(@order_ids::uuid[]) ORDER BY order_id FOR UPDATE;
 
 -- name: ClaimPending :many
-SELECT * FROM pending_postings ORDER BY created_at, order_id LIMIT @batch_size FOR UPDATE SKIP LOCKED;
+SELECT * FROM pending_postings ORDER BY last_attempt_at NULLS FIRST, created_at, order_id LIMIT @batch_size FOR UPDATE SKIP LOCKED;
 
 -- name: DeletePending :exec
 DELETE FROM pending_postings WHERE order_id = @order_id;

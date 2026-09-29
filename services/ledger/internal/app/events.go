@@ -288,6 +288,11 @@ func (h *EventHandler) paymentRefunded(ctx context.Context, tx Tx, src source, d
 	if !found {
 		return fmt.Errorf("%w: order %s", ErrAllocationMissing, orderID)
 	}
+	if paymentID != a.PaymentID {
+		h.logger.ErrorContext(ctx, "refund for another payment than the one that captured the order; skipping",
+			"alert", true, "order_id", orderID, "refund_id", refundID, "payment_id", paymentID, "captured_by", a.PaymentID)
+		return fmt.Errorf("%w: refund for another payment (%s) than the capture (%s)", ErrInvalidEvent, paymentID, a.PaymentID)
+	}
 	if d.Amount != a.Amount || d.Provider != a.Provider {
 		h.logger.ErrorContext(ctx, "PaymentRefunded differs from the captured allocation; refunding the allocation",
 			"order_id", orderID, "event_amount", d.Amount, "event_provider", d.Provider,
