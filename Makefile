@@ -92,8 +92,9 @@ keys: ## Generate the dev JWT signing key (deploy/secrets, gitignored)
 		openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out deploy/secrets/jwt_private.pem && \
 		chmod 644 deploy/secrets/jwt_private.pem && echo "generated deploy/secrets/jwt_private.pem"; }
 
-seed: ## Seed demo data (implemented by WS6)
-	@echo "seed: not implemented yet (owned by WS6)"
+seed: ## Seed demo data through the gateway (run after make up-app; idempotent)
+	cd e2e && GOWORK=off go run ./cmd/seed
 
-e2e: ## Run end-to-end tests (implemented by WS6)
-	@echo "e2e: not implemented yet (owned by WS6)"
+e2e: ## Run API smoke tests + Playwright against a running stack (make up-app seed first)
+	cd e2e && GOWORK=off go test -count=1 -timeout 20m ./...
+	cd e2e/playwright && npm ci --no-audit --no-fund && npx playwright install chromium && npx playwright test
