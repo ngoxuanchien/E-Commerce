@@ -331,7 +331,7 @@ func TestStore(t *testing.T) {
 
 	t.Run("a completed key with an empty body is never reclaimed", func(t *testing.T) {
 		user, hash := id(), []byte("h")
-		old := base.Add(-time.Hour)
+		old := base.Add(-time.Hour) // claimed an hour before staleBelow, so it is reclaim-eligible
 		_, _, err := s.BeginIdempotency(ctx, user, "k", hash, old, never)
 		require.NoError(t, err)
 		require.NoError(t, s.InTx(ctx, func(tx app.Tx) error {
