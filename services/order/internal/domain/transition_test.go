@@ -31,7 +31,7 @@ func TestTransitionTable(t *testing.T) {
 		{domain.StatusShipping, domain.ActionDeliver, domain.RoleSeller}:            domain.StatusDelivered,
 		{domain.StatusDelivered, domain.ActionComplete, domain.RoleBuyer}:           domain.StatusCompleted,
 	}
-	require.Len(t, domain.Statuses, 7, "table must cover every status")
+	require.Len(t, domain.Statuses, 8, "table must cover every status")
 	require.Len(t, domain.Actions, 6, "table must cover every action")
 
 	seen := 0
@@ -54,7 +54,7 @@ func TestTransitionTable(t *testing.T) {
 			}
 		}
 	}
-	assert.Equal(t, 7*6*3, seen)
+	assert.Equal(t, 8*6*3, seen)
 }
 
 func TestTransitionRejectsUnknownRole(t *testing.T) {

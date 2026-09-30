@@ -57,10 +57,15 @@ type Store interface {
 type Tx interface {
 	// InsertOrder stores a new order with its items and history entries.
 	InsertOrder(ctx context.Context, o domain.Order) error
-	// SaveTransition persists o's status, cancel reason and updated_at if the
-	// stored version is still prevVersion (and bumps it), then appends o's
+	// SaveTransition persists o's status, cancel reason, payment status,
+	// payment deadline, delivered_at and updated_at if the stored version is still prevVersion (and bumps it), then appends o's
 	// last history entry. ErrConcurrentUpdate when the version moved on.
 	SaveTransition(ctx context.Context, o domain.Order, prevVersion int) error
+	// SavePaymentStatus persists o's payment status, payment deadline, cancel
+	// reason, status and updated_at if the stored version is still prevVersion
+	// (and bumps it). It adds no history row. ErrConcurrentUpdate when the
+	// version moved on.
+	SavePaymentStatus(ctx context.Context, o domain.Order, prevVersion int) error
 	// Publish writes p to the outbox for topic order.events, keyed by orderID.
 	Publish(ctx context.Context, orderID string, p event.Payload, at time.Time) error
 	// ClaimStalePending locks up to limit PENDING orders created before

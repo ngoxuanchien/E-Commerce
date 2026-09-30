@@ -3,6 +3,7 @@ package postgres
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -31,13 +32,27 @@ func toDomainOrder(r sqlcdb.Order) (domain.Order, error) {
 	if err := json.Unmarshal(r.ShippingAddress, &addr); err != nil {
 		return domain.Order{}, fmt.Errorf("decode shipping address of order %s: %w", r.ID, err)
 	}
-	return domain.Order{
+	o := domain.Order{
 		ID: r.ID.String(), CheckoutID: r.CheckoutID.String(), BuyerID: r.BuyerID.String(),
 		ShopID: r.ShopID.String(), ShopName: r.ShopName, SellerUserID: r.SellerUserID.String(),
 		Status: domain.Status(r.Status), Subtotal: r.Subtotal, ShippingFee: r.ShippingFee, Total: r.Total,
 		ShippingAddress: addr, PaymentMethod: r.PaymentMethod, CancelReason: r.CancelReason,
 		Version: int(r.Version), CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(),
-	}, nil
+		ShopSlug: r.ShopSlug, PaymentStatus: domain.PaymentStatus(r.PaymentStatus),
+		CommissionRateBps: r.CommissionRateBps, CommissionAmount: r.CommissionAmount,
+	}
+	o.PaymentDeadline = utcPtr(r.PaymentDeadline)
+	o.DeliveredAt = utcPtr(r.DeliveredAt)
+	return o, nil
+}
+
+// utcPtr returns a copy of t in UTC, or nil if t is nil.
+func utcPtr(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	u := t.UTC()
+	return &u
 }
 
 func toDomainItem(r sqlcdb.OrderItem) domain.Item {

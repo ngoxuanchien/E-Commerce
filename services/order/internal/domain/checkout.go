@@ -111,7 +111,7 @@ func BuildOrders(p CheckoutParams) ([]Order, error) {
 			ID: p.NewID(), CheckoutID: p.CheckoutID, BuyerID: p.BuyerID,
 			ShopID: shopID, ShopName: first.ShopName, SellerUserID: first.SellerUserID,
 			Status: StatusPending, ShippingFee: p.ShippingFee, ShippingAddress: p.Address,
-			PaymentMethod: p.PaymentMethod, CreatedAt: p.Now, UpdatedAt: p.Now,
+			PaymentMethod: p.PaymentMethod, PaymentStatus: PaymentNone, CreatedAt: p.Now, UpdatedAt: p.Now,
 			History: []HistoryEntry{{To: StatusPending, ActorRole: RoleSystem, At: p.Now}},
 		}
 		for _, l := range lines {

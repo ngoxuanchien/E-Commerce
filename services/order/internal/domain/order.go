@@ -55,6 +55,7 @@ type Order struct {
 	BuyerID         string
 	ShopID          string
 	ShopName        string
+	ShopSlug        string // shop slug snapshot taken at checkout
 	SellerUserID    string
 	Status          Status
 	Items           []Item
@@ -63,11 +64,23 @@ type Order struct {
 	Total           int64
 	ShippingAddress Address
 	PaymentMethod   string
-	CancelReason    *string
-	History         []HistoryEntry
-	Version         int // optimistic-lock version as stored
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// PaymentStatus is the money state; NONE for COD orders.
+	PaymentStatus PaymentStatus
+	// PaymentDeadline is when an AWAITING_PAYMENT order is cancelled if still
+	// unpaid; nil otherwise.
+	PaymentDeadline *time.Time
+	// CommissionRateBps is the platform commission rate (basis points) snapshot
+	// taken at checkout.
+	CommissionRateBps int32
+	// CommissionAmount is the commission in minor units, computed at checkout.
+	CommissionAmount int64
+	// DeliveredAt is when the order reached DELIVERED; nil before that.
+	DeliveredAt  *time.Time
+	CancelReason *string
+	History      []HistoryEntry
+	Version      int // optimistic-lock version as stored
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // Apply records ch on o: the new status, a history entry and, for

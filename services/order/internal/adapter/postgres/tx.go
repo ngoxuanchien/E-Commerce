@@ -54,6 +54,8 @@ func (t *txStore) InsertOrder(ctx context.Context, o domain.Order) error {
 		SellerUserID: sellerID, Status: string(o.Status), Subtotal: o.Subtotal, ShippingFee: o.ShippingFee,
 		Total: o.Total, ShippingAddress: addr, PaymentMethod: o.PaymentMethod, CancelReason: o.CancelReason,
 		Version: int32(o.Version), CreatedAt: o.CreatedAt, UpdatedAt: o.UpdatedAt,
+		ShopSlug: o.ShopSlug, PaymentStatus: string(o.PaymentStatus), PaymentDeadline: o.PaymentDeadline,
+		CommissionRateBps: o.CommissionRateBps, CommissionAmount: o.CommissionAmount, DeliveredAt: o.DeliveredAt,
 	}); err != nil {
 		return fmt.Errorf("insert order: %w", err)
 	}
@@ -90,18 +92,12 @@ func (t *txStore) SaveTransition(ctx context.Context, o domain.Order, prevVersio
 	if len(o.History) == 0 {
 		return errors.New("save transition: order has no history entry")
 	}
+	if err := t.update(ctx, o, prevVersion); err != nil {
+		return err
+	}
 	id, err := mustParseUUID(o.ID)
 	if err != nil {
 		return err
-	}
-	n, err := t.q.UpdateOrderStatus(ctx, sqlcdb.UpdateOrderStatusParams{
-		Status: string(o.Status), CancelReason: o.CancelReason, UpdatedAt: o.UpdatedAt, ID: id, Version: int32(prevVersion),
-	})
-	if err != nil {
-		return fmt.Errorf("update order status: %w", err)
-	}
-	if n == 0 {
-		return app.ErrConcurrentUpdate
 	}
 	p, err := historyParams(id, o.History[len(o.History)-1])
 	if err != nil {
@@ -111,6 +107,30 @@ func (t *txStore) SaveTransition(ctx context.Context, o domain.Order, prevVersio
 		return fmt.Errorf("insert order history: %w", err)
 	}
 	return nil
+}
+
+// update writes o's mutable columns if the stored version is still prevVersion.
+func (t *txStore) update(ctx context.Context, o domain.Order, prevVersion int) error {
+	id, err := mustParseUUID(o.ID)
+	if err != nil {
+		return err
+	}
+	n, err := t.q.UpdateOrder(ctx, sqlcdb.UpdateOrderParams{
+		Status: string(o.Status), CancelReason: o.CancelReason, PaymentStatus: string(o.PaymentStatus),
+		PaymentDeadline: o.PaymentDeadline, DeliveredAt: o.DeliveredAt, UpdatedAt: o.UpdatedAt,
+		ID: id, Version: int32(prevVersion),
+	})
+	if err != nil {
+		return fmt.Errorf("update order: %w", err)
+	}
+	if n == 0 {
+		return app.ErrConcurrentUpdate
+	}
+	return nil
+}
+
+func (t *txStore) SavePaymentStatus(ctx context.Context, o domain.Order, prevVersion int) error {
+	return t.update(ctx, o, prevVersion)
 }
 
 func (t *txStore) Publish(ctx context.Context, orderID string, p event.Payload, at time.Time) error {

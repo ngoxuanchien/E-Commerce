@@ -52,9 +52,9 @@ func newOrder(buyer, seller string, createdAt time.Time) domain.Order {
 		},
 		Subtotal: 250_000, ShippingFee: 30_000, Total: 280_000,
 		ShippingAddress: domain.Address{FullName: "Nguyễn Văn A", Phone: "0900000000", Line1: "1 Lê Lợi", Ward: "Bến Nghé", District: "Quận 1", Province: "TP.HCM"},
-		PaymentMethod:   domain.PaymentCOD,
-		History:         []domain.HistoryEntry{{To: domain.StatusPending, ActorRole: domain.RoleSystem, At: createdAt}},
-		CreatedAt:       createdAt, UpdatedAt: createdAt,
+		PaymentMethod:   domain.PaymentCOD, PaymentStatus: domain.PaymentNone,
+		History:   []domain.HistoryEntry{{To: domain.StatusPending, ActorRole: domain.RoleSystem, At: createdAt}},
+		CreatedAt: createdAt, UpdatedAt: createdAt,
 	}
 }
 
@@ -102,6 +102,43 @@ func TestStore(t *testing.T) {
 		got, err := s.GetOrder(ctx, o.ID)
 		require.NoError(t, err)
 		assert.Equal(t, o, got)
+	})
+
+	t.Run("P2 fields round-trip", func(t *testing.T) {
+		o := newOrder(id(), id(), base)
+		o.ShopSlug = "shop-a"
+		o.PaymentMethod = "VNPAY"
+		o.PaymentStatus = domain.PaymentUnpaid
+		o.CommissionRateBps = 500
+		o.CommissionAmount = 1000
+		insert(t, s, o)
+		got, err := s.GetOrder(ctx, o.ID)
+		require.NoError(t, err)
+		assert.Equal(t, o, got)
+
+		deadline := base.Add(30 * time.Minute)
+		o.PaymentDeadline = &deadline
+		prev := o.Version
+		o.Apply(domain.StatusChange{From: domain.StatusPending, To: domain.StatusAwaitingPayment, Actor: domain.SystemActor()}, "", base.Add(time.Second))
+		require.NoError(t, s.InTx(ctx, func(tx app.Tx) error { return tx.SaveTransition(ctx, o, prev) }))
+		o.Version = prev + 1
+		got, err = s.GetOrder(ctx, o.ID)
+		require.NoError(t, err)
+		assert.Equal(t, domain.StatusAwaitingPayment, got.Status)
+		require.NotNil(t, got.PaymentDeadline)
+		assert.True(t, deadline.Equal(*got.PaymentDeadline), "deadline round-trips at microsecond precision")
+		assert.Len(t, got.History, 2)
+
+		o.PaymentStatus = domain.PaymentPaid
+		require.NoError(t, s.InTx(ctx, func(tx app.Tx) error { return tx.SavePaymentStatus(ctx, o, o.Version) }))
+		got, err = s.GetOrder(ctx, o.ID)
+		require.NoError(t, err)
+		assert.Equal(t, domain.PaymentPaid, got.PaymentStatus)
+		assert.Equal(t, 2, got.Version)
+		assert.Len(t, got.History, 2, "SavePaymentStatus adds no history row")
+
+		err = s.InTx(ctx, func(tx app.Tx) error { return tx.SavePaymentStatus(ctx, o, 0) })
+		assert.ErrorIs(t, err, app.ErrConcurrentUpdate)
 	})
 
 	t.Run("unknown or malformed id is not found", func(t *testing.T) {

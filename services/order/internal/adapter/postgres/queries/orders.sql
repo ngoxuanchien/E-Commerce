@@ -1,8 +1,11 @@
 -- name: InsertOrder :exec
 INSERT INTO orders (id, checkout_id, buyer_id, shop_id, shop_name, seller_user_id, status,
                     subtotal, shipping_fee, total, shipping_address, payment_method,
-                    cancel_reason, version, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16);
+                    cancel_reason, version, created_at, updated_at,
+                    shop_slug, payment_status, payment_deadline, commission_rate_bps,
+                    commission_amount, delivered_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+        $17, $18, $19, $20, $21, $22);
 
 -- name: InsertOrderItem :exec
 INSERT INTO order_items (id, order_id, sku_id, product_id, product_name, variant_name,
@@ -40,9 +43,11 @@ WHERE seller_user_id = @seller_user_id
 ORDER BY created_at DESC, id DESC
 LIMIT @page_limit;
 
--- name: UpdateOrderStatus :execrows
+-- name: UpdateOrder :execrows
 UPDATE orders
-SET status = @status, cancel_reason = sqlc.narg(cancel_reason), version = version + 1, updated_at = @updated_at
+SET status = @status, cancel_reason = sqlc.narg(cancel_reason), payment_status = @payment_status,
+    payment_deadline = sqlc.narg(payment_deadline), delivered_at = sqlc.narg(delivered_at),
+    version = version + 1, updated_at = @updated_at
 WHERE id = @id AND version = @version;
 
 -- name: ClaimStalePending :many

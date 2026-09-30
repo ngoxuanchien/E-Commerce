@@ -5,6 +5,7 @@ type Status string
 
 const (
 	StatusPending             Status = "PENDING"
+	StatusAwaitingPayment     Status = "AWAITING_PAYMENT"
 	StatusPendingConfirmation Status = "PENDING_CONFIRMATION"
 	StatusConfirmed           Status = "CONFIRMED"
 	StatusShipping            Status = "SHIPPING"
@@ -15,9 +16,21 @@ const (
 
 // Statuses lists every status in lifecycle order.
 var Statuses = []Status{
-	StatusPending, StatusPendingConfirmation, StatusConfirmed, StatusShipping,
+	StatusPending, StatusAwaitingPayment, StatusPendingConfirmation, StatusConfirmed, StatusShipping,
 	StatusDelivered, StatusCompleted, StatusCancelled,
 }
+
+// PaymentStatus is where an order's money stands, independent of its
+// lifecycle Status (WS3' spec §2).
+type PaymentStatus string
+
+const (
+	PaymentNone          PaymentStatus = "NONE" // COD: nothing is collected online
+	PaymentUnpaid        PaymentStatus = "UNPAID"
+	PaymentPaid          PaymentStatus = "PAID"
+	PaymentRefundPending PaymentStatus = "REFUND_PENDING"
+	PaymentRefunded      PaymentStatus = "REFUNDED"
+)
 
 // ParseStatus returns the Status named s (case-sensitive).
 func ParseStatus(s string) (Status, bool) {
