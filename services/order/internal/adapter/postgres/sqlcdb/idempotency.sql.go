@@ -40,7 +40,8 @@ func (q *Queries) CompleteIdempotencyKey(ctx context.Context, arg CompleteIdempo
 }
 
 const deleteIdempotencyKey = `-- name: DeleteIdempotencyKey :exec
-DELETE FROM idempotency_keys WHERE user_id = $1 AND key = $2 AND created_at = $3
+DELETE FROM idempotency_keys
+WHERE user_id = $1 AND key = $2 AND created_at = $3 AND status_code IS NULL
 `
 
 type DeleteIdempotencyKeyParams struct {
@@ -49,6 +50,9 @@ type DeleteIdempotencyKeyParams struct {
 	CreatedAt time.Time
 }
 
+// Frees a key after a transient failure, only while it is still in progress.
+// A completed key is kept: the caller may have seen an error although its
+// COMMIT landed (the connection dropped), and a retry must replay the response.
 func (q *Queries) DeleteIdempotencyKey(ctx context.Context, arg DeleteIdempotencyKeyParams) error {
 	_, err := q.db.Exec(ctx, deleteIdempotencyKey, arg.UserID, arg.Key, arg.CreatedAt)
 	return err
@@ -118,7 +122,7 @@ func (q *Queries) InsertIdempotencyKey(ctx context.Context, arg InsertIdempotenc
 const reclaimIdempotencyKey = `-- name: ReclaimIdempotencyKey :execrows
 UPDATE idempotency_keys SET created_at = $1
 WHERE user_id = $2 AND key = $3 AND request_hash = $4
-  AND response IS NULL AND created_at < $5
+  AND status_code IS NULL AND created_at < $5
 `
 
 type ReclaimIdempotencyKeyParams struct {
@@ -131,6 +135,8 @@ type ReclaimIdempotencyKeyParams struct {
 
 // Takes over a key whose run died before storing a response: same request,
 // no response, claimed before @stale_before. created_at is the claim.
+// status_code (not response) marks completion: a 204/empty body still counts
+// as completed and must never be reclaimed.
 func (q *Queries) ReclaimIdempotencyKey(ctx context.Context, arg ReclaimIdempotencyKeyParams) (int64, error) {
 	result, err := q.db.Exec(ctx, reclaimIdempotencyKey,
 		arg.ClaimedAt,

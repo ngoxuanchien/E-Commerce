@@ -286,11 +286,75 @@ func TestStore(t *testing.T) {
 		_, created, err = s.BeginIdempotency(ctx, id(), key, hash, base, never)
 		require.NoError(t, err)
 		assert.True(t, created, "keys are scoped per user")
+	})
+
+	t.Run("a completed key survives a release", func(t *testing.T) {
+		// A caller that sees an error although its COMMIT landed (the
+		// connection dropped) releases the key. That must not erase the
+		// stored response, or a retry runs the whole checkout again.
+		user, key, hash := id(), "key-completed", []byte("hash-a")
+		_, created, err := s.BeginIdempotency(ctx, user, key, hash, base, never)
+		require.NoError(t, err)
+		require.True(t, created)
+		resp := app.Response{Status: 201, Body: []byte(`{"checkout_id":"x"}`)}
+		require.NoError(t, s.InTx(ctx, func(tx app.Tx) error { return tx.CompleteIdempotencyKey(ctx, user, key, base, resp) }))
 
 		require.NoError(t, s.DeleteIdempotencyKey(ctx, user, key, base))
+
+		rec, created, err := s.BeginIdempotency(ctx, user, key, hash, base, never)
+		require.NoError(t, err)
+		assert.False(t, created, "the retry must replay, not run again")
+		require.NotNil(t, rec.Response)
+		assert.Equal(t, 201, rec.Response.Status)
+		assert.JSONEq(t, string(resp.Body), string(rec.Response.Body))
+	})
+
+	t.Run("a completed key with an empty body survives a release", func(t *testing.T) {
+		// status_code, not response, marks a key as completed: a 204 stores no
+		// body, and releasing it must still keep the key.
+		user, key, hash := id(), "key-204", []byte("hash-a")
+		_, created, err := s.BeginIdempotency(ctx, user, key, hash, base, never)
+		require.NoError(t, err)
+		require.True(t, created)
+		require.NoError(t, s.InTx(ctx, func(tx app.Tx) error {
+			return tx.CompleteIdempotencyKey(ctx, user, key, base, app.Response{Status: 204})
+		}))
+
+		require.NoError(t, s.DeleteIdempotencyKey(ctx, user, key, base))
+
+		rec, created, err := s.BeginIdempotency(ctx, user, key, hash, base, never)
+		require.NoError(t, err)
+		assert.False(t, created)
+		require.NotNil(t, rec.Response)
+		assert.Equal(t, 204, rec.Response.Status)
+	})
+
+	t.Run("a completed key with an empty body is never reclaimed", func(t *testing.T) {
+		user, hash := id(), []byte("h")
+		old := base.Add(-time.Hour)
+		_, _, err := s.BeginIdempotency(ctx, user, "k", hash, old, never)
+		require.NoError(t, err)
+		require.NoError(t, s.InTx(ctx, func(tx app.Tx) error {
+			return tx.CompleteIdempotencyKey(ctx, user, "k", old, app.Response{Status: 204})
+		}))
+		rec, created, err := s.BeginIdempotency(ctx, user, "k", hash, base, base)
+		require.NoError(t, err)
+		assert.False(t, created, "reclaim must key off status_code, not the body")
+		require.NotNil(t, rec.Response)
+		assert.Equal(t, 204, rec.Response.Status)
+	})
+
+	t.Run("an in-progress key is still released", func(t *testing.T) {
+		user, key, hash := id(), "key-in-progress", []byte("hash-a")
+		_, created, err := s.BeginIdempotency(ctx, user, key, hash, base, never)
+		require.NoError(t, err)
+		require.True(t, created)
+
+		require.NoError(t, s.DeleteIdempotencyKey(ctx, user, key, base))
+
 		_, created, err = s.BeginIdempotency(ctx, user, key, hash, base, never)
 		require.NoError(t, err)
-		assert.True(t, created)
+		assert.True(t, created, "a failed run must give the key back")
 	})
 
 	t.Run("an orphaned in-progress key is reclaimed once stale", func(t *testing.T) {
