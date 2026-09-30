@@ -1,0 +1,11 @@
+{
+  "id": "pi_3QxYzAbCdEfGhIjK0aBcDeFg",
+  "object": "payment_intent",
+  "amount": 350000,
+  "amount_received": 350000,
+  "currency": "vnd",
+  "latest_charge": "ch_3QxYzAbCdEfGhIjK0hIjKlMn",
+  "livemode": false,
+  "metadata": {},
+  "status": "succeeded"
+}

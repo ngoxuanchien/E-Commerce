@@ -15,6 +15,7 @@ require (
 	github.com/ngoxuanchien/e-commerce/pkg v0.0.0-00010101000000-000000000000
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/stretchr/testify v1.12.1
+	github.com/stripe/stripe-go/v86 v86.4.2
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
 )

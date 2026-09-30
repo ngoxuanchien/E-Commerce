@@ -17,7 +17,7 @@ type Routes interface {
 }
 
 // NewRouter returns the /api routes: the buyer's payment routes plus every callback group given
-// (FakeCallbacks today; VNPay and Stripe register theirs the same way). Nil groups are skipped.
+// (FakeCallbacks, VNPayCallbacks, StripeCallbacks). Nil groups are skipped.
 // authctx.Middleware must run before it.
 func NewRouter(creator *app.Creator, callbacks ...Routes) http.Handler {
 	h := paymentRoutes{creator: creator}

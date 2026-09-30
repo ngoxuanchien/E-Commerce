@@ -1,0 +1,21 @@
+{
+  "id": "evt_1QxYzAbCdEfGhIjK0refundupd",
+  "object": "event",
+  "api_version": "2024-06-20",
+  "created": 1790672500,
+  "data": {
+    "object": {
+      "id": "re_3QxYzAbCdEfGhIjK0pQrStUv",
+      "object": "refund",
+      "amount": 350000,
+      "currency": "vnd",
+      "payment_intent": "pi_3QxYzAbCdEfGhIjK0aBcDeFg",
+      "status": "succeeded"
+    },
+    "previous_attributes": {"status": "pending"}
+  },
+  "livemode": false,
+  "pending_webhooks": 1,
+  "request": {"id": null, "idempotency_key": null},
+  "type": "refund.updated"
+}

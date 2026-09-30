@@ -1,0 +1,29 @@
+{
+  "id": "evt_1QxYzAbCdEfGhIjK0chrefund",
+  "object": "event",
+  "api_version": "2024-06-20",
+  "created": 1790672450,
+  "data": {
+    "object": {
+      "id": "ch_3QxYzAbCdEfGhIjK0hIjKlMn",
+      "object": "charge",
+      "amount": 350000,
+      "amount_refunded": 350000,
+      "currency": "vnd",
+      "payment_intent": "pi_3QxYzAbCdEfGhIjK0aBcDeFg",
+      "refunded": true,
+      "refunds": {
+        "object": "list",
+        "data": [
+          {"id": "re_3QxYzAbCdEfGhIjK0pQrStUv", "object": "refund", "amount": 350000, "status": "succeeded"}
+        ],
+        "has_more": false,
+        "url": "/v1/charges/ch_3QxYzAbCdEfGhIjK0hIjKlMn/refunds"
+      }
+    }
+  },
+  "livemode": false,
+  "pending_webhooks": 1,
+  "request": {"id": null, "idempotency_key": null},
+  "type": "charge.refunded"
+}
