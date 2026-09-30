@@ -13,6 +13,12 @@ import (
 // ErrInvalidCursor: a cursor that EncodeCursor did not produce.
 var ErrInvalidCursor = errors.New("ledger: invalid cursor")
 
+// Cursor timestamps must fit Postgres timestamptz: years 1970 through 9999.
+var (
+	minCursorMicros = int64(0)
+	maxCursorMicros = time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC).UnixMicro()
+)
+
 // Cursor is a keyset position: (created_at | requested_at, id), newest first.
 type Cursor struct {
 	At time.Time
@@ -37,6 +43,9 @@ func DecodeCursor(s string) (Cursor, error) {
 	}
 	micros, err := strconv.ParseInt(ts, 10, 64)
 	if err != nil {
+		return Cursor{}, ErrInvalidCursor
+	}
+	if micros < minCursorMicros || micros > maxCursorMicros {
 		return Cursor{}, ErrInvalidCursor
 	}
 	u, err := uuid.Parse(id)

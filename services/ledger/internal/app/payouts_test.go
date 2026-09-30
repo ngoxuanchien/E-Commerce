@@ -99,6 +99,16 @@ func TestPayoutBelowMinimumIsRejectedWithoutClaimingTheKey(t *testing.T) {
 	assert.Zero(t, h.count("idempotency_keys"))
 }
 
+func TestPayoutNonPositiveAmountIsRejectedEvenWithZeroMinimum(t *testing.T) {
+	h := newHarness(t)
+	svc := app.NewPayoutService(h.store, app.PayoutConfig{MinAmount: 0, Now: h.clock.Now, Logger: h.logger})
+	_, err := svc.Request(ctx, app.PayoutRequestInput{SellerID: newID(), IdempotencyKey: "k0", Amount: 0}, testEncoder)
+	var bm *app.BelowMinimumError
+	require.ErrorAs(t, err, &bm)
+	assert.Equal(t, int64(1), bm.Min)
+	assert.Zero(t, h.count("idempotency_keys"))
+}
+
 func TestPayoutIdempotentReplay(t *testing.T) {
 	h := newHarness(t)
 	seller := newID()

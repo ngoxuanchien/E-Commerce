@@ -73,6 +73,10 @@ func TestEventsInWalletOutPayoutEventsOut(t *testing.T) {
 	}
 	require.Eventually(t, func() bool { return get("/api/seller/wallet")["available"] == 190000.0 }, 60*time.Second, 200*time.Millisecond)
 
+	var pending int
+	require.NoError(t, db.QueryRow(ctx, `SELECT count(*) FROM pending_postings`).Scan(&pending))
+	assert.Zero(t, pending)
+
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/seller/payouts", strings.NewReader(`{"amount":190000}`))
 	req.Header.Set(authctx.HeaderUserID, seller.String())
@@ -103,6 +107,11 @@ func TestEventsInWalletOutPayoutEventsOut(t *testing.T) {
 	w := get("/api/seller/wallet")
 	assert.Equal(t, 0.0, w["available"])
 	assert.Equal(t, 0.0, w["pending_payout"])
+	// OrderCompleted + 2x PaymentSucceeded consumed: the duplicate was a no-op.
+	require.Eventually(t, func() bool {
+		var n int
+		return db.QueryRow(ctx, `SELECT count(*) FROM processed_events WHERE consumer = 'ledger-svc'`).Scan(&n) == nil && n == 3
+	}, 60*time.Second, 200*time.Millisecond)
 	var journals int
 	require.NoError(t, db.QueryRow(ctx, `SELECT count(*) FROM journal_transactions`).Scan(&journals))
 	assert.Equal(t, 5, journals) // PAY, CAPTURE, RELEASE, PAYOUT_REQUEST, PAYOUT_SETTLE

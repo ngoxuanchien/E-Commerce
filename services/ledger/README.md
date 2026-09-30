@@ -79,4 +79,6 @@ It prints `{balances_by_type, total, unbalanced_transactions, liabilities_in_deb
 
 - `idempotency_keys` rows are never purged (`idemkey.Purge` is not scheduled yet).
 - An order-scoped `PaymentRefunded` that arrives before its capture is retried (spec §6). If that capture was skipped as malformed, the refund retries forever and stalls its `payment.events` partition; recovering it needs manual intervention.
+- If any order of a payment was already captured by another payment, the whole CAPTURE of the new payment is skipped (alert=true); its orders' money stays in suspense and their completions stay pending until someone intervenes.
+- `trial-balance` scans every entry; fine at portfolio scale.
 - `pkg/idemkey.Release` deletes a key even after it was completed. If a payout's COMMIT succeeds but the client sees an error, a retry with the same key could create a second payout. The fix, guarding `Release` with `status_code IS NULL`, belongs to WS0' (`pkg/`).

@@ -77,8 +77,8 @@ type PayoutRequestInput struct {
 // INSUFFICIENT_FUNDS. Both outcomes are stored under the Idempotency-Key and
 // replayed verbatim; transient failures free the key and return an error.
 func (s *PayoutService) Request(ctx context.Context, in PayoutRequestInput, enc PayoutEncoder) (Response, error) {
-	if in.Amount < s.cfg.MinAmount {
-		return Response{}, &BelowMinimumError{Min: s.cfg.MinAmount}
+	if in.Amount <= 0 || in.Amount < s.cfg.MinAmount {
+		return Response{}, &BelowMinimumError{Min: max(1, s.cfg.MinAmount)}
 	}
 	hash := sha256.Sum256([]byte(strconv.FormatInt(in.Amount, 10)))
 	now := s.cfg.Now()

@@ -162,7 +162,7 @@ func (h *EventHandler) paymentSucceeded(ctx context.Context, tx Tx, src source, 
 		}
 		if found && existing.PaymentID != paymentID {
 			h.logger.ErrorContext(ctx, "order already captured by another payment; this payment stays in suspense",
-				"alert", true, "order_id", a.OrderID, "payment_id", paymentID, "captured_by", existing.PaymentID)
+				"alert", true, "event_id", src.eventID, "order_id", a.OrderID, "payment_id", paymentID, "captured_by", existing.PaymentID)
 			return nil
 		}
 	}

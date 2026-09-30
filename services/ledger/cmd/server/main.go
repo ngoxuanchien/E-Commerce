@@ -50,6 +50,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if err := cfg.validate(); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
 	logger := logx.New(os.Stdout, cfg.LogLevel).With("service", cfg.ServiceName)
 	slog.SetDefault(logger)
 

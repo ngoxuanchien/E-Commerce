@@ -1,6 +1,7 @@
 package app_test
 
 import (
+	"encoding/base64"
 	"testing"
 	"time"
 
@@ -15,7 +16,10 @@ func TestCursorRoundTrip(t *testing.T) {
 	got, err := app.DecodeCursor(app.EncodeCursor(c))
 	require.NoError(t, err)
 	assert.Equal(t, c, got)
-	for _, bad := range []string{"", "!!!", "bm9waXBl", "MTIzfG5vdC1hLXV1aWQ"} {
+	enc := func(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s)) }
+	badCursors := []string{"", "!!!", "bm9waXBl", "MTIzfG5vdC1hLXV1aWQ",
+		enc("-1|" + newID().String()), enc("9223372036854775807|" + newID().String())}
+	for _, bad := range badCursors {
 		_, err := app.DecodeCursor(bad)
 		assert.ErrorIs(t, err, app.ErrInvalidCursor, bad)
 	}
