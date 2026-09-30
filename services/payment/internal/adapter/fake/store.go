@@ -108,9 +108,24 @@ func (s store) expire(ctx context.Context, paymentID string) (bool, error) {
 	return tag.RowsAffected() == 1, nil
 }
 
-func (s store) addRefunded(ctx context.Context, paymentID string, amount int64) error {
-	_, err := s.pool.Exec(ctx, `UPDATE fake_sessions SET refunded = refunded + $2 WHERE payment_id=$1`, paymentID, amount)
-	return err
+// addRefunded records a refund once per refundID; a repeated call changes nothing.
+func (s store) addRefunded(ctx context.Context, paymentID, refundID string, amount int64) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	tag, err := tx.Exec(ctx, `INSERT INTO fake_refunds (refund_id, payment_id, amount) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		refundID, paymentID, amount)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 1 {
+		if _, err := tx.Exec(ctx, `UPDATE fake_sessions SET refunded = refunded + $2 WHERE payment_id=$1`, paymentID, amount); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // arm stores hooks while the outcome is still NULL; ErrSessionClosed once an outcome exists.

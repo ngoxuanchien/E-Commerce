@@ -55,10 +55,12 @@ func TestDownRemovesEveryTable(t *testing.T) {
 	pool, err := pgxx.NewPool(ctx, dsn)
 	require.NoError(t, err)
 	defer pool.Close()
-	down, err := fs.ReadFile(migrations.FS, "000002_payment_schema.down.sql")
-	require.NoError(t, err)
-	_, err = pool.Exec(ctx, string(down))
-	require.NoError(t, err)
+	for _, name := range []string{"000003_fake_refunds.down.sql", "000002_payment_schema.down.sql"} {
+		down, err := fs.ReadFile(migrations.FS, name)
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, string(down))
+		require.NoError(t, err)
+	}
 	var n int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name <> 'schema_migrations'`).Scan(&n))
 	assert.Zero(t, n)

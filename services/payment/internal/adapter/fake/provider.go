@@ -144,7 +144,7 @@ func (p *Provider) Refund(ctx context.Context, in app.RefundInput) (app.RefundOb
 	if s.hooks.Refund == "fail" {
 		return app.RefundObserved{State: app.RefundFailed, Reason: "fake_refund_failed"}, nil
 	}
-	if err := p.store.addRefunded(ctx, in.Payment.ID, in.Amount); err != nil {
+	if err := p.store.addRefunded(ctx, in.Payment.ID, in.RefundID, in.Amount); err != nil {
 		return app.RefundObserved{}, fmt.Errorf("fake refund: %w", err)
 	}
 	return app.RefundObserved{State: app.RefundSucceeded, ProviderRefundRef: refundRef(in.RefundID)}, nil

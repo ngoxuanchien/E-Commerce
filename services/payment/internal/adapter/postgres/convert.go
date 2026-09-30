@@ -61,12 +61,12 @@ func toDomainPayments(rows []sqlcdb.Payment) []domain.Payment {
 // toRefund is shared by the row types of the refund queries, which carry the
 // same columns plus the payment's checkout and provider.
 func toRefund(id, paymentID uuid.UUID, orderID *uuid.UUID, amount int64, status string, ref *string,
-	attempts int32, next time.Time, lastErr *string, checkoutID uuid.UUID, provider string,
+	attempts int32, next time.Time, lastErr *string, createdAt time.Time, checkoutID uuid.UUID, provider string,
 ) app.Refund {
 	r := app.Refund{
 		ID: id.String(), PaymentID: paymentID.String(), CheckoutID: checkoutID.String(), Provider: provider,
 		Amount: amount, Status: status, ProviderRefundRef: deref(ref), Attempts: int(attempts), LastError: deref(lastErr),
-		NextAttemptAt: next.UTC(),
+		NextAttemptAt: next.UTC(), CreatedAt: createdAt.UTC(),
 	}
 	if orderID != nil {
 		s := orderID.String()

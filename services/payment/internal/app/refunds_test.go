@@ -1,12 +1,14 @@
 package app_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -115,22 +117,38 @@ func TestRefundsOrderCancelled(t *testing.T) {
 		assert.Empty(t, e.refunds(t, p.ID))
 	})
 
-	t.Run("the cancellation waits for the checkout's payment lock", func(t *testing.T) {
+	t.Run("the cancellation takes the checkout lock before it looks at the captured allocation", func(t *testing.T) {
 		p := newPayment(id(), domain.StatusPending)
 		e.insert(t, p)
-		ev := cancelled(p.Allocations[0].OrderID, p.CheckoutID, "VNPAY")
+		orderID := p.Allocations[0].OrderID
+		ev := cancelled(orderID, p.CheckoutID, "VNPAY")
 		release, locked, finished := make(chan struct{}), make(chan struct{}), make(chan error, 1)
 		var once sync.Once
 		unlock := func() { once.Do(func() { close(release) }) }
 		defer unlock()
 		holder := make(chan error, 1)
 		go func() {
+			// A capture in flight: it holds the lock, marks the payment captured and checks the
+			// cancellation, then commits.
 			holder <- e.store.InTx(ctx, func(tx app.Tx) error {
-				if _, err := tx.LockCheckoutPayments(ctx, p.CheckoutID); err != nil {
+				rows, err := tx.LockCheckoutPayments(ctx, p.CheckoutID)
+				if err != nil {
 					return err
 				}
 				close(locked)
 				<-release
+				cur, _ := findPayment(rows, p.ID)
+				cur.Status, cur.Captured, cur.UpdatedAt = domain.StatusSucceeded, true, clk.now()
+				if err := tx.UpdatePayment(ctx, cur); err != nil {
+					return err
+				}
+				cancelledNow, err := tx.IsCancelled(ctx, orderID)
+				if err != nil {
+					return err
+				}
+				if cancelledNow {
+					return errors.New("cancellation visible before the lock was released")
+				}
 				return nil
 			})
 		}()
@@ -145,6 +163,9 @@ func TestRefundsOrderCancelled(t *testing.T) {
 		unlock()
 		require.NoError(t, <-holder)
 		require.NoError(t, <-finished)
+		rs := e.refunds(t, p.ID)
+		require.Len(t, rs, 1, "the cancellation must see the capture that committed while it waited")
+		assert.Equal(t, orderID, *rs[0].OrderID)
 	})
 
 	t.Run("concurrent capture and cancellation always yield exactly one refund", func(t *testing.T) {
@@ -304,19 +325,26 @@ func TestRefundWorkerFake(t *testing.T) {
 // scriptedProvider scripts refund answers on top of stubProvider.
 type scriptedProvider struct {
 	*stubProvider
-	refundErr error
-	query     app.RefundObserved
+	refundErr  error
+	query      app.RefundObserved
+	queryErr   error
+	deadline   *time.Time
+	queriedRef string
 }
 
 func (s *scriptedProvider) Refund(ctx context.Context, in app.RefundInput) (app.RefundObserved, error) {
+	if d, ok := ctx.Deadline(); ok {
+		s.deadline = &d
+	}
 	if s.refundErr != nil {
 		return app.RefundObserved{}, s.refundErr
 	}
 	return s.stubProvider.Refund(ctx, in)
 }
 
-func (s *scriptedProvider) QueryRefund(context.Context, app.Refund) (app.RefundObserved, error) {
-	return s.query, nil
+func (s *scriptedProvider) QueryRefund(_ context.Context, r app.Refund) (app.RefundObserved, error) {
+	s.queriedRef = r.ProviderRefundRef
+	return s.query, s.queryErr
 }
 
 func TestRefundWorkerProviderOutcomes(t *testing.T) {
@@ -390,5 +418,283 @@ func TestRefundWorkerProviderOutcomes(t *testing.T) {
 		assert.NoError(t, w.ApplyRefundObserved(ctx, "fake", app.RefundHint{ProviderRefundRef: "re_nope"}))
 		assert.NoError(t, w.ApplyRefundObserved(ctx, "fake", app.RefundHint{ProviderRefundRef: "re_nope", RefundID: id()}))
 		assert.NoError(t, w.ApplyRefundObserved(ctx, "fake", app.RefundHint{RefundID: "not-a-uuid"}))
+	})
+}
+
+func findPayment(rows []domain.Payment, id string) (domain.Payment, bool) {
+	for _, r := range rows {
+		if r.ID == id {
+			return r, true
+		}
+	}
+	return domain.Payment{}, false
+}
+
+func TestPendingBackoff(t *testing.T) {
+	for age, want := range map[time.Duration]time.Duration{
+		-time.Minute: 10 * time.Second, 0: 10 * time.Second, 10 * time.Second: 10 * time.Second,
+		time.Minute: 30 * time.Second, 10 * time.Minute: 5 * time.Minute,
+		20 * time.Minute: 10 * time.Minute, 3 * time.Hour: 10 * time.Minute, 48 * time.Hour: 10 * time.Minute,
+	} {
+		assert.Equal(t, want, app.PendingBackoff(age), "age=%s", age)
+	}
+}
+
+// failingStore fails the failOn-th UpdateRefund, simulating a commit failure after the provider call.
+type failingStore struct {
+	app.Store
+	failOn int32
+	n      atomic.Int32
+}
+
+func (f *failingStore) InTx(ctx context.Context, fn func(app.Tx) error) error {
+	return f.Store.InTx(ctx, func(tx app.Tx) error { return fn(&failingTx{Tx: tx, f: f}) })
+}
+
+type failingTx struct {
+	app.Tx
+	f *failingStore
+}
+
+func (t *failingTx) UpdateRefund(ctx context.Context, r app.Refund) error {
+	if t.f.n.Add(1) == t.f.failOn {
+		return errors.New("injected commit failure")
+	}
+	return t.Tx.UpdateRefund(ctx, r)
+}
+
+func (e workerEnv) refundedTotal(t *testing.T, paymentID string) int64 {
+	var n int64
+	require.NoError(t, e.pool.QueryRow(ctx, `SELECT refunded FROM fake_sessions WHERE payment_id=$1`, paymentID).Scan(&n))
+	return n
+}
+
+func TestRefundWorkerTransactions(t *testing.T) {
+	t.Run("a failed commit after the provider call is settled later without refunding twice", func(t *testing.T) {
+		e := newWorkerEnv(t)
+		fs := &failingStore{Store: e.store, failOn: 1}
+		w := app.NewRefundWorker(fs, app.NewProviders(e.fp, e.fp), 3, e.clk.now, quiet)
+		p := e.captured(t, fake.Hooks{})
+		_, err := w.RunOnce(ctx)
+		require.Error(t, err)
+		assert.Equal(t, "PENDING", e.refunds(t, p.ID)[0].Status)
+		assert.EqualValues(t, p.Allocations[0].Amount, e.refundedTotal(t, p.ID), "the provider already refunded")
+
+		n, err := w.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 1, n)
+		assert.Equal(t, "SUCCEEDED", e.refunds(t, p.ID)[0].Status)
+		assert.EqualValues(t, p.Allocations[0].Amount, e.refundedTotal(t, p.ID), "refunded exactly once")
+		assert.Len(t, eventsOf(e.outbox(t, p.CheckoutID), "PaymentRefunded"), 1)
+	})
+
+	t.Run("one refund's failure does not roll back the ones already settled", func(t *testing.T) {
+		e := newWorkerEnv(t)
+		fs := &failingStore{Store: e.store, failOn: 2}
+		w := app.NewRefundWorker(fs, app.NewProviders(e.fp, e.fp), 3, e.clk.now, quiet)
+		a, b := e.captured(t, fake.Hooks{}), e.captured(t, fake.Hooks{})
+		_, err := w.RunOnce(ctx)
+		require.Error(t, err)
+		var done int
+		for _, p := range []app.NewPayment{a, b} {
+			if e.refunds(t, p.ID)[0].Status == "SUCCEEDED" {
+				done++
+			}
+		}
+		assert.Equal(t, 1, done)
+	})
+
+	t.Run("every provider call is bounded by a timeout", func(t *testing.T) {
+		e := newEnv(t)
+		clk := &clock{t: t0.Add(time.Hour)}
+		rf := app.NewRefunds(e.store, clk.now)
+		sp := &scriptedProvider{stubProvider: &stubProvider{name: "fake", refund: app.RefundObserved{State: app.RefundSucceeded}}}
+		w := app.NewRefundWorker(e.store, app.NewProviders(sp, sp), 3, clk.now, quiet)
+		p := newPayment(id(), domain.StatusPending)
+		e.insert(t, p)
+		_, err := e.obs.ApplyObserved(ctx, "fake", id(), p.ID, success(p))
+		require.NoError(t, err)
+		require.NoError(t, rf.OrderCancelled(ctx, id(), cancelled(p.Allocations[0].OrderID, p.CheckoutID, "VNPAY"), t0))
+		_, err = w.RunOnce(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, sp.deadline, "Refund got a context without a deadline")
+		assert.LessOrEqual(t, time.Until(*sp.deadline), 15*time.Second)
+	})
+}
+
+// pendingEnv is a worker over a scriptable provider with a captured log.
+type pendingEnv struct {
+	env
+	clk *clock
+	rf  *app.Refunds
+	sp  *scriptedProvider
+	w   *app.RefundWorker
+	log *bytes.Buffer
+}
+
+func newPendingEnv(t *testing.T) pendingEnv {
+	e := newEnv(t)
+	clk := &clock{t: t0.Add(time.Hour)}
+	sp := &scriptedProvider{stubProvider: &stubProvider{name: "fake"}}
+	buf := &bytes.Buffer{}
+	return pendingEnv{env: e, clk: clk, rf: app.NewRefunds(e.store, clk.now), sp: sp, log: buf,
+		w: app.NewRefundWorker(e.store, app.NewProviders(sp, sp), 3, clk.now, slog.New(slog.NewTextHandler(buf, nil)))}
+}
+
+// refund makes a due refund; ref/age shape its state (ref "" = the provider has not accepted it).
+func (e pendingEnv) refund(t *testing.T, ref string, age time.Duration) (paymentID, refundID string, checkout string) {
+	p := newPayment(id(), domain.StatusPending)
+	e.insert(t, p)
+	_, err := e.obs.ApplyObserved(ctx, "fake", id(), p.ID, success(p))
+	require.NoError(t, err)
+	require.NoError(t, e.rf.OrderCancelled(ctx, id(), cancelled(p.Allocations[0].OrderID, p.CheckoutID, "VNPAY"), t0))
+	_, err = e.pool.Exec(ctx, `UPDATE refunds SET created_at = $2, provider_refund_ref = NULLIF($3, '') WHERE payment_id = $1`,
+		p.ID, e.clk.now().Add(-age), ref)
+	require.NoError(t, err)
+	require.NoError(t, e.pool.QueryRow(ctx, `SELECT id::text FROM refunds WHERE payment_id=$1`, p.ID).Scan(&refundID))
+	return p.ID, refundID, p.CheckoutID
+}
+
+type refundRow struct {
+	Status, Ref string
+	Attempts    int
+	Next        time.Time
+}
+
+func (e pendingEnv) row(t *testing.T, paymentID string) refundRow {
+	var r refundRow
+	var ref *string
+	require.NoError(t, e.pool.QueryRow(ctx, `SELECT status, provider_refund_ref, attempts, next_attempt_at FROM refunds WHERE payment_id=$1`, paymentID).
+		Scan(&r.Status, &ref, &r.Attempts, &r.Next))
+	if ref != nil {
+		r.Ref = *ref
+	}
+	return r
+}
+
+func TestRefundWorkerPending(t *testing.T) {
+	t.Run("pending polls back off by the refund's age", func(t *testing.T) {
+		e := newPendingEnv(t)
+		e.sp.refund = app.RefundObserved{State: app.RefundPending, ProviderRefundRef: "re_p"}
+		for _, age := range []time.Duration{0, time.Minute, 10 * time.Minute, 3 * time.Hour} {
+			pid, _, _ := e.refund(t, "", age)
+			_, err := e.w.RunOnce(ctx)
+			require.NoError(t, err)
+			r := e.row(t, pid)
+			assert.Equal(t, "PENDING", r.Status)
+			assert.Equal(t, 0, r.Attempts, "pending is not a failed attempt")
+			assert.True(t, r.Next.Equal(e.clk.now().Add(app.PendingBackoff(age))), "age %s: next %s", age, r.Next.Sub(e.clk.now()))
+			// A later poll (QueryRefund) reschedules the same way.
+			e.sp.query = app.RefundObserved{State: app.RefundPending, ProviderRefundRef: "re_p"}
+			e.clk.advance(app.PendingBackoff(age))
+			_, err = e.w.RunOnce(ctx)
+			require.NoError(t, err)
+			e.clk.advance(-app.PendingBackoff(age))
+		}
+	})
+
+	t.Run("still pending after 24h logs an error and never fails", func(t *testing.T) {
+		e := newPendingEnv(t)
+		e.sp.query = app.RefundObserved{State: app.RefundPending, ProviderRefundRef: "re_old"}
+		pid, _, _ := e.refund(t, "re_old", 25*time.Hour)
+		for i := 0; i < 5; i++ {
+			_, err := e.w.RunOnce(ctx)
+			require.NoError(t, err)
+			e.clk.advance(time.Hour)
+		}
+		assert.Equal(t, "PENDING", e.row(t, pid).Status)
+		assert.Contains(t, e.log.String(), "level=ERROR")
+		assert.Contains(t, e.log.String(), "refund still pending")
+	})
+
+	t.Run("a young pending refund does not log an error", func(t *testing.T) {
+		e := newPendingEnv(t)
+		e.sp.query = app.RefundObserved{State: app.RefundPending, ProviderRefundRef: "re_new"}
+		e.refund(t, "re_new", time.Minute)
+		_, err := e.w.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.NotContains(t, e.log.String(), "level=ERROR")
+	})
+}
+
+func TestRefundWorkerAccepted(t *testing.T) {
+	t.Run("unavailable on an accepted refund is not an attempt", func(t *testing.T) {
+		e := newPendingEnv(t)
+		e.sp.queryErr = app.ErrProviderUnavailable
+		pid, _, _ := e.refund(t, "re_acc", 2*time.Minute)
+		for i := 0; i < 6; i++ { // more polls than maxAttempts
+			_, err := e.w.RunOnce(ctx)
+			require.NoError(t, err)
+			r := e.row(t, pid)
+			assert.Equal(t, "PENDING", r.Status)
+			assert.Equal(t, 0, r.Attempts)
+			assert.True(t, r.Next.After(e.clk.now()))
+			e.clk.advance(11 * time.Minute)
+		}
+		assert.Empty(t, eventsOf(e.outbox(t, mustCheckout(t, e.env, pid)), "RefundFailed"))
+	})
+
+	t.Run("a provider-reported failure on an accepted refund fails it at once", func(t *testing.T) {
+		e := newPendingEnv(t)
+		e.sp.query = app.RefundObserved{State: app.RefundFailed, Reason: "declined"}
+		pid, _, co := e.refund(t, "re_acc", time.Minute)
+		_, err := e.w.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "FAILED", e.row(t, pid).Status)
+		evs := eventsOf(e.outbox(t, co), "RefundFailed")
+		require.Len(t, evs, 1)
+		validate(t, "refund-failed.schema.json", evs[0].Raw)
+	})
+
+	t.Run("without a ref, failed and unavailable both count toward the limit", func(t *testing.T) {
+		e := newPendingEnv(t)
+		e.sp.refundErr = app.ErrProviderUnavailable
+		pid, _, _ := e.refund(t, "", time.Minute)
+		_, err := e.w.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 1, e.row(t, pid).Attempts)
+		e.sp.refundErr = nil
+		e.sp.refund = app.RefundObserved{State: app.RefundFailed, Reason: "no"}
+		e.clk.advance(time.Minute)
+		_, err = e.w.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 2, e.row(t, pid).Attempts)
+	})
+}
+
+func mustCheckout(t *testing.T, e env, paymentID string) string {
+	var co string
+	require.NoError(t, e.pool.QueryRow(ctx, `SELECT checkout_id::text FROM payments WHERE id=$1`, paymentID).Scan(&co))
+	return co
+}
+
+func TestRefundWorkerHint(t *testing.T) {
+	t.Run("provider unavailable is returned and consumes no attempt", func(t *testing.T) {
+		e := newPendingEnv(t)
+		e.sp.queryErr = app.ErrProviderUnavailable
+		pid, _, _ := e.refund(t, "re_h", time.Minute)
+		before := e.row(t, pid)
+		err := e.w.ApplyRefundObserved(ctx, "fake", app.RefundHint{ProviderRefundRef: "re_h"})
+		require.ErrorIs(t, err, app.ErrProviderUnavailable)
+		after := e.row(t, pid)
+		assert.Equal(t, before, after)
+	})
+
+	t.Run("the hint adopts the signed ref when the row has none", func(t *testing.T) {
+		e := newPendingEnv(t)
+		e.sp.query = app.RefundObserved{State: app.RefundPending}
+		pid, rid, _ := e.refund(t, "", time.Minute)
+		require.NoError(t, e.w.ApplyRefundObserved(ctx, "fake", app.RefundHint{ProviderRefundRef: "re_signed", RefundID: rid}))
+		r := e.row(t, pid)
+		assert.Equal(t, "re_signed", r.Ref)
+		assert.Equal(t, "PENDING", r.Status)
+		assert.Equal(t, "re_signed", e.sp.queriedRef, "QueryRefund is called with the adopted ref")
+	})
+
+	t.Run("a hint for another provider adopts nothing", func(t *testing.T) {
+		e := newPendingEnv(t)
+		pid, rid, _ := e.refund(t, "", time.Minute)
+		require.NoError(t, e.w.ApplyRefundObserved(ctx, "stripe", app.RefundHint{ProviderRefundRef: "re_x", RefundID: rid}))
+		assert.Equal(t, "", e.row(t, pid).Ref)
 	})
 }

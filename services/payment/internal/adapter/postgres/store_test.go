@@ -246,6 +246,8 @@ func TestStore(t *testing.T) {
 		got, err := s.GetRefundByProviderRef(ctx, "fake", r.ProviderRefundRef)
 		require.NoError(t, err)
 		r.CheckoutID, r.Provider = p.CheckoutID, "fake"
+		assert.WithinDuration(t, time.Now(), got.CreatedAt, time.Minute, "created_at is read back")
+		r.CreatedAt = got.CreatedAt
 		assert.Equal(t, r, got)
 		_, err = s.GetRefundByProviderRef(ctx, "fake", "nope")
 		assert.ErrorIs(t, err, app.ErrNotFound)

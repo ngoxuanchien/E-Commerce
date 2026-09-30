@@ -10,6 +10,13 @@ import (
 	"github.com/google/uuid"
 )
 
+type FakeRefund struct {
+	RefundID  string
+	PaymentID uuid.UUID
+	Amount    int64
+	CreatedAt time.Time
+}
+
 type FakeSession struct {
 	PaymentID uuid.UUID
 	Outcome   *string

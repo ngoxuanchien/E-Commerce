@@ -92,7 +92,7 @@ func (s *Store) GetRefundByProviderRef(ctx context.Context, provider, ref string
 		return app.Refund{}, fmt.Errorf("get refund by provider ref: %w", err)
 	}
 	return toRefund(r.ID, r.PaymentID, r.OrderID, r.Amount, r.Status, r.ProviderRefundRef, r.Attempts,
-		r.NextAttemptAt, r.LastError, r.CheckoutID, r.Provider), nil
+		r.NextAttemptAt, r.LastError, r.CreatedAt, r.CheckoutID, r.Provider), nil
 }
 
 func (s *Store) PurgeProviderEventsBefore(ctx context.Context, t time.Time) (int64, error) {

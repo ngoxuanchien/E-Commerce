@@ -219,7 +219,7 @@ func (t *txStore) ClaimDueRefunds(ctx context.Context, now time.Time, limit int)
 	out := make([]app.Refund, len(rows))
 	for i, r := range rows {
 		out[i] = toRefund(r.ID, r.PaymentID, r.OrderID, r.Amount, r.Status, r.ProviderRefundRef, r.Attempts,
-			r.NextAttemptAt, r.LastError, r.CheckoutID, r.Provider)
+			r.NextAttemptAt, r.LastError, r.CreatedAt, r.CheckoutID, r.Provider)
 	}
 	return out, nil
 }
@@ -237,7 +237,7 @@ func (t *txStore) LockRefund(ctx context.Context, id string) (app.Refund, error)
 		return app.Refund{}, fmt.Errorf("lock refund: %w", err)
 	}
 	return toRefund(r.ID, r.PaymentID, r.OrderID, r.Amount, r.Status, r.ProviderRefundRef, r.Attempts,
-		r.NextAttemptAt, r.LastError, r.CheckoutID, r.Provider), nil
+		r.NextAttemptAt, r.LastError, r.CreatedAt, r.CheckoutID, r.Provider), nil
 }
 
 func (t *txStore) UpdateRefund(ctx context.Context, r app.Refund) error {

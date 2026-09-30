@@ -14,7 +14,7 @@ import (
 
 const claimDueRefunds = `-- name: ClaimDueRefunds :many
 SELECT r.id, r.payment_id, r.order_id, r.amount, r.status, r.provider_refund_ref, r.attempts,
-       r.next_attempt_at, r.last_error, p.checkout_id, p.provider
+       r.next_attempt_at, r.last_error, r.created_at, p.checkout_id, p.provider
 FROM refunds r JOIN payments p ON p.id = r.payment_id
 WHERE r.status = 'PENDING' AND r.next_attempt_at <= $1
 ORDER BY r.next_attempt_at, r.id
@@ -37,6 +37,7 @@ type ClaimDueRefundsRow struct {
 	Attempts          int32
 	NextAttemptAt     time.Time
 	LastError         *string
+	CreatedAt         time.Time
 	CheckoutID        uuid.UUID
 	Provider          string
 }
@@ -60,6 +61,7 @@ func (q *Queries) ClaimDueRefunds(ctx context.Context, arg ClaimDueRefundsParams
 			&i.Attempts,
 			&i.NextAttemptAt,
 			&i.LastError,
+			&i.CreatedAt,
 			&i.CheckoutID,
 			&i.Provider,
 		); err != nil {
@@ -75,7 +77,7 @@ func (q *Queries) ClaimDueRefunds(ctx context.Context, arg ClaimDueRefundsParams
 
 const getRefundByProviderRef = `-- name: GetRefundByProviderRef :one
 SELECT r.id, r.payment_id, r.order_id, r.amount, r.status, r.provider_refund_ref, r.attempts,
-       r.next_attempt_at, r.last_error, p.checkout_id, p.provider
+       r.next_attempt_at, r.last_error, r.created_at, p.checkout_id, p.provider
 FROM refunds r JOIN payments p ON p.id = r.payment_id
 WHERE p.provider = $1 AND r.provider_refund_ref = $2
 `
@@ -95,6 +97,7 @@ type GetRefundByProviderRefRow struct {
 	Attempts          int32
 	NextAttemptAt     time.Time
 	LastError         *string
+	CreatedAt         time.Time
 	CheckoutID        uuid.UUID
 	Provider          string
 }
@@ -112,6 +115,7 @@ func (q *Queries) GetRefundByProviderRef(ctx context.Context, arg GetRefundByPro
 		&i.Attempts,
 		&i.NextAttemptAt,
 		&i.LastError,
+		&i.CreatedAt,
 		&i.CheckoutID,
 		&i.Provider,
 	)
@@ -159,7 +163,7 @@ func (q *Queries) InsertRefund(ctx context.Context, arg InsertRefundParams) (int
 
 const lockRefund = `-- name: LockRefund :one
 SELECT r.id, r.payment_id, r.order_id, r.amount, r.status, r.provider_refund_ref, r.attempts,
-       r.next_attempt_at, r.last_error, p.checkout_id, p.provider
+       r.next_attempt_at, r.last_error, r.created_at, p.checkout_id, p.provider
 FROM refunds r JOIN payments p ON p.id = r.payment_id
 WHERE r.id = $1
 FOR UPDATE OF r
@@ -175,6 +179,7 @@ type LockRefundRow struct {
 	Attempts          int32
 	NextAttemptAt     time.Time
 	LastError         *string
+	CreatedAt         time.Time
 	CheckoutID        uuid.UUID
 	Provider          string
 }
@@ -192,6 +197,7 @@ func (q *Queries) LockRefund(ctx context.Context, id uuid.UUID) (LockRefundRow, 
 		&i.Attempts,
 		&i.NextAttemptAt,
 		&i.LastError,
+		&i.CreatedAt,
 		&i.CheckoutID,
 		&i.Provider,
 	)

@@ -33,6 +33,7 @@ type Refund struct {
 	Attempts                            int
 	NextAttemptAt                       time.Time
 	LastError                           string
+	CreatedAt                           time.Time
 }
 
 // Store is the read side plus the transaction entry point of payment persistence.

@@ -235,6 +235,12 @@ func TestRefund(t *testing.T) {
 	require.NoError(t, h.pool.QueryRow(ctx, `SELECT refunded FROM fake_sessions WHERE payment_id=$1`, pay.ID).Scan(&refunded))
 	assert.EqualValues(t, 40_000, refunded)
 
+	again, err := p.Refund(ctx, app.RefundInput{RefundID: "rf1", Payment: pay, Amount: 40_000})
+	require.NoError(t, err)
+	assert.Equal(t, r, again)
+	require.NoError(t, h.pool.QueryRow(ctx, `SELECT refunded FROM fake_sessions WHERE payment_id=$1`, pay.ID).Scan(&refunded))
+	assert.EqualValues(t, 40_000, refunded, "a retried refund id must not refund twice")
+
 	q, err := p.QueryRefund(ctx, app.Refund{ID: "rf1", PaymentID: pay.ID, Amount: 40_000})
 	require.NoError(t, err)
 	assert.Equal(t, app.RefundObserved{State: app.RefundSucceeded, ProviderRefundRef: "fake_rf_rf1"}, q)
