@@ -129,8 +129,11 @@ func (p *Provider) noSession(pay domain.Payment) domain.Observed {
 
 // Query retrieves the payment's Checkout Session with payment_intent expanded and maps it:
 //   - complete + paid → Succeeded(amount_total, PaymentIntent id);
-//   - complete + unpaid (an async payment method still settling) → Pending;
-//   - expired → Expired; open → Pending;
+//   - complete + unpaid (an async payment method) → by the PaymentIntent: requires_payment_method or
+//     canceled → Failed(stripe_async_failed), the async_payment_failed outcome; processing or
+//     anything else → Pending (still settling);
+//   - expired → Expired; open → Pending, even after a declined attempt: the buyer can retry on the
+//     hosted page;
 //   - no session (never created, or unknown to Stripe) → Pending before ExpiresAt, Expired after.
 func (p *Provider) Query(ctx context.Context, pay domain.Payment) (domain.Observed, error) {
 	if pay.ProviderRef == "" {
@@ -151,7 +154,7 @@ func (p *Provider) Query(ctx context.Context, pay domain.Payment) (domain.Observ
 	switch s.Status {
 	case stripego.CheckoutSessionStatusComplete:
 		if s.PaymentStatus != stripego.CheckoutSessionPaymentStatusPaid {
-			return domain.Observed{State: domain.ObservedPending}, nil
+			return asyncState(s.PaymentIntent), nil
 		}
 		if !strings.EqualFold(string(s.Currency), currencyVND) {
 			return domain.Observed{}, fmt.Errorf("stripe query: session %s was paid in %q, not vnd", s.ID, s.Currency)
@@ -169,6 +172,22 @@ func (p *Provider) Query(ctx context.Context, pay domain.Payment) (domain.Observ
 	default: // open
 		return domain.Observed{State: domain.ObservedPending}, nil
 	}
+}
+
+// reasonAsyncFailed is the failure reason of a complete session whose async payment failed.
+const reasonAsyncFailed = "stripe_async_failed"
+
+// asyncState maps a complete + unpaid session by its PaymentIntent. After an async payment fails,
+// Stripe moves the PaymentIntent back to requires_payment_method (or canceled); the session cannot
+// be paid again, so the payment is Failed.
+func asyncState(pi *stripego.PaymentIntent) domain.Observed {
+	if pi != nil {
+		switch pi.Status {
+		case stripego.PaymentIntentStatusRequiresPaymentMethod, stripego.PaymentIntentStatusCanceled:
+			return domain.Observed{State: domain.ObservedFailed, Reason: reasonAsyncFailed}
+		}
+	}
+	return domain.Observed{State: domain.ObservedPending}
 }
 
 // Cancel expires the Checkout Session. When Stripe refuses because the session is no longer open,

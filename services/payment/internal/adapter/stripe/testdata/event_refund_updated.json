@@ -10,12 +10,21 @@
       "amount": 350000,
       "currency": "vnd",
       "payment_intent": "pi_3QxYzAbCdEfGhIjK0aBcDeFg",
-      "status": "succeeded"
+      "status": "succeeded",
+      "metadata": {
+        "refund_id": "0192f0c1-ffff-7000-8000-00000000000a",
+        "payment_id": "0192f0c1-a2b3-7c4d-8e9f-a0b1c2d3e4f5"
+      }
     },
-    "previous_attributes": {"status": "pending"}
+    "previous_attributes": {
+      "status": "pending"
+    }
   },
   "livemode": false,
   "pending_webhooks": 1,
-  "request": {"id": null, "idempotency_key": null},
+  "request": {
+    "id": null,
+    "idempotency_key": null
+  },
   "type": "refund.updated"
 }

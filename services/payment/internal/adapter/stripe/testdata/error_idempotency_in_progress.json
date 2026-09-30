@@ -1,0 +1,6 @@
+{
+  "error": {
+    "message": "There is currently another in-progress request using this Stripe token (probably from a retry). Please retry this request later.",
+    "type": "idempotency_error"
+  }
+}

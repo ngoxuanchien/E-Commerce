@@ -15,7 +15,15 @@
       "refunds": {
         "object": "list",
         "data": [
-          {"id": "re_3QxYzAbCdEfGhIjK0pQrStUv", "object": "refund", "amount": 350000, "status": "succeeded"}
+          {
+            "id": "re_3QxYzAbCdEfGhIjK0pQrStUv",
+            "object": "refund",
+            "amount": 350000,
+            "status": "succeeded",
+            "metadata": {
+              "refund_id": "0192f0c1-ffff-7000-8000-00000000000a"
+            }
+          }
         ],
         "has_more": false,
         "url": "/v1/charges/ch_3QxYzAbCdEfGhIjK0hIjKlMn/refunds"
@@ -24,6 +32,9 @@
   },
   "livemode": false,
   "pending_webhooks": 1,
-  "request": {"id": null, "idempotency_key": null},
+  "request": {
+    "id": null,
+    "idempotency_key": null
+  },
   "type": "charge.refunded"
 }

@@ -23,12 +23,22 @@ import (
 var bg = context.Background()
 
 const (
-	testSecretKey     = "sk_test_51QxYzAbCdEfGhIjKstub"
+	testSecretKey     = "sk_test_fake_payment_svc"
 	testWebhookSecret = "whsec_test_5f2b8c1d9e7a4b3c"
 	testSessionID     = "cs_test_a1B2c3D4e5F6g7H8i9J0"
 	testIntentID      = "pi_3QxYzAbCdEfGhIjK0aBcDeFg"
 	testRefundRef     = "re_3QxYzAbCdEfGhIjK0pQrStUv"
+	testRefundID      = "0192f0c1-ffff-7000-8000-00000000000a"
 )
+
+// sessionIntent is the recorded PaymentIntent that goes with each session fixture when a Retrieve
+// expands payment_intent: paid → succeeded, unpaid and settling → processing, async failure →
+// requires_payment_method.
+var sessionIntent = map[string]string{
+	"session_complete_paid":   "payment_intent",
+	"session_complete_unpaid": "payment_intent_processing",
+	"session_async_failed":    "payment_intent_requires_payment_method",
+}
 
 // Stripe API operations the stub recognises.
 const (
@@ -40,11 +50,13 @@ const (
 )
 
 // reply is what the stub answers for one operation: a recorded fixture (testdata/<fixture>.json),
-// an HTTP status (0 → 200) and top-level fields to override in the fixture.
+// an HTTP status (0 → 200), top-level fields to override in the fixture and, for a session Retrieve,
+// the PaymentIntent fixture to inline ("" → sessionIntent[fixture]).
 type reply struct {
 	fixture  string
 	status   int
 	override map[string]any
+	intent   string
 }
 
 // request is one call the stub received.
@@ -147,10 +159,21 @@ func (s *apiStub) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	// Retrieve with expand[]=payment_intent inlines the recorded PaymentIntent, as Stripe does.
 	if pi, isID := body["payment_intent"].(string); isID && op == opRetrieveSession && r.Form.Get("expand[0]") == "payment_intent" {
-		intent := loadFixture(s.t, "payment_intent")
+		name := rep.intent
+		if name == "" {
+			name = sessionIntent[rep.fixture]
+		}
+		if name == "" {
+			s.t.Errorf("stub: no PaymentIntent fixture for %s", rep.fixture)
+			name = "payment_intent"
+		}
+		intent := loadFixture(s.t, name)
 		intent["id"] = pi
 		if amt, ok := body["amount_total"]; ok {
-			intent["amount"], intent["amount_received"] = amt, amt
+			intent["amount"] = amt
+			if intent["status"] == "succeeded" {
+				intent["amount_received"] = amt
+			}
 		}
 		body["payment_intent"] = intent
 	}
@@ -192,7 +215,7 @@ func event(t *testing.T, fixture, eventID, sessionID, paymentID string) []byte {
 	if sessionID != "" {
 		obj["id"] = sessionID
 	}
-	if md, ok := obj["metadata"].(map[string]any); ok {
+	if md, ok := obj["metadata"].(map[string]any); ok && obj["object"] == "checkout.session" {
 		if paymentID == "" {
 			delete(obj, "metadata")
 		} else {

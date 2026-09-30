@@ -2,6 +2,7 @@ package stripe_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -88,6 +89,16 @@ func (e *cbEnv) outbox(p domain.Payment) int {
 	var n int
 	require.NoError(e.t, e.pool.QueryRow(bg, `SELECT count(*) FROM outbox WHERE msg_key = $1`, p.CheckoutID).Scan(&n))
 	return n
+}
+
+// outboxTypes lists the event_type of every outbox row for p's checkout, oldest first.
+func (e *cbEnv) outboxTypes(p domain.Payment) []string {
+	e.t.Helper()
+	var types []string
+	require.NoError(e.t, e.pool.QueryRow(bg,
+		`SELECT coalesce(array_agg(payload->>'event_type' ORDER BY created_at, id), '{}') FROM outbox WHERE msg_key = $1`,
+		p.CheckoutID).Scan(&types))
+	return types
 }
 
 func (e *cbEnv) deliver(body []byte) int {
@@ -229,18 +240,58 @@ func TestWebhookInternalErrorsAsk500(t *testing.T) {
 	assert.Equal(t, domain.StatusSucceeded, e.get(p.ID).Status)
 }
 
+// async_payment_failed resolves to FAILED (with one PaymentFailed) through the queried session:
+// complete + unpaid with the PaymentIntent back in requires_payment_method.
+func TestWebhookAsyncPaymentFailed(t *testing.T) {
+	e := newCBEnv(t)
+	p, session := e.payment(350_000)
+	e.serveSession("session_async_failed", p, session)
+	body := event(t, "event_checkout_session_async_payment_failed", "evt_"+uid(), session, p.ID)
+
+	require.Equal(t, http.StatusOK, e.deliver(body))
+	got := e.get(p.ID)
+	assert.Equal(t, domain.StatusFailed, got.Status)
+	assert.Equal(t, "stripe_async_failed", got.FailureReason)
+	assert.Equal(t, []string{"PaymentFailed"}, e.outboxTypes(p))
+
+	// A redelivery, or a later event for the same failure, emits nothing more.
+	require.Equal(t, http.StatusOK, e.deliver(body))
+	require.Equal(t, http.StatusOK, e.deliver(event(t, "event_checkout_session_async_payment_failed", "evt_"+uid(), session, p.ID)))
+	assert.Equal(t, []string{"PaymentFailed"}, e.outboxTypes(p))
+}
+
+func TestWebhookAsyncPaymentSucceeded(t *testing.T) {
+	e := newCBEnv(t)
+	p, session := e.payment(350_000)
+	e.serveSession("session_complete_paid", p, session)
+	require.Equal(t, http.StatusOK, e.deliver(event(t, "event_checkout_session_async_payment_succeeded", "evt_"+uid(), session, p.ID)))
+	assert.Equal(t, domain.StatusSucceeded, e.get(p.ID).Status)
+	assert.Equal(t, []string{"PaymentSucceeded"}, e.outboxTypes(p))
+}
+
 func TestWebhookRefundHint(t *testing.T) {
 	e := newCBEnv(t)
-	var got []string
-	e.cb.RefundHint = func(_ context.Context, ref string) error {
-		got = append(got, ref)
+	var got []stripe.RefundHintInput
+	e.cb.RefundHint = func(_ context.Context, in stripe.RefundHintInput) error {
+		got = append(got, in)
 		return nil
 	}
 	assert.Equal(t, http.StatusOK, e.deliver(event(t, "event_refund_updated", "evt_"+uid(), "", "")))
 	assert.Equal(t, http.StatusOK, e.deliver(event(t, "event_charge_refunded", "evt_"+uid(), "", "")))
-	assert.Equal(t, []string{testRefundRef, testRefundRef}, got)
+	want := stripe.RefundHintInput{ProviderRefundRef: testRefundRef, RefundID: testRefundID}
+	assert.Equal(t, []stripe.RefundHintInput{want, want}, got)
 
-	e.cb.RefundHint = func(context.Context, string) error { return errors.New("db down") }
+	// A dashboard refund carries no metadata.refund_id: the hint still gets the Stripe ref.
+	got = nil
+	ev := loadFixture(t, "event_refund_updated")
+	ev["id"] = "evt_" + uid()
+	delete(ev["data"].(map[string]any)["object"].(map[string]any), "metadata")
+	raw, err := json.Marshal(ev)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, e.deliver(raw))
+	assert.Equal(t, []stripe.RefundHintInput{{ProviderRefundRef: testRefundRef}}, got)
+
+	e.cb.RefundHint = func(context.Context, stripe.RefundHintInput) error { return errors.New("db down") }
 	assert.Equal(t, http.StatusInternalServerError, e.deliver(event(t, "event_refund_updated", "evt_"+uid(), "", "")))
 }
 

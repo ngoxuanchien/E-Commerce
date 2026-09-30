@@ -25,10 +25,21 @@ type Callbacks struct {
 	observer *app.Observer
 	logger   *slog.Logger
 
-	// RefundHint is the Task 8 hook for charge.refunded and refund.updated: it is called once per
-	// Stripe refund id (re_…) the event names, and should re-check that refund (QueryRefund). nil
-	// acknowledges refund events with 200 and does nothing. An error answers 500, so Stripe retries.
-	RefundHint func(ctx context.Context, providerRefundRef string) error
+	// RefundHint is the Task 8 hook for refund.updated (the primary source) and charge.refunded
+	// (best effort: recent API versions omit the charge's refunds list). It is called once per Stripe
+	// refund the event names and should re-check that refund (QueryRefund); the event itself is only
+	// a hint. nil acknowledges refund events with 200 and does nothing.
+	//
+	// It must return nil for a refund payment-svc does not know (one made from the Dashboard, or with
+	// no metadata.refund_id): an error answers 500 and Stripe keeps retrying for up to three days.
+	// Return an error only for a transient failure worth a retry.
+	RefundHint func(ctx context.Context, in RefundHintInput) error
+}
+
+// RefundHintInput names one refund from a Stripe event.
+type RefundHintInput struct {
+	ProviderRefundRef string // Stripe refund id (re_…)
+	RefundID          string // payment-svc refund id from metadata.refund_id, set by Refund; "" when absent
 }
 
 // NewCallbacks wires Callbacks; logger defaults to slog.Default().
@@ -111,38 +122,39 @@ func (c Callbacks) sessionEvent(ctx context.Context, ev stripego.Event) int {
 	return http.StatusOK
 }
 
-// refundEvent passes the refund ids an event names to RefundHint: the refund itself for
-// refund.updated, and the charge's embedded refunds list (when present) for charge.refunded.
+// refundEvent passes the refunds an event names to RefundHint: the refund itself for refund.updated,
+// and the charge's embedded refunds list (when present) for charge.refunded.
 func (c Callbacks) refundEvent(ctx context.Context, ev stripego.Event) int {
 	if c.RefundHint == nil || ev.Data == nil {
 		return http.StatusOK
 	}
+	type refundObj struct {
+		ID       string            `json:"id"`
+		Metadata map[string]string `json:"metadata"`
+	}
 	var obj struct {
-		ID      string `json:"id"`
+		refundObj
 		Refunds *struct {
-			Data []struct {
-				ID string `json:"id"`
-			} `json:"data"`
+			Data []refundObj `json:"data"`
 		} `json:"refunds"`
 	}
 	if json.Unmarshal(ev.Data.Raw, &obj) != nil {
 		c.logger.ErrorContext(ctx, "stripe webhook: unreadable refund object", "event_id", ev.ID)
 		return http.StatusOK
 	}
-	var refs []string
+	var refunds []refundObj
 	if ev.Type == stripego.EventTypeRefundUpdated {
-		refs = append(refs, obj.ID)
+		refunds = append(refunds, obj.refundObj)
 	} else if obj.Refunds != nil {
-		for _, r := range obj.Refunds.Data {
-			refs = append(refs, r.ID)
-		}
+		refunds = obj.Refunds.Data
 	}
-	for _, ref := range refs {
-		if ref == "" {
+	for _, r := range refunds {
+		if r.ID == "" {
 			continue
 		}
-		if err := c.RefundHint(ctx, ref); err != nil {
-			c.logger.ErrorContext(ctx, "stripe webhook: refund hint", "event_id", ev.ID, "refund_ref", ref, "error", err)
+		in := RefundHintInput{ProviderRefundRef: r.ID, RefundID: r.Metadata["refund_id"]}
+		if err := c.RefundHint(ctx, in); err != nil {
+			c.logger.ErrorContext(ctx, "stripe webhook: refund hint", "event_id", ev.ID, "refund_ref", r.ID, "error", err)
 			return http.StatusInternalServerError
 		}
 	}

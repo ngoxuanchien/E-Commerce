@@ -98,6 +98,7 @@ func TestCreateSessionErrors(t *testing.T) {
 		{"500", http.StatusInternalServerError, "error_api", true},
 		{"503", http.StatusServiceUnavailable, "error_api", true},
 		{"429", http.StatusTooManyRequests, "error_api", true},
+		{"409", http.StatusConflict, "error_idempotency_in_progress", true},
 		{"400", http.StatusBadRequest, "error_session_not_open", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -125,7 +126,8 @@ func TestQueryMapsSessionStates(t *testing.T) {
 	}{
 		{"session_open", domain.Observed{State: domain.ObservedPending}},
 		{"session_complete_paid", domain.Observed{State: domain.ObservedSucceeded, Amount: 350_000, ProviderTxnID: testIntentID}},
-		{"session_complete_unpaid", domain.Observed{State: domain.ObservedPending}}, // async payment in flight
+		{"session_complete_unpaid", domain.Observed{State: domain.ObservedPending}},                            // async payment settling (PI processing)
+		{"session_async_failed", domain.Observed{State: domain.ObservedFailed, Reason: "stripe_async_failed"}}, // PI requires_payment_method
 		{"session_expired", domain.Observed{State: domain.ObservedExpired}},
 	} {
 		t.Run(tc.fixture, func(t *testing.T) {
@@ -138,6 +140,39 @@ func TestQueryMapsSessionStates(t *testing.T) {
 			require.Len(t, calls, 1)
 			assert.Equal(t, "/v1/checkout/sessions/"+testSessionID, calls[0].path)
 			assert.Equal(t, "payment_intent", calls[0].form.Get("expand[0]"))
+		})
+	}
+}
+
+// Only a complete+unpaid session consults the PaymentIntent: requires_payment_method and canceled mean
+// the async payment failed; processing or anything else is still settling. An open session stays
+// Pending even with a declined attempt, because the buyer can retry on the hosted page.
+func TestQueryAsyncPaymentIntentStates(t *testing.T) {
+	failed := domain.Observed{State: domain.ObservedFailed, Reason: "stripe_async_failed"}
+	pending := domain.Observed{State: domain.ObservedPending}
+	for _, tc := range []struct {
+		name, fixture string
+		intent        any // a PaymentIntent fixture name (inlined by the stub) or an inline object
+		want          domain.Observed
+	}{
+		{"requires_payment_method", "session_async_failed", "payment_intent_requires_payment_method", failed},
+		{"canceled", "session_async_failed", map[string]any{"id": testIntentID, "object": "payment_intent", "status": "canceled"}, failed},
+		{"processing", "session_complete_unpaid", "payment_intent_processing", pending},
+		{"requires_action", "session_complete_unpaid", map[string]any{"id": testIntentID, "object": "payment_intent", "status": "requires_action"}, pending},
+		{"open with a declined attempt", "session_open", "payment_intent_requires_payment_method", pending},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, api := newProvider(t)
+			r := reply{fixture: tc.fixture}
+			if name, ok := tc.intent.(string); ok {
+				r.override, r.intent = map[string]any{"payment_intent": testIntentID}, name
+			} else {
+				r.override = map[string]any{"payment_intent": tc.intent}
+			}
+			api.set(opRetrieveSession, r)
+			got, err := p.Query(bg, stripePayment(testSessionID))
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }
@@ -264,6 +299,7 @@ func TestRefund(t *testing.T) {
 			assert.Equal(t, "0192f0c1-ffff-7000-8000-00000000000a", calls[0].header.Get("Idempotency-Key"))
 			assert.Equal(t, testIntentID, calls[0].form.Get("payment_intent"))
 			assert.Equal(t, "120000", calls[0].form.Get("amount"))
+			assert.Equal(t, "0192f0c1-ffff-7000-8000-00000000000a", calls[0].form.Get("metadata[refund_id]"))
 		})
 	}
 	t.Run("5xx", func(t *testing.T) {
