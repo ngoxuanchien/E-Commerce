@@ -4,7 +4,8 @@
 // created_at is the claim. Claim inserts a row, or takes over an orphaned one:
 // same request hash, not completed (status_code IS NULL), and claimed before staleBefore. Complete and
 // Release act only while the caller's claim is still the row's claim, so a
-// run whose key was reclaimed can neither overwrite nor free it.
+// run whose key was reclaimed can neither overwrite nor free it. Release
+// never frees a completed key.
 //
 // SchemaSQL uses CREATE TABLE IF NOT EXISTS, which does nothing on a database
 // that already has an idempotency_keys table of another shape (order_db's P1
@@ -125,11 +126,15 @@ func Complete(ctx context.Context, db DB, scope, userID, key string, claimedAt t
 	return nil
 }
 
-// Release frees the key after a transient failure, if claimedAt is still its claim.
+// Release frees the key after a transient failure, if claimedAt is still its
+// claim and the key is not completed. A completed key is kept: the caller may
+// have seen an error although its transaction committed (e.g. the connection
+// dropped during COMMIT), and a retry must replay the stored response.
 func Release(ctx context.Context, db DB, scope, userID, key string, claimedAt time.Time) error {
 	claimedAt = claimedAt.UTC().Truncate(time.Microsecond)
 	if _, err := db.Exec(ctx, `DELETE FROM idempotency_keys
-		WHERE scope = $1 AND user_id = $2 AND key = $3 AND created_at = $4`, scope, userID, key, claimedAt); err != nil {
+		WHERE scope = $1 AND user_id = $2 AND key = $3 AND created_at = $4
+		  AND status_code IS NULL`, scope, userID, key, claimedAt); err != nil {
 		return fmt.Errorf("idemkey: release: %w", err)
 	}
 	return nil
