@@ -123,7 +123,7 @@ COD and every P1 idempotency and sweeper behaviour stay unchanged.
 - Produces (app.Tx): `SavePaymentStatus(ctx context.Context, o domain.Order, prevVersion int) error`. It writes the mutable columns with a version check and bumps the version. It adds no history row. It returns `ErrConcurrentUpdate` when the version moved on.
 - `SaveTransition` also persists `payment_status`, `payment_deadline` and `delivered_at`.
 
-- [ ] **Step 1: Write the migrations**
+- [x] **Step 1: Write the migrations**
 
 `000005_p2_payment.up.sql`:
 ```sql
@@ -158,7 +158,7 @@ A comment says that down fails if non-COD rows exist, which is intended.
 
 `000006_processed_events.up.sql` holds exactly the bytes of `pkg/inbox/schema.sql`: copy the file. `000006_processed_events.down.sql` is `DROP TABLE IF EXISTS processed_events;`.
 
-- [ ] **Step 2: Extend the migration tests**
+- [x] **Step 2: Extend the migration tests**
 
 In `migrations_test.go`:
 - add `processed_events` to the table list of `TestMigrationsApplyCleanly`;
@@ -173,7 +173,7 @@ In `migrations_test.go`:
 
 Run: `go test ./migrations/ -count=1`. Expected: FAIL before the migration files exist, PASS after.
 
-- [ ] **Step 3: Domain fields**
+- [x] **Step 3: Domain fields**
 
 In `status.go`:
 - add `StatusAwaitingPayment` to the consts and to `Statuses` right after `StatusPending`;
@@ -183,7 +183,7 @@ In `order.go`, add the six fields to `Order` with doc comments.
 
 In `transition_test.go`, update `require.Len(t, domain.Statuses, 8, …)` and the final count to `8*6*3`. Task 2 adds the legal moves; for now every `AWAITING_PAYMENT` combination is illegal.
 
-- [ ] **Step 4: Queries**
+- [x] **Step 4: Queries**
 
 In `queries/orders.sql`, extend `InsertOrder` with `shop_slug, payment_status, payment_deadline, commission_rate_bps, commission_amount, delivered_at` ($17–$22). Then replace `UpdateOrderStatus` with:
 ```sql
@@ -196,7 +196,7 @@ WHERE id = @id AND version = @version;
 ```
 Run `../../../E-Commerce/bin/sqlc generate` from `services/order`.
 
-- [ ] **Step 5: Adapter**
+- [x] **Step 5: Adapter**
 
 - `convert.go/toDomainOrder`: map the new columns (`PaymentStatus: domain.PaymentStatus(r.PaymentStatus)`, `ShopSlug: r.ShopSlug`, `CommissionRateBps: r.CommissionRateBps`, `CommissionAmount: r.CommissionAmount`, and the two times converted with `.UTC()` when non-nil).
 - `tx.go/InsertOrder`: pass the new fields.
@@ -222,7 +222,7 @@ Run `../../../E-Commerce/bin/sqlc generate` from `services/order`.
 - `SaveTransition` calls `t.update` and then inserts the last history entry, as before.
 - Add `SavePaymentStatus` to the `app.Tx` interface with the doc from **Interfaces**.
 
-- [ ] **Step 6: Store round-trip test**
+- [x] **Step 6: Store round-trip test**
 
 In `store_test.go`, add `t.Run("P2 fields round-trip", …)`:
 - insert an order with `ShopSlug "shop-a"`, `PaymentMethod "VNPAY"`, `PaymentStatus UNPAID`, `CommissionRateBps 500`, `CommissionAmount 1000` and `Status PENDING`;
@@ -233,7 +233,7 @@ In `store_test.go`, add `t.Run("P2 fields round-trip", …)`:
 
 Run: `go test ./internal/adapter/postgres/ ./migrations/ ./internal/domain/ -count=1`. Expected: PASS. Then `go build ./... && go test -short ./...`. Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 ```bash
 git add services/order
 git commit -m "feat(order): P2 schema — payment, commission, delivery and shop slug columns"
