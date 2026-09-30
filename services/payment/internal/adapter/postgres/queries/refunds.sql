@@ -10,6 +10,13 @@ SELECT r.id, r.payment_id, r.order_id, r.amount, r.status, r.provider_refund_ref
 FROM refunds r JOIN payments p ON p.id = r.payment_id
 WHERE p.provider = $1 AND r.provider_refund_ref = $2;
 
+-- name: LockRefund :one
+SELECT r.id, r.payment_id, r.order_id, r.amount, r.status, r.provider_refund_ref, r.attempts,
+       r.next_attempt_at, r.last_error, p.checkout_id, p.provider
+FROM refunds r JOIN payments p ON p.id = r.payment_id
+WHERE r.id = $1
+FOR UPDATE OF r;
+
 -- name: ClaimDueRefunds :many
 SELECT r.id, r.payment_id, r.order_id, r.amount, r.status, r.provider_refund_ref, r.attempts,
        r.next_attempt_at, r.last_error, p.checkout_id, p.provider

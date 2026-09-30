@@ -224,6 +224,22 @@ func (t *txStore) ClaimDueRefunds(ctx context.Context, now time.Time, limit int)
 	return out, nil
 }
 
+func (t *txStore) LockRefund(ctx context.Context, id string) (app.Refund, error) {
+	rid, err := uuid.Parse(id)
+	if err != nil {
+		return app.Refund{}, app.ErrNotFound
+	}
+	r, err := t.q.LockRefund(ctx, rid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return app.Refund{}, app.ErrNotFound
+	}
+	if err != nil {
+		return app.Refund{}, fmt.Errorf("lock refund: %w", err)
+	}
+	return toRefund(r.ID, r.PaymentID, r.OrderID, r.Amount, r.Status, r.ProviderRefundRef, r.Attempts,
+		r.NextAttemptAt, r.LastError, r.CheckoutID, r.Provider), nil
+}
+
 func (t *txStore) UpdateRefund(ctx context.Context, r app.Refund) error {
 	rid, err := mustParseUUID(r.ID)
 	if err != nil {

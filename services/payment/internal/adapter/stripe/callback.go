@@ -191,3 +191,15 @@ func (c Callbacks) Return(ctx context.Context, sessionID string) (paymentID stri
 	}
 	return p.ID
 }
+
+// RefundObserver is the refund worker's provider-hint path (app.RefundWorker).
+type RefundObserver interface {
+	ApplyRefundObserved(ctx context.Context, provider string, in app.RefundHint) error
+}
+
+// RefundHintFor returns the Callbacks.RefundHint that re-checks a refund through o.
+func RefundHintFor(o RefundObserver) func(ctx context.Context, in RefundHintInput) error {
+	return func(ctx context.Context, in RefundHintInput) error {
+		return o.ApplyRefundObserved(ctx, "stripe", app.RefundHint{ProviderRefundRef: in.ProviderRefundRef, RefundID: in.RefundID})
+	}
+}

@@ -157,6 +157,47 @@ func (q *Queries) InsertRefund(ctx context.Context, arg InsertRefundParams) (int
 	return result.RowsAffected(), nil
 }
 
+const lockRefund = `-- name: LockRefund :one
+SELECT r.id, r.payment_id, r.order_id, r.amount, r.status, r.provider_refund_ref, r.attempts,
+       r.next_attempt_at, r.last_error, p.checkout_id, p.provider
+FROM refunds r JOIN payments p ON p.id = r.payment_id
+WHERE r.id = $1
+FOR UPDATE OF r
+`
+
+type LockRefundRow struct {
+	ID                uuid.UUID
+	PaymentID         uuid.UUID
+	OrderID           *uuid.UUID
+	Amount            int64
+	Status            string
+	ProviderRefundRef *string
+	Attempts          int32
+	NextAttemptAt     time.Time
+	LastError         *string
+	CheckoutID        uuid.UUID
+	Provider          string
+}
+
+func (q *Queries) LockRefund(ctx context.Context, id uuid.UUID) (LockRefundRow, error) {
+	row := q.db.QueryRow(ctx, lockRefund, id)
+	var i LockRefundRow
+	err := row.Scan(
+		&i.ID,
+		&i.PaymentID,
+		&i.OrderID,
+		&i.Amount,
+		&i.Status,
+		&i.ProviderRefundRef,
+		&i.Attempts,
+		&i.NextAttemptAt,
+		&i.LastError,
+		&i.CheckoutID,
+		&i.Provider,
+	)
+	return i, err
+}
+
 const updateRefund = `-- name: UpdateRefund :execrows
 UPDATE refunds
 SET status = $1, provider_refund_ref = $2, attempts = $3,

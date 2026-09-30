@@ -60,6 +60,7 @@ type Tx interface {
 	CapturedAllocationFor(ctx context.Context, orderID string) (p domain.Payment, a Allocation, ok bool, err error)
 	InsertRefund(ctx context.Context, r Refund) (created bool, err error)            // ON CONFLICT DO NOTHING on both uniques
 	ClaimDueRefunds(ctx context.Context, now time.Time, limit int) ([]Refund, error) // PENDING, next_attempt_at <= now, FOR UPDATE SKIP LOCKED
+	LockRefund(ctx context.Context, id string) (Refund, error)                       // SELECT … FOR UPDATE; ErrNotFound
 	UpdateRefund(ctx context.Context, r Refund) error
 	Publish(ctx context.Context, key string, p event.Payload, at time.Time) error // outbox, topic event.TopicPaymentEvents
 	MarkProcessed(ctx context.Context, eventID string) (first bool, err error)    // pkg/inbox, consumer "payment-svc"
