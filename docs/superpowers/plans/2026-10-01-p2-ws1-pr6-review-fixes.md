@@ -45,7 +45,7 @@ Each task: write the failing test first, make it pass, run `go test -race -count
 - [x] **T8 — Reconciler: one provider timeout per call.** In `reconcile.go`, give `queryAndApply` and `cancelAndObserve` their own `context.WithTimeout(ctx, providerTimeout)`. Test with a fake provider whose Query consumes most of the budget: the expired payment still reaches EXPIRED.
 - [x] **T9 — Stripe wrong-amount webhook test.** Valid signature, `checkout.session.completed` with `amount_total` ≠ payment amount → payment stays PENDING, no `PaymentSucceeded` outbox row.
 - [x] **T10 — Warn on P1-era `OrderCancelled`.** `refunds.go` ~L40: when `PaymentMethod == ""` or `CheckoutID == ""` (not for COD), log WARN with `event_id` and `order_id`. Inject a logger if `Refunds` lacks one.
-- [ ] **T11 — `go mod tidy`** in `services/payment` (moves `franz-go` to direct). Commit only go.mod/go.sum.
+- [x] **T11 — `go mod tidy`** in `services/payment` (moves `franz-go` to direct). Commit only go.mod/go.sum.
 
 ## Not doing (reasoning, recorded in README decisions)
 
