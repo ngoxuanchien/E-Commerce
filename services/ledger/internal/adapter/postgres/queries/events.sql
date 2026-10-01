@@ -22,3 +22,6 @@ DELETE FROM pending_postings WHERE order_id = @order_id;
 
 -- name: TouchPending :exec
 UPDATE pending_postings SET attempts = attempts + 1, last_attempt_at = @at WHERE order_id = @order_id;
+
+-- name: LockOrder :exec
+SELECT pg_advisory_xact_lock(@key::bigint);

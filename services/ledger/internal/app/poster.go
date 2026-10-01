@@ -63,6 +63,8 @@ func Post(ctx context.Context, l Ledger, j domain.Journal) (PostResult, error) {
 	for _, d := range debits {
 		lock = append(lock, ids[d.Account.Code])
 	}
+	// Byte order is Postgres's uuid order (LockAccounts' ORDER BY id); comparing
+	// uuid.String() instead would disagree with it and reintroduce deadlocks.
 	slices.SortFunc(lock, func(a, b uuid.UUID) int { return slices.Compare(a[:], b[:]) })
 	if err := l.LockAccounts(ctx, lock); err != nil {
 		return PostResult{}, err

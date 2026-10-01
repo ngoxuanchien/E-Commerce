@@ -37,6 +37,10 @@ type Tx interface {
 
 	// MarkProcessed records the event in processed_events; false = seen before.
 	MarkProcessed(ctx context.Context, eventID uuid.UUID) (bool, error)
+	// LockOrders serializes the transactions that allocate these orders until
+	// commit. Allocation rows do not exist before the first capture, so there
+	// is no row to lock FOR UPDATE.
+	LockOrders(ctx context.Context, orderIDs []uuid.UUID) error
 	// InsertAllocation writes an escrow allocation; an existing row is kept.
 	InsertAllocation(ctx context.Context, a domain.Allocation) error
 	GetAllocation(ctx context.Context, orderID uuid.UUID) (domain.Allocation, bool, error)

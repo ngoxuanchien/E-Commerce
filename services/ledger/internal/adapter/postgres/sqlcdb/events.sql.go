@@ -117,6 +117,15 @@ func (q *Queries) InsertPending(ctx context.Context, arg InsertPendingParams) er
 	return err
 }
 
+const lockOrder = `-- name: LockOrder :exec
+SELECT pg_advisory_xact_lock($1::bigint)
+`
+
+func (q *Queries) LockOrder(ctx context.Context, key int64) error {
+	_, err := q.db.Exec(ctx, lockOrder, key)
+	return err
+}
+
 const takePending = `-- name: TakePending :many
 SELECT order_id, event, attempts, created_at, last_attempt_at FROM pending_postings WHERE order_id = ANY($1::uuid[]) ORDER BY order_id FOR UPDATE
 `

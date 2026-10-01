@@ -2,8 +2,10 @@ package postgres
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,6 +19,23 @@ import (
 
 func (t *txStore) MarkProcessed(ctx context.Context, eventID uuid.UUID) (bool, error) {
 	return inbox.MarkProcessed(ctx, t.tx, app.ConsumerName, eventID.String())
+}
+
+// LockOrders takes one transaction-scoped advisory lock per order, in key
+// order so concurrent lockers cannot deadlock. A key is the two uuid halves
+// XORed; a collision only serializes two unrelated orders.
+func (t *txStore) LockOrders(ctx context.Context, orderIDs []uuid.UUID) error {
+	keys := make([]int64, len(orderIDs))
+	for i, id := range orderIDs {
+		keys[i] = int64(binary.BigEndian.Uint64(id[:8]) ^ binary.BigEndian.Uint64(id[8:]))
+	}
+	slices.Sort(keys)
+	for _, k := range slices.Compact(keys) {
+		if err := t.q.LockOrder(ctx, k); err != nil {
+			return fmt.Errorf("lock order: %w", err)
+		}
+	}
+	return nil
 }
 
 func (t *txStore) InsertAllocation(ctx context.Context, a domain.Allocation) error {

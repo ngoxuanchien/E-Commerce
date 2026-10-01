@@ -155,6 +155,16 @@ func (h *EventHandler) paymentSucceeded(ctx context.Context, tx Tx, src source, 
 	if err != nil {
 		return err
 	}
+	// Without the lock, two payments on different partitions could both pass
+	// the guard below and CAPTURE one order twice. After the wait the guard's
+	// statements see the winner's committed allocation (READ COMMITTED).
+	orderIDs := make([]uuid.UUID, len(allocs))
+	for i, a := range allocs {
+		orderIDs[i] = a.OrderID
+	}
+	if err := tx.LockOrders(ctx, orderIDs); err != nil {
+		return err
+	}
 	for _, a := range allocs {
 		existing, found, err := tx.GetAllocation(ctx, a.OrderID)
 		if err != nil {

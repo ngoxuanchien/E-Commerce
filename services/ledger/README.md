@@ -43,7 +43,7 @@ Every balance is derived by summing entries. No balance is stored anywhere.
 
   Only infrastructure errors and a refund that arrives before its capture are retried.
 - **Release and refund amounts come from `escrow_allocations`,** which record what was captured. When an event disagrees, the difference is logged.
-- **A second payment naming already-captured orders** keeps its `PAY`, so the money sits in suspense for the duplicate refund. Its capture is skipped with an alert.
+- **A second payment naming already-captured orders** keeps its `PAY`, so the money sits in suspense for the duplicate refund. Its capture is skipped with an alert. Payments of different checkouts land on different partitions, so `paymentSucceeded` takes a transaction-scoped advisory lock per order (`LockOrders`) before checking `escrow_allocations`: no allocation row exists to lock `FOR UPDATE` before the first capture.
 - **Payouts:**
   - the minimum (`PAYOUT_MIN_AMOUNT`) is checked before the `Idempotency-Key` claim;
   - `201` and `409 INSUFFICIENT_FUNDS` are both stored and replayed;
@@ -78,7 +78,8 @@ It prints `{balances_by_type, total, unbalanced_transactions, liabilities_in_deb
 ## Known gaps
 
 - `idempotency_keys` rows are never purged (`idemkey.Purge` is not scheduled yet).
+- `processed_events` rows are never purged either; the table grows without bound, and a full history replay would have to consult it.
+- `payout.events` (`PayoutRequested/Settled/Failed`) has no consumer in this workstream; WS3' closes the order lifecycle on them.
 - An order-scoped `PaymentRefunded` that arrives before its capture is retried (spec §6). If that capture was skipped as malformed, the refund retries forever and stalls its `payment.events` partition; recovering it needs manual intervention.
 - If any order of a payment was already captured by another payment, the whole CAPTURE of the new payment is skipped (alert=true); its orders' money stays in suspense and their completions stay pending until someone intervenes.
 - `trial-balance` scans every entry; fine at portfolio scale.
-- `pkg/idemkey.Release` deletes a key even after it was completed. If a payout's COMMIT succeeds but the client sees an error, a retry with the same key could create a second payout. The fix, guarding `Release` with `status_code IS NULL`, belongs to WS0' (`pkg/`).
