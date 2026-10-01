@@ -22,6 +22,22 @@ type Catalog interface {
 	ReleaseStock(ctx context.Context, orderID string) error
 }
 
+// PaymentOutcome is PaymentInternal.CancelCheckoutPayments' answer.
+type PaymentOutcome int
+
+const (
+	OutcomeNotPaid PaymentOutcome = iota + 1
+	OutcomePaid
+)
+
+// Payments is payment-svc's internal API (adapter/payment).
+type Payments interface {
+	// CancelCheckoutPayments makes sure no attempt of the checkout can still
+	// succeed and reports whether one did. ErrPaymentUnavailable when
+	// payment-svc can't answer; the caller retries on a later tick.
+	CancelCheckoutPayments(ctx context.Context, checkoutID string) (PaymentOutcome, error)
+}
+
 // CartStore persists carts as SKU ID → quantity (adapter/redis).
 type CartStore interface {
 	Lines(ctx context.Context, userID string) (map[string]int32, error)

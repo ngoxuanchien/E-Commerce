@@ -15,6 +15,7 @@ import (
 type Config struct {
 	config.Base
 	CatalogGRPCAddr string        `env:"CATALOG_GRPC_ADDR,required,notEmpty"`
+	PaymentGRPCAddr string        `env:"PAYMENT_GRPC_ADDR,required,notEmpty"`
 	ShippingFeeFlat int64         `env:"SHIPPING_FEE_FLAT" envDefault:"30000"`
 	SweeperInterval time.Duration `env:"SWEEPER_INTERVAL" envDefault:"60s"`
 	PendingTimeout  time.Duration `env:"PENDING_TIMEOUT" envDefault:"2m"`

@@ -20,6 +20,7 @@ var (
 	ErrEmptyCart               = errors.New("nothing to check out")
 	ErrCatalogUnavailable      = errors.New("catalog unavailable")
 	ErrCatalogRejected         = errors.New("catalog rejected the request")
+	ErrPaymentUnavailable      = errors.New("payment service unavailable")
 	ErrIdempotencyInProgress   = errors.New("idempotency key is in progress")
 	ErrIdempotencyKeyReused    = errors.New("idempotency key reused with a different request")
 	ErrIdempotencyClaimLost    = errors.New("idempotency key was reclaimed by a newer request")

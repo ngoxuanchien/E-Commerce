@@ -17,6 +17,7 @@ import (
 	"github.com/ngoxuanchien/e-commerce/pkg/server"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/catalog"
 	httpadapter "github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/http"
+	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/payment"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/postgres"
 	redisadapter "github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/redis"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/app"
@@ -42,6 +43,9 @@ type Config struct {
 	// AutoCompleteAfter is how long a DELIVERED order stays open before the
 	// system completes it; consumed by the sweep tick.
 	AutoCompleteAfter time.Duration
+	// PaymentCallTimeout is the per-attempt timeout of the calls to
+	// payment-svc (0 = payment.DefaultTimeout).
+	PaymentCallTimeout time.Duration
 }
 
 // claimMargin covers the time between claiming an idempotency key and Tx A
@@ -67,6 +71,7 @@ type Deps struct {
 	Pool        *pgxpool.Pool
 	Redis       *redis.Client
 	CatalogConn grpc.ClientConnInterface
+	PaymentConn grpc.ClientConnInterface
 	Producer    Producer
 	Logger      *slog.Logger     // nil = slog.Default()
 	Now         func() time.Time // nil = UTC wall clock
@@ -77,6 +82,7 @@ type App struct {
 	API     http.Handler // /api routes; wrap with authctx.Middleware
 	Relay   *outbox.Relay
 	Sweeper *app.Sweeper
+	pay     app.Payments // payment-svc; the sweeper's payment-timeout step
 	checks  map[string]server.Check
 }
 
@@ -90,6 +96,7 @@ func New(cfg Config, d Deps) *App {
 	store := postgres.NewStore(d.Pool)
 	carts := redisadapter.NewCartStore(d.Redis)
 	cat := catalog.New(d.CatalogConn, cfg.Catalog)
+	pay := payment.New(d.PaymentConn, cfg.PaymentCallTimeout)
 	return &App{
 		API: httpadapter.NewRouter(httpadapter.Services{
 			Cart: app.NewCartService(carts, cat, cfg.ShippingFeeFlat, d.Logger),
@@ -105,6 +112,7 @@ func New(cfg Config, d Deps) *App {
 		Sweeper: app.NewSweeper(store, cat, app.SweeperConfig{
 			Interval: cfg.SweeperInterval, PendingTimeout: cfg.PendingTimeout, Now: d.Now, Logger: d.Logger,
 		}),
+		pay: pay,
 		checks: map[string]server.Check{
 			"postgres": d.Pool.Ping,
 			"redis":    func(ctx context.Context) error { return d.Redis.Ping(ctx).Err() },

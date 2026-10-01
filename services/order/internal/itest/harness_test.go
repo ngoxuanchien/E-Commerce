@@ -31,6 +31,7 @@ import (
 	"github.com/ngoxuanchien/e-commerce/pkg/testutil"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/catalog"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/catalog/catalogfake"
+	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/payment/paymentfake"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/bootstrap"
 	"github.com/ngoxuanchien/e-commerce/services/order/migrations"
 )
@@ -105,6 +106,7 @@ type harness struct {
 	app      *bootstrap.App
 	pool     *pgxpool.Pool
 	fake     *catalogfake.Fake
+	pay      *paymentfake.Fake
 	events   *eventLog
 	baseURL  string
 	contract *http.Client // validates against order.yaml
@@ -130,7 +132,10 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(producer.Close)
 
 	fake := catalogfake.New()
-	a := bootstrap.New(baseConfig(), bootstrap.Deps{Pool: pool, Redis: rdb, CatalogConn: fake.Dial(t), Producer: producer})
+	pay := paymentfake.New()
+	a := bootstrap.New(baseConfig(), bootstrap.Deps{
+		Pool: pool, Redis: rdb, CatalogConn: fake.Dial(t), PaymentConn: pay.Dial(t), Producer: producer,
+	})
 
 	wctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
@@ -141,7 +146,7 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(srv.Close)
 
 	return &harness{
-		app: a, pool: pool, fake: fake, events: newEventLog(t, brokers), baseURL: srv.URL,
+		app: a, pool: pool, fake: fake, pay: pay, events: newEventLog(t, brokers), baseURL: srv.URL,
 		contract: &http.Client{Transport: testutil.ContractTransport(t, orderSpec, nil)},
 		raw:      &http.Client{},
 	}

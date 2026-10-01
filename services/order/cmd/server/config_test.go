@@ -10,12 +10,21 @@ import (
 	"github.com/ngoxuanchien/e-commerce/pkg/config"
 )
 
-func TestConfigDefaults(t *testing.T) {
+// setAddrs points the config tests at both internal gRPC services, which are
+// both required. The ports mirror deploy/docker-compose.yml.
+func setAddrs(t *testing.T) {
+	t.Helper()
 	t.Setenv("SERVICE_NAME", "order")
 	t.Setenv("CATALOG_GRPC_ADDR", "catalog:9082")
+	t.Setenv("PAYMENT_GRPC_ADDR", "payment:9084")
+}
+
+func TestConfigDefaults(t *testing.T) {
+	setAddrs(t)
 	cfg, err := config.Load[Config]()
 	require.NoError(t, err)
 	assert.Equal(t, "catalog:9082", cfg.CatalogGRPCAddr)
+	assert.Equal(t, "payment:9084", cfg.PaymentGRPCAddr)
 	assert.Equal(t, int64(30_000), cfg.ShippingFeeFlat)
 	assert.Equal(t, 60*time.Second, cfg.SweeperInterval)
 	assert.Equal(t, 2*time.Minute, cfg.PendingTimeout)
@@ -29,15 +38,23 @@ func TestConfigDefaults(t *testing.T) {
 func TestConfigRequiresCatalogAddr(t *testing.T) {
 	t.Setenv("SERVICE_NAME", "order")
 	t.Setenv("CATALOG_GRPC_ADDR", "")
+	t.Setenv("PAYMENT_GRPC_ADDR", "payment:9084")
 	_, err := config.Load[Config]()
 	assert.ErrorContains(t, err, "CATALOG_GRPC_ADDR")
+}
+
+func TestConfigRequiresPaymentAddr(t *testing.T) {
+	t.Setenv("SERVICE_NAME", "order")
+	t.Setenv("CATALOG_GRPC_ADDR", "catalog:9082")
+	t.Setenv("PAYMENT_GRPC_ADDR", "")
+	_, err := config.Load[Config]()
+	assert.ErrorContains(t, err, "PAYMENT_GRPC_ADDR")
 }
 
 func TestConfigOnlinePaymentMethods(t *testing.T) {
 	load := func(t *testing.T, methods string) Config {
 		t.Helper()
-		t.Setenv("SERVICE_NAME", "order")
-		t.Setenv("CATALOG_GRPC_ADDR", "catalog:9082")
+		setAddrs(t)
 		t.Setenv("ONLINE_PAYMENT_METHODS", methods)
 		cfg, err := config.Load[Config]()
 		require.NoError(t, err)
@@ -61,8 +78,7 @@ func TestConfigOnlinePaymentMethods(t *testing.T) {
 }
 
 func TestConfigCommissionRateBpsOutOfRange(t *testing.T) {
-	t.Setenv("SERVICE_NAME", "order")
-	t.Setenv("CATALOG_GRPC_ADDR", "catalog:9082")
+	setAddrs(t)
 	t.Setenv("COMMISSION_RATE_BPS", "10001")
 	cfg, err := config.Load[Config]()
 	require.NoError(t, err)
