@@ -55,4 +55,4 @@ Each task: write the failing test first, make it pass, run `go test -race -count
 
 ## Final
 
-- [ ] Full `go test -race -count=1 ./...` in `services/payment`, lint clean, `make gen` leaves no diff, README updated (T2 lease, T4 IPN pending, decisions above). Do not push.
+- [x] Full `go test -race -count=1 ./...` in `services/payment`, lint clean, `make gen` leaves no diff, README updated (T2 lease, T4 IPN pending, decisions above). Do not push.
