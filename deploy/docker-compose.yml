@@ -25,7 +25,10 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U marketplace -d order_db"]
+      # Probe over TCP: on a fresh volume the entrypoint first runs init.sql on
+      # a temporary socket-only server, which a socket probe reports as ready
+      # just before it restarts, so db-init's TCP connection was refused.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U marketplace -d postgres"]
       interval: 3s
       timeout: 3s
       retries: 30

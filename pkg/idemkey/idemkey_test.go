@@ -182,3 +182,23 @@ func TestCompleteAndReleaseTruncateTheClaimToMicroseconds(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, found, "Release with an untruncated claim still frees the key")
 }
+
+// A caller that sees an error after its COMMIT actually landed (connection
+// lost during COMMIT) releases the key. That must not erase the completed
+// response, or a retry with the same key would run the request twice.
+func TestReleaseNeverDeletesACompletedKey(t *testing.T) {
+	ctx, db := context.Background(), newPool(t)
+	user := "01890000-0000-7000-8000-000000000012"
+	_, _, err := idemkey.Claim(ctx, db, scope, user, "k", []byte("h"), base, never)
+	require.NoError(t, err)
+	require.NoError(t, idemkey.Complete(ctx, db, scope, user, "k", base, idemkey.Response{Status: 201, Body: []byte(`{"id":"p1"}`)}))
+
+	require.NoError(t, idemkey.Release(ctx, db, scope, user, "k", base))
+
+	rec, created, err := idemkey.Claim(ctx, db, scope, user, "k", []byte("h"), base, never)
+	require.NoError(t, err)
+	assert.False(t, created, "the retry must replay, not run again")
+	require.NotNil(t, rec.Response)
+	assert.Equal(t, 201, rec.Response.Status)
+	assert.JSONEq(t, `{"id":"p1"}`, string(rec.Response.Body))
+}
