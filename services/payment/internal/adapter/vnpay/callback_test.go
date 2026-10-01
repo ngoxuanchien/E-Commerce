@@ -201,6 +201,21 @@ func TestIPNCodesInOrder(t *testing.T) {
 		assert.Equal(t, "00", e.ipn(ipnQuery(p, 350_000, "00", "02", "1008")).code)
 		assert.Equal(t, domain.StatusFailed, e.get(p.ID).Status)
 	})
+	// Status 05 (VNPay processing) and 07 (suspected fraud) mean the money may still move, so the IPN
+	// must not settle the payment. It acknowledges receipt and leaves it PENDING for the reconciler.
+	for _, txnStatus := range []string{"01", "05", "06", "07"} {
+		t.Run("response 00 with status "+txnStatus+" leaves the payment pending", func(t *testing.T) {
+			p := e.payment(350_000)
+			events := e.count(`SELECT count(*) FROM provider_events WHERE provider = 'vnpay'`)
+			assert.Equal(t, ack{"00", "Confirm Success"}, e.ipn(ipnQuery(p, 350_000, "00", txnStatus, "ipn"+txnStatus)))
+			got := e.get(p.ID)
+			assert.Equal(t, domain.StatusPending, got.Status)
+			assert.Equal(t, p.Version, got.Version, "nothing is applied")
+			assert.Zero(t, e.outbox(p), "no event for an unsettled observation")
+			assert.Equal(t, events, e.count(`SELECT count(*) FROM provider_events WHERE provider = 'vnpay'`),
+				"nothing is recorded, so a later real IPN is not taken for a duplicate")
+		})
+	}
 	t.Run("99 unexpected error", func(t *testing.T) {
 		p := e.payment(350_000)
 		cancelled, cancel := context.WithCancel(bg)

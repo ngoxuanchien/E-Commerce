@@ -175,6 +175,33 @@ func (p *Provider) querydr(ctx context.Context, pay domain.Payment) (map[string]
 	}
 }
 
+// mapStatus is the one VNPay status mapper, shared by querydr (Query) and the IPN (Callbacks.IPN),
+// so the two can never disagree about a transaction status:
+//
+//	00 with RC 00      → Succeeded
+//	01, 05, 06         → Pending (the money may still move)
+//	07                 → Pending, with a warning (suspected fraud)
+//	anything else      → Failed, Reason = reasonField
+//
+// reasonField is what each path reported before they shared this table: the response code for an
+// IPN, the transaction status for querydr. The payment and transaction numbers are only for the
+// fraud warning.
+func (p *Provider) mapStatus(ctx context.Context, respCode, status, reasonField, paymentID, txnNo string) domain.Observed {
+	switch status {
+	case "00":
+		if respCode == "00" {
+			return domain.Observed{State: domain.ObservedSucceeded}
+		}
+	case "01", "05", "06":
+		return domain.Observed{State: domain.ObservedPending}
+	case "07":
+		p.cfg.Logger.WarnContext(ctx, "vnpay: transaction suspected of fraud; keeping the payment pending",
+			"payment_id", paymentID, "transaction_no", txnNo)
+		return domain.Observed{State: domain.ObservedPending}
+	}
+	return domain.Observed{State: domain.ObservedFailed, Reason: reasonField}
+}
+
 // Query maps querydr's vnp_TransactionStatus for the payment:
 //   - 00 → Succeeded (vnp_Amount must be a whole number of dong × 100);
 //   - 01 (not completed), 05 (VNPay processing), 06 (refund sent to the bank) → Pending;
@@ -193,22 +220,17 @@ func (p *Provider) Query(ctx context.Context, pay domain.Payment) (domain.Observ
 		}
 		return domain.Observed{State: domain.ObservedExpired}, nil
 	}
-	switch status := resp["vnp_TransactionStatus"]; status {
-	case "00":
-		amount, err := strconv.ParseInt(resp["vnp_Amount"], 10, 64)
-		if err != nil || amount%100 != 0 {
-			return domain.Observed{}, fmt.Errorf("%w: vnpay querydr amount %q", app.ErrProviderUnavailable, resp["vnp_Amount"])
-		}
-		return domain.Observed{State: domain.ObservedSucceeded, Amount: amount / 100, ProviderTxnID: resp["vnp_TransactionNo"]}, nil
-	case "01", "05", "06":
-		return domain.Observed{State: domain.ObservedPending}, nil
-	case "07":
-		p.cfg.Logger.WarnContext(ctx, "vnpay: transaction suspected of fraud; keeping the payment pending",
-			"payment_id", pay.ID, "transaction_no", resp["vnp_TransactionNo"])
-		return domain.Observed{State: domain.ObservedPending}, nil
-	default:
-		return domain.Observed{State: domain.ObservedFailed, Reason: status}, nil
+	obs := p.mapStatus(ctx, resp["vnp_ResponseCode"], resp["vnp_TransactionStatus"], resp["vnp_TransactionStatus"],
+		pay.ID, resp["vnp_TransactionNo"])
+	if obs.State != domain.ObservedSucceeded {
+		return obs, nil
 	}
+	amount, err := strconv.ParseInt(resp["vnp_Amount"], 10, 64)
+	if err != nil || amount%100 != 0 {
+		return domain.Observed{}, fmt.Errorf("%w: vnpay querydr amount %q", app.ErrProviderUnavailable, resp["vnp_Amount"])
+	}
+	obs.Amount, obs.ProviderTxnID = amount/100, resp["vnp_TransactionNo"]
+	return obs, nil
 }
 
 // Cancel is not supported by VNPay; the session becomes unpayable at vnp_ExpireDate.

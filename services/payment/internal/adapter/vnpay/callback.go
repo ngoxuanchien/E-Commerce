@@ -87,9 +87,17 @@ func (c Callbacks) IPN(ctx context.Context, q url.Values) (rspCode, message stri
 	if p.Status.Final() {
 		return rsp(RspAlreadyConfirmed)
 	}
-	obs := domain.Observed{State: domain.ObservedFailed, Reason: q.Get("vnp_ResponseCode")}
-	if q.Get("vnp_ResponseCode") == "00" && q.Get("vnp_TransactionStatus") == "00" {
-		obs = domain.Observed{State: domain.ObservedSucceeded, Amount: amount / 100, ProviderTxnID: q.Get("vnp_TransactionNo")}
+	obs := c.provider.mapStatus(ctx, q.Get("vnp_ResponseCode"), q.Get("vnp_TransactionStatus"),
+		q.Get("vnp_ResponseCode"), p.ID, q.Get("vnp_TransactionNo"))
+	if obs.State == domain.ObservedSucceeded {
+		obs.Amount, obs.ProviderTxnID = amount/100, q.Get("vnp_TransactionNo")
+	}
+	if obs.State == domain.ObservedPending {
+		// The transaction is not settled: nothing to apply and nothing to record, so a later real
+		// IPN is not taken for a duplicate. The reconciler resolves it through querydr.
+		c.logger.InfoContext(ctx, "vnpay ipn: transaction not settled; leaving the payment pending",
+			"payment_id", p.ID, "transaction_status", q.Get("vnp_TransactionStatus"))
+		return rsp(RspConfirmed)
 	}
 	out, err := c.observer.ApplyObserved(ctx, providerName, eventKey(q), p.ID, obs)
 	switch {

@@ -31,7 +31,7 @@ Each task: write the failing test first, make it pass, run `go test -race -count
   `internal/adapter/vnpay/provider.go` (the `switch` after `ReadAll`): wrap `>= 500`, `429` and `409` as `app.ErrProviderUnavailable`, mirroring the Stripe adapter's `wrap`.
   Tests: adapter stub returning 429 → `errors.Is(err, app.ErrProviderUnavailable)`; refund-worker test where the provider keeps answering 429 for more than `REFUND_MAX_ATTEMPTS` runs and the refund stays PENDING with `attempts` unchanged and no `RefundFailed` outbox row.
 
-- [ ] **T4 — One VNPay status mapper for querydr and IPN (review #4).**
+- [x] **T4 — One VNPay status mapper for querydr and the IPN (review #4).**
   Extract one helper used by both `Query` (`provider.go`) and `IPN` (`callback.go`): TS `00` with RC `00` → Succeeded; TS `01/05/06` → Pending; `07` → Pending + WARN; anything else → Failed with `Reason` = RC for IPN / TS for querydr (keep today's reasons). For an IPN that maps to Pending, do not call `ApplyObserved`; answer VNPay `RspCode 00` (received) and log at INFO — the reconciler resolves it.
   Tests: signed IPN with `vnp_ResponseCode=00, vnp_TransactionStatus=05` → payment stays PENDING, no outbox row, response `00`; same for `07`; existing success/failure IPN tests still pass.
 
