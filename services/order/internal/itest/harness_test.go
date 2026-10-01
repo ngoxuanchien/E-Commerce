@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -23,7 +24,11 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
 
+	orderv1 "github.com/ngoxuanchien/e-commerce/gen/order/v1"
 	"github.com/ngoxuanchien/e-commerce/pkg/authctx"
 	"github.com/ngoxuanchien/e-commerce/pkg/event"
 	"github.com/ngoxuanchien/e-commerce/pkg/kafkax"
@@ -99,6 +104,7 @@ func TestOrderAPI(t *testing.T) {
 	t.Run("a captured payment confirms its orders", h.testPaymentSucceeded)
 	t.Run("a late capture is refunded, not lost", h.testLateSuccessThenRefund)
 	t.Run("a seller cancelling a paid order asks for a refund", h.testPaidOrderCancelledBySeller)
+	t.Run("payment-svc reads a checkout over OrderInternal", h.testGetCheckout)
 	t.Run("every published event matches its schema", h.testEventsValid)
 }
 
@@ -119,6 +125,7 @@ type harness struct {
 	brokers  []string    // bootstrap brokers of the payment.events consumer group
 	kafka    *kgo.Client // publishes the payment.events the App consumes
 	events   *eventLog
+	orderRPC orderv1.OrderInternalClient // OrderInternal, as payment-svc calls it
 	baseURL  string
 	contract *http.Client // validates against order.yaml
 	raw      *http.Client // for deliberately invalid requests
@@ -164,11 +171,31 @@ func newHarness(t *testing.T) *harness {
 
 	return &harness{
 		app: a, pool: pool, rdb: rdb, fake: fake, pay: pay, producer: producer,
-		brokers: brokers, kafka: kafka,
+		brokers: brokers, kafka: kafka, orderRPC: orderInternalRPC(t, a),
 		events: newEventLog(t, brokers), baseURL: srv.URL,
 		contract: &http.Client{Transport: testutil.ContractTransport(t, orderSpec, nil)},
 		raw:      &http.Client{},
 	}
+}
+
+// orderInternalRPC serves a's OrderInternal on an in-memory listener and
+// returns a client to it, so the scenarios talk to the same gRPC server the
+// binary serves. It is closed when t ends.
+func orderInternalRPC(t *testing.T, a *bootstrap.App) orderv1.OrderInternalClient {
+	t.Helper()
+	grpcSrv := grpc.NewServer()
+	a.RegisterGRPC(grpcSrv)
+	lis := bufconn.Listen(1 << 20)
+	go func() { _ = grpcSrv.Serve(lis) }()
+	conn, err := grpc.NewClient("passthrough:///order-internal",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = conn.Close()
+		grpcSrv.Stop()
+	})
+	return orderv1.NewOrderInternalClient(conn)
 }
 
 // deps wires a second App to the same containers and fakes, including the
@@ -220,6 +247,7 @@ func (h *harness) scoped(t *testing.T, mutate func(*bootstrap.Config)) *harness 
 
 	scoped := *h
 	scoped.app, scoped.baseURL = a, srv.URL
+	scoped.orderRPC = orderInternalRPC(t, a)
 	return &scoped
 }
 
@@ -325,6 +353,7 @@ type orderResp struct {
 	CheckoutID        string                          `json:"checkout_id"`
 	Status            string                          `json:"status"`
 	BuyerID           string                          `json:"buyer_id"`
+	Subtotal          int64                           `json:"subtotal"`
 	Total             int64                           `json:"total"`
 	CancelReason      *string                         `json:"cancel_reason"`
 	PaymentMethod     string                          `json:"payment_method"`

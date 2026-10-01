@@ -111,6 +111,7 @@ func run() error {
 	defer func() { stopWorkers(); <-workersDone }()
 
 	grpcSrv, _ := grpcx.NewServer()
+	svc.RegisterGRPC(grpcSrv)
 	return server.Run(ctx, server.Config{
 		HTTP: &http.Server{
 			Addr:              cfg.HTTPAddr,

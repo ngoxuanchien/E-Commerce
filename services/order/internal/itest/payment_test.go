@@ -2,13 +2,16 @@ package itest
 
 import (
 	"net/http"
+	"sort"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
+	orderv1 "github.com/ngoxuanchien/e-commerce/gen/order/v1"
 	paymentv1 "github.com/ngoxuanchien/e-commerce/gen/payment/v1"
 	"github.com/ngoxuanchien/e-commerce/pkg/event"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/catalog/catalogfake"
@@ -327,4 +330,48 @@ func (h *harness) testAutoComplete(t *testing.T) {
 	assert.Equal(t, "system", completed.CompletedBy)
 	assert.Equal(t, o.CheckoutID, completed.CheckoutID)
 	assert.Equal(t, "COD", completed.PaymentMethod)
+}
+
+// testGetCheckout: the OrderInternal gRPC API answers what payment-svc needs to
+// allocate one payment across a checkout — the buyer, the method, the deadline
+// and every order with the money already split — and answers NOT_FOUND for a
+// checkout that does not exist.
+func (h *harness) testGetCheckout(t *testing.T) {
+	shops := map[string]catalogfake.Shop{}
+	var list []catalogfake.Shop
+	for _, name := range []string{"Get A", "Get B"} {
+		shop := catalogfake.NewShop(name)
+		shops[shop.ID] = shop
+		list = append(list, shop)
+	}
+	b, checkoutID, orders := h.onlineCheckout(t, h, "ck-get-checkout", list...)
+
+	resp, err := h.orderRPC.GetCheckout(ctx, &orderv1.GetCheckoutRequest{CheckoutId: checkoutID})
+	require.NoError(t, err)
+	assert.Equal(t, checkoutID, resp.GetCheckoutId())
+	assert.Equal(t, b.id, resp.GetBuyerId())
+	assert.Equal(t, "VNPAY", resp.GetPaymentMethod())
+	require.NotNil(t, resp.GetPaymentDeadline())
+	require.NotNil(t, orders[0].PaymentDeadline)
+	wantDeadline, err := time.Parse(time.RFC3339, *orders[0].PaymentDeadline)
+	require.NoError(t, err)
+	assert.True(t, wantDeadline.Equal(resp.GetPaymentDeadline().AsTime()),
+		"the gRPC deadline is the one the REST checkout answered")
+
+	got := resp.GetOrders()
+	require.Len(t, got, 2)
+	sort.Slice(orders, func(i, j int) bool { return orders[i].ID < orders[j].ID })
+	for i, o := range got {
+		rest := orders[i]
+		assert.Equal(t, rest.ID, o.GetOrderId())
+		assert.Equal(t, rest.Status, o.GetStatus())
+		assert.Equal(t, shops[rest.Shop.ID].SellerUserID, o.GetSellerUserId())
+		assert.Equal(t, rest.Subtotal, o.GetSubtotal())
+		assert.Equal(t, rest.Total, o.GetTotal())
+		assert.Equal(t, rest.CommissionAmount, o.GetCommissionAmount())
+		assert.Positive(t, o.GetCommissionAmount(), "an online order carries commission")
+	}
+
+	_, err = h.orderRPC.GetCheckout(ctx, &orderv1.GetCheckoutRequest{CheckoutId: newID()})
+	assert.Equal(t, codes.NotFound, status.Code(err))
 }

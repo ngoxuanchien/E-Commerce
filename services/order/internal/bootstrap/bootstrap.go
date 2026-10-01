@@ -14,10 +14,12 @@ import (
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 
+	orderv1 "github.com/ngoxuanchien/e-commerce/gen/order/v1"
 	"github.com/ngoxuanchien/e-commerce/pkg/kafkax"
 	"github.com/ngoxuanchien/e-commerce/pkg/outbox"
 	"github.com/ngoxuanchien/e-commerce/pkg/server"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/catalog"
+	grpcadapter "github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/grpc"
 	httpadapter "github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/http"
 	kafkaadapter "github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/kafka"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/payment"
@@ -91,6 +93,9 @@ type App struct {
 	Sweeper  *app.Sweeper
 	Consumer *kafkax.Consumer // nil when Deps.KafkaBrokers is empty
 	checks   map[string]server.Check
+	// queries serves OrderInternal; logger is the wired logger.
+	queries *app.CheckoutQuery
+	logger  *slog.Logger
 }
 
 // New wires the service. It fails only when the payment.events consumer cannot
@@ -134,6 +139,8 @@ func New(cfg Config, d Deps) (*App, error) {
 			AutoCompleteAfter: cfg.AutoCompleteAfter, Now: d.Now, Logger: d.Logger,
 		}),
 		Consumer: consumer,
+		logger:   d.Logger,
+		queries:  app.NewCheckoutQuery(store),
 		checks: map[string]server.Check{
 			"postgres": d.Pool.Ping,
 			"redis":    func(ctx context.Context) error { return d.Redis.Ping(ctx).Err() },
@@ -144,6 +151,13 @@ func New(cfg Config, d Deps) (*App, error) {
 
 // ReadinessChecks are the /readyz dependencies: Postgres, Redis, Kafka.
 func (a *App) ReadinessChecks() map[string]server.Check { return a.checks }
+
+// RegisterGRPC registers order-svc's internal gRPC API (OrderInternal, for
+// payment-svc) on s. Call it on the server grpcx.NewServer returns, next to the
+// health service it already registered.
+func (a *App) RegisterGRPC(s grpc.ServiceRegistrar) {
+	orderv1.RegisterOrderInternalServer(s, grpcadapter.NewServer(a.queries, a.logger))
+}
 
 // RunWorkers runs the outbox relay, the sweeper and the payment.events consumer
 // until ctx is cancelled. A deployment without KafkaBrokers has no consumer.
