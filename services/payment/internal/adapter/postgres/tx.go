@@ -234,6 +234,21 @@ func (t *txStore) ClaimDueRefunds(ctx context.Context, now time.Time, limit int)
 	return out, nil
 }
 
+func (t *txStore) GetPayment(ctx context.Context, id string) (domain.Payment, error) {
+	uid, ok := parseUUID(id)
+	if !ok {
+		return domain.Payment{}, app.ErrNotFound
+	}
+	row, err := t.q.GetPayment(ctx, uid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Payment{}, app.ErrNotFound
+	}
+	if err != nil {
+		return domain.Payment{}, fmt.Errorf("get payment: %w", err)
+	}
+	return toDomainPayment(row), nil
+}
+
 func (t *txStore) LockRefund(ctx context.Context, id string) (app.Refund, error) {
 	rid, err := uuid.Parse(id)
 	if err != nil {

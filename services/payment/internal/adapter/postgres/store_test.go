@@ -77,6 +77,17 @@ func TestStore(t *testing.T) {
 		assert.ErrorIs(t, err, app.ErrNotFound)
 		_, err = s.GetPayment(ctx, "not-a-uuid")
 		assert.ErrorIs(t, err, app.ErrNotFound)
+
+		require.NoError(t, s.InTx(ctx, func(tx app.Tx) error {
+			got, err := tx.GetPayment(ctx, p.ID)
+			require.NoError(t, err)
+			assert.Equal(t, p.Payment, got)
+			_, err = tx.GetPayment(ctx, id())
+			assert.ErrorIs(t, err, app.ErrNotFound)
+			_, err = tx.GetPayment(ctx, "not-a-uuid")
+			assert.ErrorIs(t, err, app.ErrNotFound)
+			return nil
+		}))
 	})
 
 	t.Run("at most one PENDING payment per checkout", func(t *testing.T) {

@@ -213,7 +213,7 @@ func (w *RefundWorker) process(ctx context.Context, tx Tx, rf Refund, adopt stri
 		err error
 	)
 	if !accepted && !hint {
-		p, gerr := w.store.GetPayment(ctx, rf.PaymentID)
+		p, gerr := tx.GetPayment(ctx, rf.PaymentID)
 		if gerr != nil {
 			return gerr
 		}

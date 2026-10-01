@@ -464,6 +464,30 @@ func (t *failingTx) UpdateRefund(ctx context.Context, r app.Refund) error {
 	return t.Tx.UpdateRefund(ctx, r)
 }
 
+// txReadStore fails any payment read made outside a transaction and counts the ones made inside.
+type txReadStore struct {
+	app.Store
+	inTx atomic.Int32
+}
+
+func (s *txReadStore) GetPayment(context.Context, string) (domain.Payment, error) {
+	return domain.Payment{}, errors.New("payment read outside the transaction")
+}
+
+func (s *txReadStore) InTx(ctx context.Context, fn func(app.Tx) error) error {
+	return s.Store.InTx(ctx, func(tx app.Tx) error { return fn(&txReadTx{Tx: tx, s: s}) })
+}
+
+type txReadTx struct {
+	app.Tx
+	s *txReadStore
+}
+
+func (t *txReadTx) GetPayment(ctx context.Context, id string) (domain.Payment, error) {
+	t.s.inTx.Add(1)
+	return t.Tx.GetPayment(ctx, id)
+}
+
 func (e workerEnv) refundedTotal(t *testing.T, paymentID string) int64 {
 	var n int64
 	require.NoError(t, e.pool.QueryRow(ctx, `SELECT refunded FROM fake_sessions WHERE payment_id=$1`, paymentID).Scan(&n))
@@ -487,6 +511,18 @@ func TestRefundWorkerTransactions(t *testing.T) {
 		assert.Equal(t, "SUCCEEDED", e.refunds(t, p.ID)[0].Status)
 		assert.EqualValues(t, p.Allocations[0].Amount, e.refundedTotal(t, p.ID), "refunded exactly once")
 		assert.Len(t, eventsOf(e.outbox(t, p.CheckoutID), "PaymentRefunded"), 1)
+	})
+
+	t.Run("the first attempt reads the payment inside the refund's transaction", func(t *testing.T) {
+		e := newWorkerEnv(t)
+		rs := &txReadStore{Store: e.store}
+		w := app.NewRefundWorker(rs, app.NewProviders(e.fp, e.fp), 3, e.clk.now, quiet)
+		p := e.captured(t, fake.Hooks{})
+		n, err := w.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 1, n)
+		assert.EqualValues(t, 1, rs.inTx.Load())
+		assert.Equal(t, "SUCCEEDED", e.refunds(t, p.ID)[0].Status)
 	})
 
 	t.Run("one refund's failure does not roll back the ones already settled", func(t *testing.T) {

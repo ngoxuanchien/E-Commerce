@@ -50,6 +50,7 @@ type Store interface {
 // Tx is the write side, inside one database transaction.
 type Tx interface {
 	InsertPayment(ctx context.Context, p NewPayment) error
+	GetPayment(ctx context.Context, id string) (domain.Payment, error)                     // plain read, no lock; ErrNotFound
 	LockCheckoutPayments(ctx context.Context, checkoutID string) ([]domain.Payment, error) // SELECT … FOR UPDATE ORDER BY id
 	// ClaimPendingForReconcile leases PENDING payments created before `before` until leaseUntil, so two
 	// replicas never poll one payment and a crashed one's rows return once the lease expires. It takes
