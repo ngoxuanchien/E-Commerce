@@ -17,8 +17,9 @@ const (
 	providerEventTTL         = 30 * 24 * time.Hour
 )
 
-// ReconcileConfig sets the polling period and the minimum age of a payment worth polling.
-type ReconcileConfig struct{ Interval, MinAge time.Duration }
+// ReconcileConfig sets the polling period, the minimum age of a payment worth polling and the budget of
+// each provider call (default 15 s).
+type ReconcileConfig struct{ Interval, MinAge, ProviderTimeout time.Duration }
 
 // Reconciler repairs payments whose webhook never arrived and purges old dedupe rows (spec §6).
 type Reconciler struct {
@@ -36,6 +37,9 @@ func NewReconciler(store Store, providers Providers, obs *Observer, cfg Reconcil
 	}
 	if cfg.Interval <= 0 {
 		cfg.Interval = defaultReconcileInterval
+	}
+	if cfg.ProviderTimeout <= 0 {
+		cfg.ProviderTimeout = providerTimeout
 	}
 	return &Reconciler{store: store, providers: providers, obs: obs, cfg: cfg, now: now, logger: logger}
 }
@@ -82,9 +86,9 @@ func (r *Reconciler) reconcile(ctx context.Context, p domain.Payment, now time.T
 	if !ok {
 		return errors.New("no adapter for provider " + p.Provider)
 	}
-	callCtx, cancel := context.WithTimeout(ctx, providerTimeout)
-	defer cancel()
-	if err := queryAndApply(callCtx, r.obs, prov, p); err != nil {
+	if err := r.withProviderTimeout(ctx, func(callCtx context.Context) error {
+		return queryAndApply(callCtx, r.obs, prov, p)
+	}); err != nil {
 		return err
 	}
 	if !now.After(p.ExpiresAt.Add(expiryGrace)) {
@@ -97,7 +101,10 @@ func (r *Reconciler) reconcile(ctx context.Context, p domain.Payment, now time.T
 	if cur.Status != domain.StatusPending {
 		return nil
 	}
-	if _, err := cancelAndObserve(callCtx, r.obs, prov, cur); err != nil {
+	if err := r.withProviderTimeout(ctx, func(callCtx context.Context) error {
+		_, err := cancelAndObserve(callCtx, r.obs, prov, cur)
+		return err
+	}); err != nil {
 		return err
 	}
 	cur, err = r.store.GetPayment(ctx, p.ID)
@@ -109,6 +116,14 @@ func (r *Reconciler) reconcile(ctx context.Context, p domain.Payment, now time.T
 	}
 	_, err = r.obs.Expire(ctx, p.ID)
 	return err
+}
+
+// withProviderTimeout runs fn under a fresh ProviderTimeout budget, so a slow Query cannot starve the
+// Cancel that follows it: an expired payment must still reach EXPIRED when the provider is slow.
+func (r *Reconciler) withProviderTimeout(ctx context.Context, fn func(context.Context) error) error {
+	callCtx, cancel := context.WithTimeout(ctx, r.cfg.ProviderTimeout)
+	defer cancel()
+	return fn(callCtx)
 }
 
 // Run calls RunOnce every Interval until ctx is cancelled.
