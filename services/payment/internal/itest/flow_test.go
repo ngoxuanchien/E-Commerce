@@ -161,6 +161,26 @@ func (h *harness) testOrderCancelledRefund(t *testing.T) {
 	h.events.stays(t, co.GetCheckoutId(), 2, time.Second) // the other order is not refunded
 }
 
+// A PENDING FAKE attempt whose fake_sessions row is gone cannot be paid: the create that follows must
+// retire it as EXPIRED and open a new one, not answer 503.
+func (h *harness) testMissingSessionRetry(t *testing.T) {
+	co := h.newCheckout("VNPAY", time.Now().Add(time.Hour), 90_000)
+	buyer := co.GetBuyerId()
+
+	first := h.createPayment(t, buyer, co.GetCheckoutId())
+	_, err := h.pool.Exec(ctx, `DELETE FROM fake_sessions WHERE payment_id = $1`, first.ID)
+	require.NoError(t, err)
+	require.Equal(t, "PENDING", h.getPayment(t, buyer, first.ID).Status)
+
+	second := h.createPayment(t, buyer, co.GetCheckoutId())
+	require.NotEqual(t, first.ID, second.ID)
+	assert.Equal(t, "PENDING", second.Status)
+	assert.Equal(t, "EXPIRED", h.getPayment(t, buyer, first.ID).Status, "the first attempt is retired")
+
+	h.fakeSubmit(t, second.ID, "succeed", nil)
+	h.waitStatus(t, buyer, second.ID, "SUCCEEDED")
+}
+
 func (h *harness) testCancelCheckoutPayments(t *testing.T) {
 	cancel := func(checkoutID string) (paymentv1.Outcome, error) {
 		resp, err := h.grpc.CancelCheckoutPayments(ctx, &paymentv1.CancelCheckoutPaymentsRequest{CheckoutId: checkoutID})

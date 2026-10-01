@@ -63,6 +63,7 @@ func TestPaymentFlow(t *testing.T) {
 	t.Run("stale webhook after success keeps SUCCEEDED", h.testStaleAfter)
 	t.Run("late payment of an expired attempt is DUPLICATE and refunded", h.testLateDuplicateRefund)
 	t.Run("OrderCancelled refunds the captured order", h.testOrderCancelledRefund)
+	t.Run("a PENDING attempt without a FAKE session is retired, not an outage", h.testMissingSessionRetry)
 	t.Run("CancelCheckoutPayments over gRPC", h.testCancelCheckoutPayments)
 	t.Run("readiness covers postgres and kafka", h.testReadiness)
 	t.Run("every published event matches its schema", h.testEventsValid)

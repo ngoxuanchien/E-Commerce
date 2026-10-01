@@ -181,6 +181,41 @@ func TestQueryFailedAndExpired(t *testing.T) {
 	assert.Equal(t, domain.ObservedExpired, o.State)
 }
 
+// A session that cannot exist is unpayable, not an outage: Query says expired and Cancel has
+// nothing to do, so a new create can retire the attempt instead of answering 503.
+func TestMissingSession(t *testing.T) {
+	h, p := newHarness(t)
+
+	t.Run("payment row without a session", func(t *testing.T) {
+		pay := h.seed(t, 10_000, h.clock().Add(time.Hour)) // payments row only, no fake_sessions row
+		o, err := p.Query(ctx, pay)
+		require.NoError(t, err)
+		assert.Equal(t, domain.Observed{State: domain.ObservedExpired}, o)
+
+		ok, err := p.Cancel(ctx, pay)
+		require.NoError(t, err)
+		assert.False(t, ok)
+	})
+	t.Run("unknown payment id", func(t *testing.T) {
+		ghost := domain.Payment{ID: id(), Status: domain.StatusPending, ExpiresAt: h.clock().Add(time.Hour)}
+		o, err := p.Query(ctx, ghost)
+		require.NoError(t, err)
+		assert.Equal(t, domain.Observed{State: domain.ObservedExpired}, o)
+
+		ok, err := p.Cancel(ctx, ghost)
+		require.NoError(t, err)
+		assert.False(t, ok)
+	})
+	t.Run("refunds and submit still report the error", func(t *testing.T) {
+		pay := h.seed(t, 10_000, h.clock().Add(time.Hour))
+		_, err := p.Refund(ctx, app.RefundInput{RefundID: "rf1", Payment: pay, Amount: 1_000})
+		assert.ErrorIs(t, err, app.ErrNotFound)
+		_, err = p.QueryRefund(ctx, app.Refund{ID: "rf1", PaymentID: pay.ID, Amount: 1_000})
+		assert.ErrorIs(t, err, app.ErrNotFound)
+		assert.ErrorIs(t, p.Submit(ctx, pay.ID, "succeed", fake.Hooks{}), app.ErrNotFound)
+	})
+}
+
 func TestCancel(t *testing.T) {
 	h, p := newHarness(t)
 

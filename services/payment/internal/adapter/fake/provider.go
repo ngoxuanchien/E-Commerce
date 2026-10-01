@@ -2,6 +2,7 @@ package fake
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -102,8 +103,14 @@ func (p *Provider) Submit(ctx context.Context, paymentID, outcome string, form H
 	return nil
 }
 
+// Query reports what the session shows. A session that cannot exist is unpayable, not an outage:
+// a missing row (or an id that is not a payment) answers Expired, so a create that retires this
+// attempt goes on to open a new one instead of failing with ErrNotFound.
 func (p *Provider) Query(ctx context.Context, pay domain.Payment) (domain.Observed, error) {
 	s, err := p.store.get(ctx, pay.ID)
+	if errors.Is(err, app.ErrNotFound) {
+		return domain.Observed{State: domain.ObservedExpired}, nil
+	}
 	if err != nil {
 		return domain.Observed{}, err
 	}
@@ -123,8 +130,13 @@ func (p *Provider) Query(ctx context.Context, pay domain.Payment) (domain.Observ
 	return domain.Observed{State: domain.ObservedPending}, nil
 }
 
+// Cancel makes the session unpayable when it can. A session that cannot exist is already
+// unpayable, so a missing row answers (false, nil) like the provider that refuses to cancel.
 func (p *Provider) Cancel(ctx context.Context, pay domain.Payment) (bool, error) {
 	s, err := p.store.get(ctx, pay.ID)
+	if errors.Is(err, app.ErrNotFound) {
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}

@@ -5,7 +5,7 @@ Each task: write the failing test first, make it pass, run `go test -race -count
 
 ## Blockers
 
-- [ ] **T1 — FAKE: a missing session is unpayable, not an outage (review #1).**
+- [x] **T1 — FAKE: a missing session is unpayable, not an outage (review #1).**
   `internal/adapter/fake/provider.go`: when `store.get` returns `app.ErrNotFound`, `Query` returns `domain.Observed{State: domain.ObservedExpired}` and `Cancel` returns `(false, nil)`. `Refund`/`QueryRefund`/`Submit` keep returning the error. Add a doc comment citing the port contract ("a session that cannot exist is unpayable").
   Tests: unit tests for Query/Cancel on an unknown payment id; an app- or itest-level test where a PENDING FAKE payment has no `fake_sessions` row and a new `CreatePayment` for that checkout succeeds (old row → EXPIRED, new attempt created) instead of returning `ErrProviderUnavailable`.
 
