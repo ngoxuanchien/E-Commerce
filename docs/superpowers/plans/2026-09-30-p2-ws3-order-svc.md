@@ -459,7 +459,7 @@ Run: `go test ./... -count=1`. Expected: PASS (Docker).
 
   Normalize in a method `onlineMethods() []string` used by `main`.
 
-- [ ] **Step 1: Failing app tests** (`checkout_test.go`; reuse `newEnv`, `cartSet` and the encoder there)
+- [x] **Step 1: Failing app tests** (`checkout_test.go`; reuse `newEnv`, `cartSet` and the encoder there)
   - "online checkout from two shops":
     - setup: a cart from 2 shops (120 000 × 2 and 45 000 × 1), `PaymentMethod "VNPAY"`, and a service with `OnlineMethods ["VNPAY","STRIPE"]`, `CommissionRateBps 500`, `PaymentTimeout 30m` and the test clock;
     - 2 orders `AWAITING_PAYMENT`/`UNPAID`;
@@ -475,7 +475,7 @@ Run: `go test ./... -count=1`. Expected: PASS (Docker).
 
 Run: `go test ./internal/app/ -run TestCheckout -count=1`. Expected: FAIL.
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
   - In `Checkout`, right after `ctx = context.WithoutCancel(ctx)` and **before** `BeginIdempotency`:
     ```go
     if domain.IsOnline(in.PaymentMethod) && !slices.Contains(s.cfg.OnlineMethods, in.PaymentMethod) {
@@ -502,7 +502,7 @@ Run: `go test ./internal/app/ -run TestCheckout -count=1`. Expected: FAIL.
     - `ONLINE_PAYMENT_METHODS=""` → valid, COD only;
     - `COMMISSION_RATE_BPS=10001` → an error.
 
-- [ ] **Step 3: itest**
+- [x] **Step 3: itest**
   - Factor the harness config into `func baseConfig() bootstrap.Config` (Task 7 reuses it). Add `OnlineMethods: []string{"VNPAY"}`, `CommissionRateBps: 500`, `PaymentTimeout: time.Hour` and `AutoCompleteAfter: time.Hour`.
   - Add `checkoutBodyWith(method string, skuIDs ...string) map[string]any`, and make `checkoutBody` call it with `"COD"`.
   - Add `testCheckoutOnline` (2 shops, VNPAY). Assert:
@@ -517,7 +517,7 @@ Run: `go test ./internal/app/ -run TestCheckout -count=1`. Expected: FAIL.
 
 Run: `go test ./... -count=1`. Expected: PASS.
 
-- [ ] **Step 4: Commit** — `feat(order): online checkout creates AWAITING_PAYMENT orders with a commission snapshot`
+- [x] **Step 4: Commit** — `feat(order): online checkout creates AWAITING_PAYMENT orders with a commission snapshot`
 
 ---
 
