@@ -1098,7 +1098,7 @@ Run: `go test -race ./... -count=1`. Expected: PASS, including every P1 checkout
 - Modify: `web/src/api/gen/order.ts` (regenerated, **never hand-edited**)
 - Modify: `services/order/README.md`
 
-- [ ] **Step 1: Flip required**
+- [x] **Step 1: Flip required**
   - `Order.required` gains `payment_status, payment_deadline, commission_rate_bps, commission_amount, delivered_at`;
   - `OrderShop.required` becomes `[id, name, slug]`;
   - remove "(P2; optional until WS3' marks it required)" and keep the rest of each description (for example `NONE for COD`, `null for COD`).
@@ -1106,13 +1106,13 @@ Run: `go test -race ./... -count=1`. Expected: PASS, including every P1 checkout
 Run `make lint-openapi` from the worktree root. Expected: no errors.
 Run `cd services/order && go test ./internal/itest/ -count=1`. Expected: PASS, because the contract transport now enforces the new fields on every response.
 
-- [ ] **Step 2: Regenerate web types**
+- [x] **Step 2: Regenerate web types**
 
 `cd web && npm ci && npm run gen:api && git status --short && npm run lint && npm test`.
 - If `gen:api` changes only `web/src/api/gen/order.ts` and `lint` plus `test` pass, `git add web/src/api/gen/order.ts`.
 - **If `npm run lint` (its `tsc -b` step) fails** because WS5'-owned code builds `Order` objects without the new required fields (expected in `web/src/mocks/db.ts`), **STOP**. Don't edit `web/` beyond `order.ts`. Report the failing files and errors to the user and ask how to proceed.
 
-- [ ] **Step 3: README**
+- [x] **Step 3: README**
 
 Update `services/order/README.md`:
 - the intro (the P2 scope and spec path);
@@ -1136,7 +1136,7 @@ Add **Design decisions 18+** (P2 spec gaps resolved by WS3'):
 
 Also add every other deviation recorded during Tasks 1–10.
 
-- [ ] **Step 4: Full verification** (from the worktree root)
+- [x] **Step 4: Full verification** (from the worktree root)
 ```bash
 (cd services/order && go build ./... && go vet ./... && ../../../E-Commerce/bin/golangci-lint run ./... && go test -race -count=1 ./...)
 make lint-openapi
@@ -1149,4 +1149,4 @@ COMPOSE_PROJECT_NAME=p2ws3 make down   # never down -v
 ```
 If the Makefile doesn't honour `COMPOSE_PROJECT_NAME`, run the equivalent `docker compose -p p2ws3 … --profile app up -d --build` and note it in the README. Expected: order-svc healthy, and migrations 5 and 6 applied. With `docker compose -p p2ws3 stop payment` followed by a restart of order, order is still healthy.
 
-- [ ] **Step 5: Commit** — `docs(order): P2 README; contract: mark P2 Order fields required`
+- [x] **Step 5: Commit** — `docs(order): P2 README; contract: mark P2 Order fields required`
