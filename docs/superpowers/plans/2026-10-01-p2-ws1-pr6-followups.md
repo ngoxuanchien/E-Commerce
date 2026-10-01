@@ -49,7 +49,7 @@ Catalog has no periodic worker, so it is not wired here. It can call `inbox.Purg
 
 ## F2 — `cancelAndObserve`: Cancel and its follow-up Query each get their own timeout
 
-- [ ] **F2.**
+- [x] **F2.**
   - `internal/app/cancel.go`: `cancelAndObserve` currently runs `prov.Cancel` and `queryAndApply` under one `WithTimeout(ctx, providerTimeout)`.
     - Give it a `timeout time.Duration` parameter.
     - Wrap `Cancel` and `queryAndApply` in separate `context.WithTimeout(ctx, timeout)` calls, calling every cancel func.

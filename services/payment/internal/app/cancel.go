@@ -65,7 +65,7 @@ func (c *Canceller) settle(ctx context.Context, p domain.Payment) error {
 	if !ok {
 		return fmt.Errorf("%w: no adapter for provider %q", ErrProviderUnavailable, p.Provider)
 	}
-	cancelled, err := cancelAndObserve(ctx, c.obs, prov, p)
+	cancelled, err := cancelAndObserve(ctx, c.obs, prov, p, providerTimeout)
 	if err != nil {
 		return fmt.Errorf("payment %s: %w", p.ID, err)
 	}
@@ -84,15 +84,19 @@ func (c *Canceller) settle(ctx context.Context, p domain.Payment) error {
 }
 
 // cancelAndObserve asks the provider to cancel, then re-queries and applies the observation.
+// Each provider call (Cancel and Query) gets its own timeout budget.
 // Every provider error is reported as ErrProviderUnavailable.
-func cancelAndObserve(ctx context.Context, obs *Observer, prov Provider, p domain.Payment) (bool, error) {
-	callCtx, cancel := context.WithTimeout(ctx, providerTimeout)
-	defer cancel()
-	cancelled, err := prov.Cancel(callCtx, p)
+func cancelAndObserve(ctx context.Context, obs *Observer, prov Provider, p domain.Payment, timeout time.Duration) (bool, error) {
+	cancelCtx, cancelCancel := context.WithTimeout(ctx, timeout)
+	cancelled, err := prov.Cancel(cancelCtx, p)
+	cancelCancel()
 	if err != nil {
 		return false, unavailable(err)
 	}
-	if err := queryAndApply(callCtx, obs, prov, p); err != nil {
+	queryCtx, queryCancel := context.WithTimeout(ctx, timeout)
+	err = queryAndApply(queryCtx, obs, prov, p)
+	queryCancel()
+	if err != nil {
 		return false, err
 	}
 	return cancelled, nil

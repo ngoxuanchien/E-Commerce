@@ -106,10 +106,7 @@ func (r *Reconciler) reconcile(ctx context.Context, p domain.Payment, now time.T
 	if cur.Status != domain.StatusPending {
 		return nil
 	}
-	if err := r.withProviderTimeout(ctx, func(callCtx context.Context) error {
-		_, err := cancelAndObserve(callCtx, r.obs, prov, cur)
-		return err
-	}); err != nil {
+	if _, err := cancelAndObserve(ctx, r.obs, prov, cur, r.cfg.ProviderTimeout); err != nil {
 		return err
 	}
 	cur, err = r.store.GetPayment(ctx, p.ID)

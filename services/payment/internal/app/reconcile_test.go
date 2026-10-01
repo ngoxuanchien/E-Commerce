@@ -126,6 +126,25 @@ func TestReconcilerRunOnce(t *testing.T) {
 		assert.Equal(t, domain.StatusExpired, c.status(t, p.ID).Status)
 	})
 
+	t.Run("a slow Cancel leaves the follow-up Query its own budget", func(t *testing.T) {
+		c.clk.set(t0)
+		const budget = 400 * time.Millisecond
+		slow := &slowCancelProvider{
+			stubProvider: stubProvider{name: "stripe", observed: domain.Observed{State: domain.ObservedPending}},
+			delay:        3 * budget / 4, minLeft: budget / 2,
+		}
+		p := newPayment(id(), domain.StatusPending)
+		p.Provider = "stripe"
+		p.ExpiresAt = t0.Add(15 * time.Minute)
+		c.insert(t, p)
+		rec := app.NewReconciler(c.store, app.NewProviders(c.fake, slow), app.NewObserver(c.store, c.clk.now, slog.Default()),
+			app.ReconcileConfig{MinAge: time.Minute, ProviderTimeout: budget}, c.clk.now, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		c.clk.set(p.ExpiresAt.Add(6 * time.Minute))
+		require.NoError(t, rec.RunOnce(ctx))
+		assert.Equal(t, 1, slow.cancels)
+		assert.Equal(t, domain.StatusExpired, c.status(t, p.ID).Status)
+	})
+
 	t.Run("past expires_at but inside the 5 min grace stays PENDING", func(t *testing.T) {
 		c.clk.set(t0)
 		p := c.fakePayment(t)
@@ -320,4 +339,32 @@ func (s *slowQueryProvider) Cancel(ctx context.Context, p domain.Payment) (bool,
 		return false, context.DeadlineExceeded
 	}
 	return s.stubProvider.Cancel(ctx, p)
+}
+
+// slowCancelProvider spends delay on its Cancel and refuses a Query whose context has less than
+// minLeft before its deadline, the way a real HTTP call would time out.
+type slowCancelProvider struct {
+	stubProvider
+	delay, minLeft time.Duration
+	canceled       bool
+}
+
+func (s *slowCancelProvider) Cancel(ctx context.Context, p domain.Payment) (bool, error) {
+	select {
+	case <-time.After(s.delay):
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
+	s.mu.Lock()
+	s.cancels++
+	s.canceled = true
+	s.mu.Unlock()
+	return true, nil
+}
+
+func (s *slowCancelProvider) Query(ctx context.Context, p domain.Payment) (domain.Observed, error) {
+	if dl, ok := ctx.Deadline(); !ok || time.Until(dl) < s.minLeft {
+		return domain.Observed{}, context.DeadlineExceeded
+	}
+	return s.stubProvider.Query(ctx, p)
 }
