@@ -1010,7 +1010,7 @@ Run: `go test ./... -count=1`. Expected: PASS.
   - `PaymentDeadline: timestamppb.New(*d)`, left nil when it's unset.
 - `bootstrap.App.RegisterGRPC(s grpc.ServiceRegistrar)` → `orderv1.RegisterOrderInternalServer(s, grpcadapter.NewServer(query, logger))`. `main.go`: `grpcSrv, _ := grpcx.NewServer(); svc.RegisterGRPC(grpcSrv)`.
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
   - `checkout_query_test.go` (Postgres):
     - `awaitingCheckout(n=2)`, then a buyer cancel of one → both returned, sorted by ID, with the view's `BuyerID`, `PaymentMethod "VNPAY"` and `PaymentDeadline` set;
     - a COD checkout → `PaymentDeadline nil`;
@@ -1024,9 +1024,9 @@ Run: `go test ./... -count=1`. Expected: PASS.
 
 Run: `go test ./internal/app/ ./internal/adapter/grpc/ -count=1`. Expected: FAIL.
 
-- [ ] **Step 2: Implement** as in **Interfaces**.
+- [x] **Step 2: Implement** as in **Interfaces**.
 
-- [ ] **Step 3: itest** `testGetCheckout`:
+- [x] **Step 3: itest** `testGetCheckout`:
   - `newHarness` starts a bufconn `grpc.NewServer()` with `a.RegisterGRPC(srv)` and dials `h.orderRPC = orderv1.NewOrderInternalClient(conn)`;
   - an online checkout from 2 shops → `GetCheckout` returns `CheckoutId`, `BuyerId == b.id` and `PaymentMethod "VNPAY"`;
   - `PaymentDeadline.AsTime()` equals the REST `payment_deadline` (parsed with RFC 3339);
@@ -1035,7 +1035,7 @@ Run: `go test ./internal/app/ ./internal/adapter/grpc/ -count=1`. Expected: FAIL
 
 Run: `go test ./... -count=1`. Expected: PASS.
 
-- [ ] **Step 4: Commit** — `feat(order): OrderInternal.GetCheckout gRPC server`
+- [x] **Step 4: Commit** — `feat(order): OrderInternal.GetCheckout gRPC server`
 
 ---
 
