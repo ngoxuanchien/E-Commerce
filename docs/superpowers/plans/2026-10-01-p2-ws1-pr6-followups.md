@@ -36,6 +36,15 @@ Each task does the following:
     - a reconciler test checking that a back-dated `processed_events` row is gone after `RunOnce` and a fresh one remains.
   - Commit: `fix(payment): the reconciler purges processed_events after 30 days`.
 
+- [ ] **F1c — move the `processed_events` index out of the already-pushed `000004`.**
+  - Why: `000004` was pushed in 8459b27, and a database already at version 4 never re-runs it, so the index F1b added there would never reach it.
+  - Remove the index and its DROP from `000004_review_fixes.{up,down}.sql`.
+  - Add `000005_processed_events_purge.up.sql` with `CREATE INDEX IF NOT EXISTS processed_events_processed_at_idx ON processed_events (processed_at);` and a comment on why.
+  - Add the matching `.down.sql` (`DROP INDEX IF EXISTS …`).
+  - Keep the copy in `000002`. The verbatim-schema test needs it, and `IF NOT EXISTS` makes it harmless.
+  - Update `migrations_test.go` so the down sequence runs 000005 first. The applied DB must have the index, and it must be gone after the downs.
+  - Commit: `fix(payment): processed_events index in its own migration`.
+
 Catalog has no periodic worker, so it is not wired here. It can call `inbox.PurgeBefore` once it has one; that is recorded in the follow-ups memory.
 
 ## F2 — `cancelAndObserve`: Cancel and its follow-up Query each get their own timeout
