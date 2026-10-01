@@ -265,7 +265,7 @@ git commit -m "feat(order): P2 schema — payment, commission, delivery and shop
   - `→ CANCELLED` with `PaymentStatus == PAID` sets `REFUND_PENDING`;
   - `→ DELIVERED` sets `DeliveredAt = &at`.
 
-- [ ] **Step 1: Failing transition-table test**
+- [x] **Step 1: Failing transition-table test**
 
 Extend `legal` in `TestTransitionTable` with:
 ```go
@@ -285,7 +285,7 @@ func TestSellerCannotActOnAwaitingPayment(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Failing commission and payment-move tests**
+- [x] **Step 2: Failing commission and payment-move tests**
 
 `commission_test.go`:
 ```go
@@ -319,7 +319,7 @@ func TestCommission(t *testing.T) {
 
 Run: `go test ./internal/domain/ -count=1`. Expected: FAIL (undefined symbols).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `commission.go`:
 ```go
@@ -367,7 +367,7 @@ Add the table entries and actions. Update the `ActionSubmit` comment ("COD check
 
 Run: `go test ./internal/domain/ -count=1`. Expected: PASS. `go test -short ./...` must pass: existing callers of `BuildOrders` compile unchanged, and COD is unaffected.
 
-- [ ] **Step 4: Commit** — `feat(order): P2 transition table, commission and payment-status rules`
+- [x] **Step 4: Commit** — `feat(order): P2 transition table, commission and payment-status rules`
 
 ---
 
