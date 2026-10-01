@@ -91,6 +91,10 @@ type Tx interface {
 	// (and bumps it). It adds no history row. ErrConcurrentUpdate when the
 	// version moved on.
 	SavePaymentStatus(ctx context.Context, o domain.Order, prevVersion int) error
+	// MarkProcessed records eventID in the inbox as this consumer. firstTime is
+	// false when it was already recorded, in which case the caller must skip
+	// the event. It is called in the same transaction as the event's effect.
+	MarkProcessed(ctx context.Context, eventID string) (firstTime bool, err error)
 	// Publish writes p to the outbox for topic order.events, keyed by orderID.
 	Publish(ctx context.Context, orderID string, p event.Payload, at time.Time) error
 	// ClaimStalePending locks up to limit PENDING orders created before

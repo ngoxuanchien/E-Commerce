@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/ngoxuanchien/e-commerce/pkg/event"
+	"github.com/ngoxuanchien/e-commerce/pkg/inbox"
 	"github.com/ngoxuanchien/e-commerce/pkg/outbox"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/postgres/sqlcdb"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/app"
@@ -131,6 +132,13 @@ func (t *txStore) update(ctx context.Context, o domain.Order, prevVersion int) e
 
 func (t *txStore) SavePaymentStatus(ctx context.Context, o domain.Order, prevVersion int) error {
 	return t.update(ctx, o, prevVersion)
+}
+
+// InboxConsumer is this service's inbox identity (WS3' §5).
+const InboxConsumer = "order-svc"
+
+func (t *txStore) MarkProcessed(ctx context.Context, eventID string) (bool, error) {
+	return inbox.MarkProcessed(ctx, t.tx, InboxConsumer, eventID)
 }
 
 func (t *txStore) Publish(ctx context.Context, orderID string, p event.Payload, at time.Time) error {

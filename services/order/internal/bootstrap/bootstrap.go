@@ -4,6 +4,7 @@ package bootstrap
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -13,10 +14,12 @@ import (
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 
+	"github.com/ngoxuanchien/e-commerce/pkg/kafkax"
 	"github.com/ngoxuanchien/e-commerce/pkg/outbox"
 	"github.com/ngoxuanchien/e-commerce/pkg/server"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/catalog"
 	httpadapter "github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/http"
+	kafkaadapter "github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/kafka"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/payment"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/postgres"
 	redisadapter "github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/redis"
@@ -73,19 +76,26 @@ type Deps struct {
 	CatalogConn grpc.ClientConnInterface
 	PaymentConn grpc.ClientConnInterface
 	Producer    Producer
-	Logger      *slog.Logger     // nil = slog.Default()
-	Now         func() time.Time // nil = UTC wall clock
+	// KafkaBrokers are the bootstrap brokers of the payment.events consumer
+	// group; an empty list leaves the consumer out, for a deployment that
+	// runs the workers elsewhere.
+	KafkaBrokers []string
+	Logger       *slog.Logger     // nil = slog.Default()
+	Now          func() time.Time // nil = UTC wall clock
 }
 
 // App is the wired service.
 type App struct {
-	API     http.Handler // /api routes; wrap with authctx.Middleware
-	Relay   *outbox.Relay
-	Sweeper *app.Sweeper
-	checks  map[string]server.Check
+	API      http.Handler // /api routes; wrap with authctx.Middleware
+	Relay    *outbox.Relay
+	Sweeper  *app.Sweeper
+	Consumer *kafkax.Consumer // nil when Deps.KafkaBrokers is empty
+	checks   map[string]server.Check
 }
 
-func New(cfg Config, d Deps) *App {
+// New wires the service. It fails only when the payment.events consumer cannot
+// join its group, which is a deployment error worth failing fast on.
+func New(cfg Config, d Deps) (*App, error) {
 	if d.Logger == nil {
 		d.Logger = slog.Default()
 	}
@@ -96,6 +106,17 @@ func New(cfg Config, d Deps) *App {
 	carts := redisadapter.NewCartStore(d.Redis)
 	cat := catalog.New(d.CatalogConn, cfg.Catalog)
 	pay := payment.New(d.PaymentConn, cfg.PaymentCallTimeout)
+
+	var consumer *kafkax.Consumer
+	if len(d.KafkaBrokers) > 0 {
+		var err error
+		consumer, err = kafkaadapter.NewConsumer(d.KafkaBrokers,
+			kafkaadapter.NewHandler(app.NewPaymentEventHandler(store, d.Now, d.Logger), d.Logger), d.Logger)
+		if err != nil {
+			return nil, fmt.Errorf("payment events consumer: %w", err)
+		}
+	}
+
 	return &App{
 		API: httpadapter.NewRouter(httpadapter.Services{
 			Cart: app.NewCartService(carts, cat, cfg.ShippingFeeFlat, d.Logger),
@@ -112,22 +133,32 @@ func New(cfg Config, d Deps) *App {
 			Interval: cfg.SweeperInterval, PendingTimeout: cfg.PendingTimeout,
 			AutoCompleteAfter: cfg.AutoCompleteAfter, Now: d.Now, Logger: d.Logger,
 		}),
+		Consumer: consumer,
 		checks: map[string]server.Check{
 			"postgres": d.Pool.Ping,
 			"redis":    func(ctx context.Context) error { return d.Redis.Ping(ctx).Err() },
 			"kafka":    d.Producer.Ping,
 		},
-	}
+	}, nil
 }
 
 // ReadinessChecks are the /readyz dependencies: Postgres, Redis, Kafka.
 func (a *App) ReadinessChecks() map[string]server.Check { return a.checks }
 
-// RunWorkers runs the outbox relay and the sweeper until ctx is cancelled.
+// RunWorkers runs the outbox relay, the sweeper and the payment.events consumer
+// until ctx is cancelled. A deployment without KafkaBrokers has no consumer.
 func (a *App) RunWorkers(ctx context.Context) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() { defer wg.Done(); _ = a.Relay.Run(ctx) }()
 	go func() { defer wg.Done(); _ = a.Sweeper.Run(ctx) }()
+	if a.Consumer != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer a.Consumer.Close()
+			_ = a.Consumer.Run(ctx)
+		}()
+	}
 	wg.Wait()
 }

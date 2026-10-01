@@ -91,15 +91,18 @@ func run() error {
 	}
 	defer func() { _ = paymentConn.Close() }()
 
-	svc := bootstrap.New(bootstrap.Config{
+	svc, err := bootstrap.New(bootstrap.Config{
 		ShippingFeeFlat: cfg.ShippingFeeFlat, SweeperInterval: cfg.SweeperInterval,
 		PendingTimeout: cfg.PendingTimeout, Catalog: catalog.DefaultConfig(),
 		OnlineMethods: cfg.onlineMethods(), CommissionRateBps: cfg.CommissionRateBps,
 		PaymentTimeout: cfg.PaymentTimeout, AutoCompleteAfter: cfg.AutoCompleteAfter,
 	}, bootstrap.Deps{
 		Pool: pool, Redis: rdb, CatalogConn: catalogConn, PaymentConn: paymentConn,
-		Producer: producer, Logger: logger,
+		Producer: producer, KafkaBrokers: cfg.KafkaBrokers, Logger: logger,
 	})
+	if err != nil {
+		return err
+	}
 
 	// Workers stop (deferred last, so run first) before the connections close.
 	workersCtx, stopWorkers := context.WithCancel(ctx)

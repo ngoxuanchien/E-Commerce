@@ -96,6 +96,9 @@ func TestOrderAPI(t *testing.T) {
 	t.Run("a paid checkout survives the sweeper", h.testPaymentTimeoutPaidUntouched)
 	t.Run("an unavailable payment-svc is retried, then cancels", h.testPaymentTimeoutUnavailableThenNotPaid)
 	t.Run("sweeper completes a delivered order on time", h.testAutoComplete)
+	t.Run("a captured payment confirms its orders", h.testPaymentSucceeded)
+	t.Run("a late capture is refunded, not lost", h.testLateSuccessThenRefund)
+	t.Run("a seller cancelling a paid order asks for a refund", h.testPaidOrderCancelledBySeller)
 	t.Run("every published event matches its schema", h.testEventsValid)
 }
 
@@ -113,6 +116,8 @@ type harness struct {
 	fake     *catalogfake.Fake
 	pay      *paymentfake.Fake
 	producer bootstrap.Producer
+	brokers  []string    // bootstrap brokers of the payment.events consumer group
+	kafka    *kgo.Client // publishes the payment.events the App consumes
 	events   *eventLog
 	baseURL  string
 	contract *http.Client // validates against order.yaml
@@ -133,15 +138,21 @@ func newHarness(t *testing.T) *harness {
 
 	brokers := testutil.Kafka(t)
 	testutil.CreateTopic(t, brokers, event.TopicOrderEvents, 3)
+	testutil.CreateTopic(t, brokers, event.TopicPaymentEvents, 3)
 	producer, err := kafkax.NewProducer(brokers)
 	require.NoError(t, err)
 	t.Cleanup(producer.Close)
+	kafka, err := kgo.NewClient(kgo.SeedBrokers(brokers...))
+	require.NoError(t, err)
+	t.Cleanup(kafka.Close)
 
 	fake := catalogfake.New()
 	pay := paymentfake.New()
-	a := bootstrap.New(baseConfig(), bootstrap.Deps{
-		Pool: pool, Redis: rdb, CatalogConn: fake.Dial(t), PaymentConn: pay.Dial(t), Producer: producer,
+	a, err := bootstrap.New(baseConfig(), bootstrap.Deps{
+		Pool: pool, Redis: rdb, CatalogConn: fake.Dial(t), PaymentConn: pay.Dial(t),
+		Producer: producer, KafkaBrokers: brokers,
 	})
+	require.NoError(t, err)
 
 	wctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
@@ -153,19 +164,33 @@ func newHarness(t *testing.T) *harness {
 
 	return &harness{
 		app: a, pool: pool, rdb: rdb, fake: fake, pay: pay, producer: producer,
+		brokers: brokers, kafka: kafka,
 		events: newEventLog(t, brokers), baseURL: srv.URL,
 		contract: &http.Client{Transport: testutil.ContractTransport(t, orderSpec, nil)},
 		raw:      &http.Client{},
 	}
 }
 
-// deps wires a second App to the same containers and fakes.
+// deps wires a second App to the same containers and fakes, including the
+// payment.events consumer group.
 func (h *harness) deps(t *testing.T) bootstrap.Deps {
 	t.Helper()
 	return bootstrap.Deps{
 		Pool: h.pool, Redis: h.rdb, CatalogConn: h.fake.Dial(t), PaymentConn: h.pay.Dial(t),
-		Producer: h.producer,
+		Producer: h.producer, KafkaBrokers: h.brokers,
 	}
+}
+
+// publishPayment produces a payment.events envelope keyed by checkoutID; tests
+// reuse eventID to simulate redelivery.
+func (h *harness) publishPayment(t *testing.T, eventID, checkoutID string, p event.Payload) {
+	t.Helper()
+	env, err := event.New(p, time.Now())
+	require.NoError(t, err)
+	env.EventID = eventID
+	b, err := json.Marshal(env)
+	require.NoError(t, err)
+	require.NoError(t, h.kafka.ProduceSync(ctx, &kgo.Record{Topic: event.TopicPaymentEvents, Key: []byte(checkoutID), Value: b}).FirstErr())
 }
 
 // scoped starts a second App on the same containers and fakes with the base
@@ -174,11 +199,16 @@ func (h *harness) deps(t *testing.T) bootstrap.Deps {
 // payment and auto-complete timers, so only the scoped App acts on scoped
 // orders — except that the main sweeper may also time out an expired
 // checkout, which is harmless: both ask the same payment fake.
+//
+// The scoped App joins the same payment.events group as the main one; Kafka
+// gives each record to one member of the group, and the scenarios that publish
+// payment events run on the main App, whose group therefore picks them up.
 func (h *harness) scoped(t *testing.T, mutate func(*bootstrap.Config)) *harness {
 	t.Helper()
 	cfg := baseConfig()
 	mutate(&cfg)
-	a := bootstrap.New(cfg, h.deps(t))
+	a, err := bootstrap.New(cfg, h.deps(t))
+	require.NoError(t, err)
 
 	wctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})

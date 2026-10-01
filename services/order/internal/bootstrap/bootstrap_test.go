@@ -27,11 +27,14 @@ func TestNewWiresTheSweeperWithThePaymentClient(t *testing.T) {
 	fake := paymentfake.New()
 
 	// The pool, the cache and the producer are only stored: no check runs and
-	// no query is issued here, so the fake is never called.
-	a := New(Config{PaymentCallTimeout: 200 * time.Millisecond, AutoCompleteAfter: 72 * time.Hour}, Deps{
+	// no query is issued here, so the fake is never called. KafkaBrokers is
+	// empty, so no consumer is built either.
+	a, err := New(Config{PaymentCallTimeout: 200 * time.Millisecond, AutoCompleteAfter: 72 * time.Hour}, Deps{
 		Pool: nil, Redis: nil, PaymentConn: fake.Dial(t), Producer: stubProducer{},
 	})
+	require.NoError(t, err)
 	require.NotNil(t, a.Sweeper)
+	assert.Nil(t, a.Consumer, "no brokers means no payment.events consumer")
 	assert.Zero(t, fake.Calls(checkoutID), "New does not call payment-svc")
 }
 

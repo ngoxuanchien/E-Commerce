@@ -33,6 +33,178 @@ func (h *harness) onlineCheckout(t *testing.T, s *harness, key string, shops ...
 	return b, res.CheckoutID, res.Orders
 }
 
+// paySucceeded builds and publishes the PaymentSucceeded of res: one
+// allocation per order, carrying that order's seller, total and commission.
+// The shops are keyed by shop ID so the allocation names the right seller.
+func (h *harness) paySucceeded(t *testing.T, eventID string, res checkoutResp, shops map[string]catalogfake.Shop) {
+	t.Helper()
+	paymentID := newID()
+	ev := event.PaymentSucceeded{
+		PaymentID: paymentID, CheckoutID: res.CheckoutID,
+		Provider: event.ProviderVNPay, ProviderRef: "vnpay-" + paymentID,
+		Allocations: make([]event.Allocation, 0, len(res.Orders)),
+	}
+	for _, o := range res.Orders {
+		shop, ok := shops[o.Shop.ID]
+		require.True(t, ok, "no fake shop for %s", o.Shop.ID)
+		ev.Amount += o.Total
+		ev.Allocations = append(ev.Allocations, event.Allocation{
+			OrderID: o.ID, SellerUserID: shop.SellerUserID,
+			Amount: o.Total, CommissionAmount: o.CommissionAmount,
+		})
+	}
+	h.publishPayment(t, eventID, res.CheckoutID, ev)
+}
+
+// eventuallyOrder polls the order of c until match accepts it; it returns the
+// last response it saw, so a caller can assert on the fields it waited for.
+func (h *harness) eventuallyOrder(t *testing.T, c caller, orderID string, match func(orderResp) bool, what string) orderResp {
+	t.Helper()
+	var got orderResp
+	require.Eventually(t, func() bool {
+		status, body, err := h.try(h.contract, c, http.MethodGet, "/api/orders/"+orderID, nil)
+		if err != nil || status != http.StatusOK {
+			return false
+		}
+		got = decode[orderResp](t, body)
+		return match(got)
+	}, 15*time.Second, 100*time.Millisecond, "order %s never reached %s", orderID, what)
+	return got
+}
+
+// isPaid is an order whose payment was captured: confirmed and paid.
+func isPaid(o orderResp) bool { return o.Status == "PENDING_CONFIRMATION" && o.PaymentStatus == "PAID" }
+
+// isCancelledAndRefunding is an order cancelled before its payment arrived and
+// since captured, so its money has to go back.
+func isCancelledAndRefunding(o orderResp) bool {
+	return o.Status == "CANCELLED" && o.PaymentStatus == "REFUND_PENDING"
+}
+
+// processedEvent waits until the consumer recorded eventID in the inbox.
+func (h *harness) processedEvent(t *testing.T, eventID string) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		var ok bool
+		return h.pool.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM processed_events WHERE event_id = $1)`, eventID).Scan(&ok) == nil && ok
+	}, 15*time.Second, 50*time.Millisecond, "payment event %s was never applied", eventID)
+}
+
+// testPaymentSucceeded: a captured payment moves every allocated order to
+// PENDING_CONFIRMATION/PAID, and redelivering the event changes nothing.
+func (h *harness) testPaymentSucceeded(t *testing.T) {
+	shops := map[string]catalogfake.Shop{}
+	var list []catalogfake.Shop
+	for _, name := range []string{"Paid A", "Paid B"} {
+		shop := catalogfake.NewShop(name)
+		shops[shop.ID] = shop
+		list = append(list, shop)
+	}
+	b, checkoutID, orders := h.onlineCheckout(t, h, "ck-paid-succeeded", list...)
+	res := checkoutResp{CheckoutID: checkoutID, Orders: orders}
+
+	eventID := newID()
+	h.paySucceeded(t, eventID, res, shops)
+	for _, o := range orders {
+		h.eventuallyOrder(t, b, o.ID, isPaid, "PENDING_CONFIRMATION/PAID")
+	}
+	h.processedEvent(t, eventID)
+
+	// Redeliver the same event, then wait for a later marker record on the same
+	// checkout key: both records are on one partition, so once the marker's
+	// inbox row exists the redelivery has been consumed too.
+	h.paySucceeded(t, eventID, res, shops)
+	marker := newID()
+	h.publishPayment(t, marker, checkoutID, event.PaymentSucceeded{
+		PaymentID: newID(), CheckoutID: checkoutID, Provider: event.ProviderVNPay, Amount: 0,
+		Allocations: []event.Allocation{},
+	})
+	h.processedEvent(t, marker)
+
+	for _, o := range orders {
+		status, body := h.do(t, b, http.MethodGet, "/api/orders/"+o.ID, nil)
+		require.Equal(t, http.StatusOK, status)
+		got := decode[orderResp](t, body)
+		paid := 0
+		for _, e := range got.History {
+			if e.To == "PENDING_CONFIRMATION" {
+				paid++
+			}
+		}
+		assert.Equal(t, 1, paid, "the redelivered payment is applied once")
+		h.events.waitTypes(t, o.ID, event.TypeOrderCreated, event.TypeOrderStatusChanged,
+			event.TypeOrderStatusChanged)
+	}
+}
+
+// testLateSuccessThenRefund: a capture that arrives after the buyer cancelled
+// leaves the money REFUND_PENDING; refunding one order of the checkout leaves
+// the other waiting for its own refund.
+func (h *harness) testLateSuccessThenRefund(t *testing.T) {
+	shopA, shopB := catalogfake.NewShop("Late A"), catalogfake.NewShop("Late B")
+	shops := map[string]catalogfake.Shop{shopA.ID: shopA, shopB.ID: shopB}
+	b, checkoutID, orders := h.onlineCheckout(t, h, "ck-late-refund", shopA, shopB)
+	first, second := orders[0], orders[1]
+
+	status, _ := h.act(t, b, "/api/orders/"+first.ID+"/cancel", map[string]string{"reason": "changed my mind"})
+	require.Equal(t, http.StatusOK, status)
+
+	h.paySucceeded(t, newID(), checkoutResp{CheckoutID: checkoutID, Orders: orders}, shops)
+	for _, o := range orders {
+		h.eventuallyOrder(t, b, o.ID, isCancelledAndRefunding, "CANCELLED/REFUND_PENDING")
+	}
+
+	h.publishPayment(t, newID(), checkoutID, event.PaymentRefunded{
+		RefundID: newID(), PaymentID: newID(), CheckoutID: checkoutID,
+		OrderID: &first.ID, Amount: first.Total, Provider: event.ProviderVNPay,
+	})
+	require.Eventually(t, func() bool {
+		status, body := h.do(t, b, http.MethodGet, "/api/orders/"+first.ID, nil)
+		if status != http.StatusOK {
+			return false
+		}
+		return decode[orderResp](t, body).PaymentStatus == "REFUNDED"
+	}, 15*time.Second, 100*time.Millisecond, "the refunded order")
+
+	status, body := h.do(t, b, http.MethodGet, "/api/orders/"+second.ID, nil)
+	require.Equal(t, http.StatusOK, status)
+	assert.Equal(t, "REFUND_PENDING", decode[orderResp](t, body).PaymentStatus,
+		"only the refunded order's money moved")
+}
+
+// testPaidOrderCancelledBySeller: a paid order the seller cancels becomes
+// REFUND_PENDING, and the OrderCancelled carries the checkout and method, so
+// ledger-svc can refund it.
+func (h *harness) testPaidOrderCancelledBySeller(t *testing.T) {
+	shop := catalogfake.NewShop("Paid Cancel")
+	shops := map[string]catalogfake.Shop{shop.ID: shop}
+	b, checkoutID, orders := h.onlineCheckout(t, h, "ck-paid-cancel", shop)
+	o := orders[0]
+
+	h.paySucceeded(t, newID(), checkoutResp{CheckoutID: checkoutID, Orders: orders}, shops)
+	h.eventuallyOrder(t, b, o.ID, isPaid, "PENDING_CONFIRMATION/PAID")
+
+	seller := sellerOf(shop)
+	status, _ := h.act(t, seller, "/api/seller/orders/"+o.ID+"/confirm", nil)
+	require.Equal(t, http.StatusOK, status)
+	status, got := h.act(t, seller, "/api/seller/orders/"+o.ID+"/cancel", map[string]string{"reason": "out of stock"})
+	require.Equal(t, http.StatusOK, status)
+	assert.Equal(t, "CANCELLED", got.Status)
+	assert.Equal(t, "REFUND_PENDING", got.PaymentStatus)
+
+	// OrderCreated, await_payment, mark_paid, confirm, cancel.
+	evs := h.events.waitTypes(t, o.ID, event.TypeOrderCreated, event.TypeOrderStatusChanged,
+		event.TypeOrderStatusChanged, event.TypeOrderStatusChanged, event.TypeOrderStatusChanged,
+		event.TypeOrderCancelled)
+	cancelled, err := event.DecodeData[event.OrderCancelled](evs[len(evs)-1])
+	require.NoError(t, err)
+	assert.Equal(t, event.OrderCancelled{
+		OrderID: o.ID, Reason: "out of stock", CancelledBy: "seller",
+		CheckoutID: checkoutID, PaymentMethod: "VNPAY",
+	}, cancelled)
+}
+
 // testPaymentTimeout: an online checkout that never pays is cancelled whole,
 // its stock released and an OrderCancelled published for every order.
 func (h *harness) testPaymentTimeout(t *testing.T) {
