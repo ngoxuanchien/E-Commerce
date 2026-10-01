@@ -3,6 +3,7 @@ package app_test
 import (
 	"context"
 	"errors"
+	"net/http"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -23,6 +24,14 @@ type faultyStore struct {
 	app.Store
 	failComplete atomic.Bool // CompleteIdempotencyKey fails (Tx C rolls back)
 	loseAck      atomic.Bool // the tx commits but InTx reports an error
+	failKeyRead  atomic.Bool // reading the key back fails (the commit ack was lost and the row cannot be re-read)
+}
+
+func (s *faultyStore) IdempotencyKey(ctx context.Context, userID, key string) (app.IdempotencyRecord, bool, error) {
+	if s.failKeyRead.CompareAndSwap(true, false) {
+		return app.IdempotencyRecord{}, false, errInjected
+	}
+	return s.Store.IdempotencyKey(ctx, userID, key)
 }
 
 func (s *faultyStore) InTx(ctx context.Context, fn func(app.Tx) error) error {
@@ -99,5 +108,31 @@ func TestCheckoutTxCFailure(t *testing.T) {
 		lines, err := e.carts.Lines(ctx, buyer)
 		require.NoError(t, err)
 		assert.Empty(t, lines)
+	})
+
+	t.Run("a Tx C whose commit ack is lost and whose key cannot be re-read keeps the key", func(t *testing.T) {
+		// The harshest ambiguous COMMIT: the server committed, the client saw
+		// an error, and the row cannot be read back either, so the run cannot
+		// tell whether its response landed. Releasing the key here would let
+		// the retry check out a second time.
+		buyer := uid()
+		s := e.fake.AddSku(catalogfake.NewShop("Ack lost"), 10_000, 5)
+		e.cartSet(t, buyer, s.GetSkuId(), 1)
+		store.loseAck.Store(true)
+		store.failKeyRead.Store(true)
+
+		_, err := svc.Checkout(ctx, checkoutInput(buyer, "ack-lost"), (&recorder{}).encode)
+		require.ErrorIs(t, err, errInjected, "the checkout reports the lost commit")
+
+		rec := &recorder{}
+		again, err := svc.Checkout(ctx, checkoutInput(buyer, "ack-lost"), rec.encode)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusCreated, again.Status, "the retry replays the stored 201")
+		ids := createdOrderIDs(t, again)
+		require.Len(t, ids, 1, "the retry returns the order the first run created")
+		orders := buyerOrders(t, e, buyer)
+		require.Len(t, orders, 1, "no duplicate order")
+		assert.Equal(t, ids[0], orders[0].ID, "the replayed order is the one already stored")
+		assert.Equal(t, domain.StatusPendingConfirmation, orders[0].Status)
 	})
 }
