@@ -12,6 +12,62 @@ import (
 	"github.com/google/uuid"
 )
 
+const claimDueDelivered = `-- name: ClaimDueDelivered :many
+SELECT id, checkout_id, buyer_id, shop_id, shop_name, seller_user_id, status, subtotal, shipping_fee, total, shipping_address, payment_method, cancel_reason, version, created_at, updated_at, shop_slug, payment_status, payment_deadline, commission_rate_bps, commission_amount, delivered_at FROM orders
+WHERE status = 'DELIVERED' AND delivered_at <= $1
+ORDER BY delivered_at, id
+LIMIT $2
+FOR UPDATE SKIP LOCKED
+`
+
+type ClaimDueDeliveredParams struct {
+	DeliveredBefore *time.Time
+	BatchSize       int32
+}
+
+func (q *Queries) ClaimDueDelivered(ctx context.Context, arg ClaimDueDeliveredParams) ([]Order, error) {
+	rows, err := q.db.Query(ctx, claimDueDelivered, arg.DeliveredBefore, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Order
+	for rows.Next() {
+		var i Order
+		if err := rows.Scan(
+			&i.ID,
+			&i.CheckoutID,
+			&i.BuyerID,
+			&i.ShopID,
+			&i.ShopName,
+			&i.SellerUserID,
+			&i.Status,
+			&i.Subtotal,
+			&i.ShippingFee,
+			&i.Total,
+			&i.ShippingAddress,
+			&i.PaymentMethod,
+			&i.CancelReason,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ShopSlug,
+			&i.PaymentStatus,
+			&i.PaymentDeadline,
+			&i.CommissionRateBps,
+			&i.CommissionAmount,
+			&i.DeliveredAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const claimStalePending = `-- name: ClaimStalePending :many
 SELECT id, checkout_id, buyer_id, shop_id, shop_name, seller_user_id, status, subtotal, shipping_fee, total, shipping_address, payment_method, cancel_reason, version, created_at, updated_at, shop_slug, payment_status, payment_deadline, commission_rate_bps, commission_amount, delivered_at FROM orders
 WHERE status = 'PENDING' AND created_at < $1
@@ -58,6 +114,54 @@ func (q *Queries) ClaimStalePending(ctx context.Context, arg ClaimStalePendingPa
 			&i.CommissionAmount,
 			&i.DeliveredAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const expiredCheckouts = `-- name: ExpiredCheckouts :many
+SELECT checkout_id, min(payment_deadline)::timestamptz AS deadline
+FROM orders
+WHERE status = 'AWAITING_PAYMENT' AND payment_deadline <= $1
+GROUP BY checkout_id
+HAVING $2::timestamptz IS NULL
+    OR (min(payment_deadline), checkout_id) > ($2::timestamptz, $3::uuid)
+ORDER BY deadline, checkout_id
+LIMIT $4
+`
+
+type ExpiredCheckoutsParams struct {
+	Now             *time.Time
+	AfterDeadline   *time.Time
+	AfterCheckoutID *uuid.UUID
+	BatchSize       int32
+}
+
+type ExpiredCheckoutsRow struct {
+	CheckoutID uuid.UUID
+	Deadline   time.Time
+}
+
+func (q *Queries) ExpiredCheckouts(ctx context.Context, arg ExpiredCheckoutsParams) ([]ExpiredCheckoutsRow, error) {
+	rows, err := q.db.Query(ctx, expiredCheckouts,
+		arg.Now,
+		arg.AfterDeadline,
+		arg.AfterCheckoutID,
+		arg.BatchSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ExpiredCheckoutsRow
+	for rows.Next() {
+		var i ExpiredCheckoutsRow
+		if err := rows.Scan(&i.CheckoutID, &i.Deadline); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -438,6 +542,61 @@ func (q *Queries) ListSellerOrders(ctx context.Context, arg ListSellerOrdersPara
 		arg.BeforeID,
 		arg.PageLimit,
 	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Order
+	for rows.Next() {
+		var i Order
+		if err := rows.Scan(
+			&i.ID,
+			&i.CheckoutID,
+			&i.BuyerID,
+			&i.ShopID,
+			&i.ShopName,
+			&i.SellerUserID,
+			&i.Status,
+			&i.Subtotal,
+			&i.ShippingFee,
+			&i.Total,
+			&i.ShippingAddress,
+			&i.PaymentMethod,
+			&i.CancelReason,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ShopSlug,
+			&i.PaymentStatus,
+			&i.PaymentDeadline,
+			&i.CommissionRateBps,
+			&i.CommissionAmount,
+			&i.DeliveredAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockAwaitingPayment = `-- name: LockAwaitingPayment :many
+SELECT id, checkout_id, buyer_id, shop_id, shop_name, seller_user_id, status, subtotal, shipping_fee, total, shipping_address, payment_method, cancel_reason, version, created_at, updated_at, shop_slug, payment_status, payment_deadline, commission_rate_bps, commission_amount, delivered_at FROM orders
+WHERE checkout_id = $1 AND status = 'AWAITING_PAYMENT' AND payment_deadline <= $2
+ORDER BY id
+FOR UPDATE SKIP LOCKED
+`
+
+type LockAwaitingPaymentParams struct {
+	CheckoutID uuid.UUID
+	Now        *time.Time
+}
+
+func (q *Queries) LockAwaitingPayment(ctx context.Context, arg LockAwaitingPaymentParams) ([]Order, error) {
+	rows, err := q.db.Query(ctx, lockAwaitingPayment, arg.CheckoutID, arg.Now)
 	if err != nil {
 		return nil, err
 	}

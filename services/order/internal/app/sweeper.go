@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -9,31 +10,53 @@ import (
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/domain"
 )
 
-// SweeperConfig configures Sweeper. Zero BatchSize / IdempotencyTTL use 100 / 24h.
+// defaultBatchSize is the WS3' §6 batch size of every sweeper step.
+const defaultBatchSize = 50
+
+// defaultPaidGrace is how long a paid checkout may stay AWAITING_PAYMENT past
+// its deadline before the sweeper warns about it (the late-capture consumer
+// marks it paid).
+const defaultPaidGrace = 10 * time.Minute
+
+// SweeperConfig configures Sweeper. Zero BatchSize / IdempotencyTTL use
+// 50 / 24h; a zero PaidGrace uses 10 min; AutoCompleteAfter 0 disables
+// auto-complete.
 type SweeperConfig struct {
 	Interval       time.Duration // SWEEPER_INTERVAL, > 0
 	PendingTimeout time.Duration // PENDING_TIMEOUT
 	BatchSize      int
 	IdempotencyTTL time.Duration
-	Now            func() time.Time
-	Logger         *slog.Logger
+	// AutoCompleteAfter is how long a DELIVERED order stays open before the
+	// system completes it (AUTO_COMPLETE_AFTER); 0 disables the step.
+	AutoCompleteAfter time.Duration
+	// PaidGrace is how long a paid checkout may stay AWAITING_PAYMENT past
+	// its deadline before the sweeper warns; 0 uses 10 min.
+	PaidGrace time.Duration
+	Now       func() time.Time
+	Logger    *slog.Logger
 }
 
 // Sweeper cancels orders stuck in PENDING (a checkout that crashed between
-// Tx A and Tx C) and purges expired idempotency keys (WS3 §4). Replicas may
-// run it concurrently: stale orders are claimed with FOR UPDATE SKIP LOCKED.
+// Tx A and Tx C), times out the checkouts whose payment never arrived,
+// completes delivered orders the buyer never confirmed and purges expired
+// idempotency keys (WS3 §4, WS3' §5). Replicas may run it concurrently: stale
+// orders are claimed with FOR UPDATE SKIP LOCKED.
 type Sweeper struct {
-	store   Store
-	catalog Catalog
-	cfg     SweeperConfig
+	store    Store
+	catalog  Catalog
+	payments Payments // nil disables the payment-timeout step
+	cfg      SweeperConfig
 }
 
-func NewSweeper(store Store, catalog Catalog, cfg SweeperConfig) *Sweeper {
+func NewSweeper(store Store, catalog Catalog, payments Payments, cfg SweeperConfig) *Sweeper {
 	if cfg.BatchSize <= 0 {
-		cfg.BatchSize = 100
+		cfg.BatchSize = defaultBatchSize
 	}
 	if cfg.IdempotencyTTL <= 0 {
 		cfg.IdempotencyTTL = 24 * time.Hour
+	}
+	if cfg.PaidGrace <= 0 {
+		cfg.PaidGrace = defaultPaidGrace
 	}
 	if cfg.Now == nil {
 		cfg.Now = defaultNow
@@ -41,7 +64,7 @@ func NewSweeper(store Store, catalog Catalog, cfg SweeperConfig) *Sweeper {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	return &Sweeper{store: store, catalog: catalog, cfg: cfg}
+	return &Sweeper{store: store, catalog: catalog, payments: payments, cfg: cfg}
 }
 
 // Run sweeps immediately and then every Interval until ctx is cancelled.
@@ -60,11 +83,34 @@ func (s *Sweeper) Run(ctx context.Context) error {
 	}
 }
 
-// RunOnce cancels every stale PENDING order batch by batch (system,
-// CHECKOUT_TIMEOUT, with events), then releases their stock outside the row
-// locks (best effort, concurrently), then purges expired idempotency keys. It
-// returns how many orders it cancelled.
+// RunOnce runs every sweep step in order — stale PENDING orders, expired
+// checkouts, delivered orders past their auto-complete deadline, idempotency
+// keys — and returns how many orders it cancelled or completed.
 func (s *Sweeper) RunOnce(ctx context.Context) (int, error) {
+	cancelled, err := s.cancelStalePending(ctx)
+	if err != nil {
+		return cancelled, err
+	}
+	timedOut, err := s.timeoutPayments(ctx)
+	n := cancelled + timedOut
+	if err != nil {
+		return n, err
+	}
+	completed, err := s.autoComplete(ctx)
+	n += completed
+	if err != nil {
+		return n, err
+	}
+	if _, err := s.store.DeleteIdempotencyKeysBefore(ctx, s.cfg.Now().Add(-s.cfg.IdempotencyTTL)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+// cancelStalePending cancels every PENDING order created before
+// PendingTimeout (system, CHECKOUT_TIMEOUT, with events) batch by batch and
+// releases their stock outside the row locks (best effort, concurrently).
+func (s *Sweeper) cancelStalePending(ctx context.Context) (int, error) {
 	var cancelled []domain.Order
 	for {
 		now := s.cfg.Now()
@@ -92,10 +138,109 @@ func (s *Sweeper) RunOnce(ctx context.Context) (int, error) {
 		}
 	}
 	s.releaseAll(ctx, cancelled)
-	if _, err := s.store.DeleteIdempotencyKeysBefore(ctx, s.cfg.Now().Add(-s.cfg.IdempotencyTTL)); err != nil {
-		return len(cancelled), err
-	}
 	return len(cancelled), nil
+}
+
+// timeoutPayments cancels the AWAITING_PAYMENT checkouts past their deadline
+// that payment-svc confirms are unpaid (WS3' §5.2). payment-svc is asked
+// before any row is locked; a PAID or unavailable answer leaves the orders
+// alone, and the checkout is re-evaluated on the next tick.
+func (s *Sweeper) timeoutPayments(ctx context.Context) (int, error) {
+	if s.payments == nil {
+		return 0, nil
+	}
+	now := s.cfg.Now()
+	var after *CheckoutCursor
+	n := 0
+	for {
+		batch, err := s.store.ExpiredCheckouts(ctx, now, after, s.cfg.BatchSize)
+		if err != nil {
+			return n, err
+		}
+		for _, c := range batch {
+			cancelled, err := s.timeoutCheckout(ctx, c, now)
+			if err != nil {
+				return n, err
+			}
+			n += cancelled
+		}
+		if len(batch) < s.cfg.BatchSize {
+			return n, nil
+		}
+		after = &batch[len(batch)-1]
+	}
+}
+
+func (s *Sweeper) timeoutCheckout(ctx context.Context, c CheckoutCursor, now time.Time) (int, error) {
+	outcome, err := s.payments.CancelCheckoutPayments(ctx, c.CheckoutID)
+	switch {
+	case err != nil:
+		s.cfg.Logger.WarnContext(ctx, "payment-svc unavailable; payment timeout retried next tick",
+			"checkout_id", c.CheckoutID, "error", err)
+		return 0, nil
+	case outcome == OutcomePaid:
+		if now.Sub(c.Deadline) > s.cfg.PaidGrace {
+			s.cfg.Logger.WarnContext(ctx, "paid checkout still awaiting payment after its deadline",
+				"checkout_id", c.CheckoutID, "deadline", c.Deadline)
+		}
+		return 0, nil
+	}
+	var cancelled []domain.Order
+	err = s.store.InTx(ctx, func(tx Tx) error {
+		orders, err := tx.LockAwaitingPayment(ctx, c.CheckoutID, now)
+		if err != nil {
+			return err
+		}
+		for i := range orders {
+			if err := applyTransition(ctx, tx, &orders[i], domain.ActionCancel, domain.SystemActor(), domain.CancelPaymentTimeout, now); err != nil {
+				return err
+			}
+		}
+		cancelled = orders
+		return nil
+	})
+	if errors.Is(err, ErrConcurrentUpdate) {
+		return 0, nil // an order moved concurrently; the next tick re-evaluates the checkout
+	}
+	if err != nil {
+		return 0, err
+	}
+	s.releaseAll(ctx, cancelled)
+	return len(cancelled), nil
+}
+
+// autoComplete completes the orders delivered more than AutoCompleteAfter ago
+// that the buyer never confirmed (system, with OrderCompleted). It does
+// nothing when AutoCompleteAfter is 0.
+func (s *Sweeper) autoComplete(ctx context.Context) (int, error) {
+	if s.cfg.AutoCompleteAfter <= 0 {
+		return 0, nil
+	}
+	n := 0
+	for {
+		now := s.cfg.Now()
+		var batch []domain.Order
+		err := s.store.InTx(ctx, func(tx Tx) error {
+			orders, err := tx.ClaimDueDelivered(ctx, now.Add(-s.cfg.AutoCompleteAfter), s.cfg.BatchSize)
+			if err != nil {
+				return err
+			}
+			for i := range orders {
+				if err := applyTransition(ctx, tx, &orders[i], domain.ActionComplete, domain.SystemActor(), "", now); err != nil {
+					return err
+				}
+			}
+			batch = orders
+			return nil
+		})
+		if err != nil {
+			return n, err
+		}
+		n += len(batch)
+		if len(batch) < s.cfg.BatchSize {
+			return n, nil
+		}
+	}
 }
 
 // releaseConcurrency bounds the parallel ReleaseStock calls of one sweep.

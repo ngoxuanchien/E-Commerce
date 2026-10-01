@@ -1,18 +1,25 @@
 package app_test
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 
 	catalogv1 "github.com/ngoxuanchien/e-commerce/gen/catalog/v1"
+	paymentv1 "github.com/ngoxuanchien/e-commerce/gen/payment/v1"
 	"github.com/ngoxuanchien/e-commerce/pkg/event"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/catalog/catalogfake"
+	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/payment"
+	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/payment/paymentfake"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/app"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/domain"
 )
@@ -49,7 +56,7 @@ func (c *sweepDuringReserve) ReserveStock(ctx context.Context, orderID string, l
 
 func TestSweeper(t *testing.T) {
 	e := newEnv(t, envOpts{postgres: true, redis: true})
-	sw := app.NewSweeper(e.store, e.catalog, app.SweeperConfig{
+	sw := app.NewSweeper(e.store, e.catalog, nil, app.SweeperConfig{
 		Interval: time.Minute, PendingTimeout: 2 * time.Minute, BatchSize: 2, Now: e.clock.Now,
 	})
 
@@ -165,7 +172,7 @@ func TestSweeperRunBoundsPendingLifetime(t *testing.T) {
 	e := newEnv(t, envOpts{postgres: true})
 	const timeout, interval = 400 * time.Millisecond, 200 * time.Millisecond
 	realNow := func() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
-	sw := app.NewSweeper(e.store, e.catalog, app.SweeperConfig{Interval: interval, PendingTimeout: timeout, Now: realNow})
+	sw := app.NewSweeper(e.store, e.catalog, nil, app.SweeperConfig{Interval: interval, PendingTimeout: timeout, Now: realNow})
 	o, _ := crashedCheckout(t, e, realNow(), 5)
 
 	rctx, cancel := context.WithCancel(ctx)
@@ -192,7 +199,7 @@ func TestSweeperRunBoundsPendingLifetime(t *testing.T) {
 // wait for those releases, and the releases must not run one by one.
 func TestSweeperSlowCatalogDoesNotDelayCancellation(t *testing.T) {
 	e := newEnv(t, envOpts{postgres: true})
-	sw := app.NewSweeper(e.store, e.catalog, app.SweeperConfig{
+	sw := app.NewSweeper(e.store, e.catalog, nil, app.SweeperConfig{
 		Interval: time.Minute, PendingTimeout: 2 * time.Minute, BatchSize: 2, Now: e.clock.Now,
 	})
 	var orders []domain.Order
@@ -215,4 +222,324 @@ func TestSweeperSlowCatalogDoesNotDelayCancellation(t *testing.T) {
 	}
 	// One release costs ~0.9s (3 attempts × 300ms); four in sequence ≈ 3.6s.
 	assert.Less(t, elapsed, 2*time.Second, "releases must run concurrently")
+}
+
+// paymentsEnv wires a real app.Payments (payment.Client) to a fake, so the
+// sweeper's payment-timeout step runs through the gRPC adapter.
+type paymentsEnv struct {
+	*env
+	payFake *paymentfake.Fake
+	store   app.Store
+	pay     app.Payments
+	// log collects the sweeper's warnings.
+	log *bytes.Buffer
+}
+
+func newPaymentsEnv(t *testing.T) *paymentsEnv {
+	e := newEnv(t, envOpts{postgres: true})
+	f := paymentfake.New()
+	log := &bytes.Buffer{}
+	return &paymentsEnv{
+		env: e, payFake: f, store: e.store, pay: payment.New(f.Dial(t), 200*time.Millisecond),
+		log: log,
+	}
+}
+
+// sweeper builds a sweeper for this env with cfg's zero values filled in.
+func (p *paymentsEnv) sweeper(cfg app.SweeperConfig) *app.Sweeper {
+	if cfg.Interval == 0 {
+		cfg.Interval = time.Minute
+	}
+	if cfg.PendingTimeout == 0 {
+		cfg.PendingTimeout = 2 * time.Minute
+	}
+	cfg.Now = p.clock.Now
+	cfg.Logger = slog.New(slog.NewTextHandler(p.log, nil))
+	return app.NewSweeper(p.store, p.catalog, p.pay, cfg)
+}
+
+// walk applies action by actor to o and persists it, like a request handler.
+func walk(t *testing.T, e *env, o *domain.Order, action domain.Action, actor domain.Actor, at time.Time) {
+	t.Helper()
+	ch, err := domain.Transition(*o, action, actor)
+	require.NoError(t, err)
+	prev := o.Version
+	o.Apply(ch, "", at)
+	require.NoError(t, e.store.InTx(ctx, func(tx app.Tx) error { return tx.SaveTransition(ctx, *o, prev) }))
+	o.Version = prev + 1
+}
+
+// TestSweeperPayments covers the payment-timeout step (WS3' §5.2).
+func TestSweeperPayments(t *testing.T) {
+	t.Run("NOT_PAID cancels every order of the checkout and releases stock", func(t *testing.T) {
+		p := newPaymentsEnv(t)
+		sw := p.sweeper(app.SweeperConfig{})
+		orders := awaitingCheckout(t, p.env, 2, 30*time.Minute)
+		checkoutID := orders[0].CheckoutID
+		p.payFake.SetOutcome(checkoutID, paymentv1.Outcome_OUTCOME_NOT_PAID)
+		p.clock.Advance(31 * time.Minute)
+
+		n, err := sw.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 2, n)
+
+		for _, want := range orders {
+			got, err := p.store.GetOrder(ctx, want.ID)
+			require.NoError(t, err)
+			assert.Equal(t, domain.StatusCancelled, got.Status)
+			assert.Equal(t, domain.CancelPaymentTimeout, *got.CancelReason)
+			assert.Equal(t, domain.RoleSystem, got.History[len(got.History)-1].ActorRole)
+			assert.Equal(t, domain.PaymentUnpaid, got.PaymentStatus, "an unpaid order is not refunded")
+
+			evs := p.events(t, want.ID)
+			require.Equal(t, []event.Type{event.TypeOrderStatusChanged, event.TypeOrderCancelled}, types(evs))
+			c, err := event.DecodeData[event.OrderCancelled](evs[1])
+			require.NoError(t, err)
+			assert.Equal(t, event.OrderCancelled{
+				OrderID: want.ID, Reason: domain.CancelPaymentTimeout, CancelledBy: "system",
+				CheckoutID: checkoutID, PaymentMethod: domain.PaymentVNPay,
+			}, c)
+		}
+		assert.ElementsMatch(t, []string{orders[0].ID, orders[1].ID}, p.fake.ReleasedOrders())
+		assert.Equal(t, 1, p.payFake.Calls(checkoutID), "the checkout is asked once")
+	})
+
+	t.Run("PAID leaves the orders untouched and warns after the grace", func(t *testing.T) {
+		p := newPaymentsEnv(t)
+		sw := p.sweeper(app.SweeperConfig{})
+		orders := awaitingCheckout(t, p.env, 2, 30*time.Minute)
+		checkoutID := orders[0].CheckoutID
+		p.payFake.SetOutcome(checkoutID, paymentv1.Outcome_OUTCOME_PAID)
+		p.clock.Advance(31 * time.Minute)
+
+		n, err := sw.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.Zero(t, n)
+		for _, want := range orders {
+			got, err := p.store.GetOrder(ctx, want.ID)
+			require.NoError(t, err)
+			assert.Equal(t, domain.StatusAwaitingPayment, got.Status)
+		}
+		assert.Empty(t, p.fake.ReleasedOrders())
+		assert.NotContains(t, p.log.String(), "still awaiting payment", "inside the 10 min grace")
+
+		p.clock.Advance(11 * time.Minute)
+		n, err = sw.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.Zero(t, n)
+		assert.Contains(t, p.log.String(), "still awaiting payment")
+		assert.Contains(t, p.log.String(), checkoutID)
+		assert.Empty(t, p.fake.ReleasedOrders())
+	})
+
+	t.Run("UNAVAILABLE retries on a later tick", func(t *testing.T) {
+		p := newPaymentsEnv(t)
+		sw := p.sweeper(app.SweeperConfig{})
+		orders := awaitingCheckout(t, p.env, 1, 30*time.Minute)
+		checkoutID := orders[0].CheckoutID
+		p.payFake.SetError(checkoutID, codes.Unavailable)
+		p.clock.Advance(31 * time.Minute)
+
+		n, err := sw.RunOnce(ctx)
+		require.NoError(t, err, "an unavailable payment-svc is not a sweep failure")
+		assert.Zero(t, n)
+		got, err := p.store.GetOrder(ctx, orders[0].ID)
+		require.NoError(t, err)
+		assert.Equal(t, domain.StatusAwaitingPayment, got.Status)
+		assert.Empty(t, p.fake.ReleasedOrders())
+
+		p.payFake.SetOutcome(checkoutID, paymentv1.Outcome_OUTCOME_NOT_PAID)
+		n, err = sw.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 1, n)
+		got, err = p.store.GetOrder(ctx, orders[0].ID)
+		require.NoError(t, err)
+		assert.Equal(t, domain.StatusCancelled, got.Status)
+	})
+
+	t.Run("a checkout that has not expired is not asked about", func(t *testing.T) {
+		p := newPaymentsEnv(t)
+		sw := p.sweeper(app.SweeperConfig{})
+		orders := awaitingCheckout(t, p.env, 1, 30*time.Minute)
+		checkoutID := orders[0].CheckoutID
+		p.clock.Advance(29 * time.Minute)
+
+		n, err := sw.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.Zero(t, n)
+		assert.Zero(t, p.payFake.Calls(checkoutID), "the deadline has not passed")
+		got, err := p.store.GetOrder(ctx, orders[0].ID)
+		require.NoError(t, err)
+		assert.Equal(t, domain.StatusAwaitingPayment, got.Status)
+	})
+
+	t.Run("payment is asked before any row is locked", func(t *testing.T) {
+		p := newPaymentsEnv(t)
+		orders := awaitingCheckout(t, p.env, 1, 30*time.Minute)
+		p.payFake.SetOutcome(orders[0].CheckoutID, paymentv1.Outcome_OUTCOME_NOT_PAID)
+		// The hook takes a row lock while payment-svc is being asked, and
+		// releases it again: if the sweeper held a lock over the call, the
+		// FOR UPDATE NOWAIT below would fail.
+		hook := &lockDuringPayment{Payments: p.pay, Pool: p.pool, OrderID: orders[0].ID}
+		sw := app.NewSweeper(p.store, p.catalog, hook, app.SweeperConfig{
+			Interval: time.Minute, PendingTimeout: 2 * time.Minute, Now: p.clock.Now,
+			Logger: slog.New(slog.NewTextHandler(p.log, nil)),
+		})
+		p.clock.Advance(31 * time.Minute)
+
+		n, err := sw.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 1, n)
+		assert.NoError(t, hook.err, "the sweeper held no lock while calling payment-svc")
+		got, err := p.store.GetOrder(ctx, orders[0].ID)
+		require.NoError(t, err)
+		assert.Equal(t, domain.StatusCancelled, got.Status)
+	})
+
+	t.Run("the payment-timeout step works through every batch", func(t *testing.T) {
+		p := newPaymentsEnv(t)
+		sw := p.sweeper(app.SweeperConfig{BatchSize: 2})
+		var ids []string
+		for range 5 {
+			orders := awaitingCheckout(t, p.env, 1, 30*time.Minute)
+			ids = append(ids, orders[0].ID)
+			p.payFake.SetOutcome(orders[0].CheckoutID, paymentv1.Outcome_OUTCOME_NOT_PAID)
+		}
+		p.clock.Advance(31 * time.Minute)
+
+		n, err := sw.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 5, n, "batch size 2 → 3 batches in one run")
+		for _, id := range ids {
+			got, err := p.store.GetOrder(ctx, id)
+			require.NoError(t, err)
+			assert.Equal(t, domain.StatusCancelled, got.Status)
+		}
+	})
+
+	t.Run("a nil payment client leaves expired checkouts alone", func(t *testing.T) {
+		p := newPaymentsEnv(t)
+		orders := awaitingCheckout(t, p.env, 1, 30*time.Minute)
+		sw := app.NewSweeper(p.store, p.catalog, nil, app.SweeperConfig{
+			Interval: time.Minute, PendingTimeout: 2 * time.Minute, Now: p.clock.Now,
+			Logger: slog.New(slog.NewTextHandler(p.log, nil)),
+		})
+		p.clock.Advance(31 * time.Minute)
+
+		n, err := sw.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.Zero(t, n)
+		got, err := p.store.GetOrder(ctx, orders[0].ID)
+		require.NoError(t, err)
+		assert.Equal(t, domain.StatusAwaitingPayment, got.Status)
+	})
+}
+
+// lockDuringPayment takes and releases a row lock around the payment call, so
+// a test can tell whether the sweeper locked anything before asking payment-svc.
+type lockDuringPayment struct {
+	app.Payments
+	Pool    *pgxpool.Pool
+	OrderID string
+	err     error
+}
+
+func (l *lockDuringPayment) CancelCheckoutPayments(ctx context.Context, checkoutID string) (app.PaymentOutcome, error) {
+	outcome, err := l.Payments.CancelCheckoutPayments(ctx, checkoutID)
+	tx, terr := l.Pool.Begin(ctx)
+	if terr != nil {
+		l.err = terr
+		return outcome, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, qerr := tx.Exec(ctx, `SELECT id FROM orders WHERE id = $1 FOR UPDATE NOWAIT`, l.OrderID); qerr != nil {
+		l.err = qerr
+	}
+	return outcome, err
+}
+
+// TestSweeperAutoComplete covers the auto-complete step (WS3' §5.3).
+func TestSweeperAutoComplete(t *testing.T) {
+	// deliveredOrder walks o to DELIVERED at e.clock.Now().
+	deliveredOrder := func(t *testing.T, e *env, o *domain.Order) {
+		t.Helper()
+		seller := domain.Actor{ID: o.SellerUserID, Role: domain.RoleSeller}
+		walk(t, e, o, domain.ActionMarkPaid, domain.SystemActor(), e.clock.Now())
+		walk(t, e, o, domain.ActionConfirm, seller, e.clock.Now())
+		walk(t, e, o, domain.ActionShip, seller, e.clock.Now())
+		walk(t, e, o, domain.ActionDeliver, seller, e.clock.Now())
+		require.Equal(t, domain.StatusDelivered, o.Status)
+		require.NotNil(t, o.DeliveredAt)
+	}
+
+	t.Run("completed by the system after the deadline", func(t *testing.T) {
+		p := newPaymentsEnv(t)
+		sw := p.sweeper(app.SweeperConfig{AutoCompleteAfter: 72 * time.Hour})
+
+		cod := p.seedOrder(t, uid(), catalogfake.NewShop("COD"), domain.StatusDelivered)
+		online := awaitingCheckout(t, p.env, 1, 30*time.Minute)[0]
+		deliveredOrder(t, p.env, &online)
+		assert.Equal(t, domain.PaymentPaid, online.PaymentStatus)
+
+		p.clock.Advance(71 * time.Hour)
+		n, err := sw.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.Zero(t, n, "the 72 h deadline has not passed")
+		got, err := p.store.GetOrder(ctx, cod.ID)
+		require.NoError(t, err)
+		assert.Equal(t, domain.StatusDelivered, got.Status)
+
+		p.clock.Advance(2 * time.Hour)
+		n, err = sw.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 2, n)
+		for _, want := range []domain.Order{cod, online} {
+			got, err := p.store.GetOrder(ctx, want.ID)
+			require.NoError(t, err)
+			assert.Equal(t, domain.StatusCompleted, got.Status)
+			assert.Equal(t, domain.RoleSystem, got.History[len(got.History)-1].ActorRole)
+			require.NotNil(t, got.DeliveredAt, "delivered_at is kept")
+
+			evs := p.events(t, want.ID)
+			require.Equal(t, []event.Type{event.TypeOrderStatusChanged, event.TypeOrderCompleted}, types(evs))
+			c, err := event.DecodeData[event.OrderCompleted](evs[1])
+			require.NoError(t, err)
+			assert.Equal(t, "system", c.CompletedBy)
+			assert.Equal(t, want.Total, c.Total)
+		}
+	})
+
+	t.Run("auto-complete works through every batch", func(t *testing.T) {
+		p := newPaymentsEnv(t)
+		sw := p.sweeper(app.SweeperConfig{AutoCompleteAfter: time.Hour, BatchSize: 2})
+		var orders []domain.Order
+		for i := range 5 {
+			o := p.seedOrder(t, uid(), catalogfake.NewShop(fmt.Sprintf("Batch %d", i)), domain.StatusDelivered)
+			orders = append(orders, o)
+		}
+		p.clock.Advance(2 * time.Hour)
+
+		n, err := sw.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 5, n, "batch size 2 → 3 batches in one run")
+		for _, want := range orders {
+			got, err := p.store.GetOrder(ctx, want.ID)
+			require.NoError(t, err)
+			assert.Equal(t, domain.StatusCompleted, got.Status)
+		}
+	})
+
+	t.Run("AutoCompleteAfter 0 disables the step", func(t *testing.T) {
+		p := newPaymentsEnv(t)
+		sw := p.sweeper(app.SweeperConfig{})
+		o := p.seedOrder(t, uid(), catalogfake.NewShop("Disabled"), domain.StatusDelivered)
+		p.clock.Advance(365 * 24 * time.Hour)
+
+		n, err := sw.RunOnce(ctx)
+		require.NoError(t, err)
+		assert.Zero(t, n)
+		got, err := p.store.GetOrder(ctx, o.ID)
+		require.NoError(t, err)
+		assert.Equal(t, domain.StatusDelivered, got.Status)
+	})
 }

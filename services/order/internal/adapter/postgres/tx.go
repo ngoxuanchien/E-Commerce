@@ -146,6 +146,33 @@ func (t *txStore) ClaimStalePending(ctx context.Context, before time.Time, limit
 	if err != nil {
 		return nil, fmt.Errorf("claim stale pending orders: %w", err)
 	}
+	return toDomainOrders(rows)
+}
+
+func (t *txStore) LockAwaitingPayment(ctx context.Context, checkoutID string, now time.Time) ([]domain.Order, error) {
+	cid, err := mustParseUUID(checkoutID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := t.q.LockAwaitingPayment(ctx, sqlcdb.LockAwaitingPaymentParams{CheckoutID: cid, Now: &now})
+	if err != nil {
+		return nil, fmt.Errorf("lock awaiting payment orders: %w", err)
+	}
+	return toDomainOrders(rows)
+}
+
+func (t *txStore) ClaimDueDelivered(ctx context.Context, deliveredBefore time.Time, limit int) ([]domain.Order, error) {
+	rows, err := t.q.ClaimDueDelivered(ctx, sqlcdb.ClaimDueDeliveredParams{
+		DeliveredBefore: &deliveredBefore, BatchSize: int32(limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("claim due delivered orders: %w", err)
+	}
+	return toDomainOrders(rows)
+}
+
+// toDomainOrders converts claimed rows; items and history are not loaded.
+func toDomainOrders(rows []sqlcdb.Order) ([]domain.Order, error) {
 	orders := make([]domain.Order, 0, len(rows))
 	for _, r := range rows {
 		o, err := toDomainOrder(r)

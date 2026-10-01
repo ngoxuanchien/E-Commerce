@@ -111,6 +111,35 @@ func (s *Store) ListCheckoutOrders(ctx context.Context, checkoutID string) ([]do
 	return s.hydrate(ctx, rows)
 }
 
+// ExpiredCheckouts returns up to limit checkouts with an AWAITING_PAYMENT
+// order past its payment deadline at now, keyed by (deadline, checkout_id) and
+// strictly after `after`. No rows are locked: the sweeper asks payment-svc
+// about the checkout before deciding to act on it. A malformed cursor gives
+// ErrInvalidCursor, like the order lists.
+func (s *Store) ExpiredCheckouts(ctx context.Context, now time.Time, after *app.CheckoutCursor, limit int) ([]app.CheckoutCursor, error) {
+	var afterDeadline *time.Time
+	var afterCheckoutID *uuid.UUID
+	if after != nil {
+		cid, ok := parseUUID(after.CheckoutID)
+		if !ok {
+			return nil, app.ErrInvalidCursor
+		}
+		d := after.Deadline
+		afterDeadline, afterCheckoutID = &d, &cid
+	}
+	rows, err := s.q.ExpiredCheckouts(ctx, sqlcdb.ExpiredCheckoutsParams{
+		Now: &now, AfterDeadline: afterDeadline, AfterCheckoutID: afterCheckoutID, BatchSize: int32(limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("expired checkouts: %w", err)
+	}
+	out := make([]app.CheckoutCursor, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, app.CheckoutCursor{Deadline: r.Deadline, CheckoutID: r.CheckoutID.String()})
+	}
+	return out, nil
+}
+
 // hydrate converts rows and attaches their items and history (two queries).
 func (s *Store) hydrate(ctx context.Context, rows []sqlcdb.Order) ([]domain.Order, error) {
 	orders := make([]domain.Order, 0, len(rows))

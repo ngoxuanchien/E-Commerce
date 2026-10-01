@@ -59,3 +59,26 @@ WHERE status = 'PENDING' AND created_at < @created_before
 ORDER BY created_at, id
 LIMIT @batch_size
 FOR UPDATE SKIP LOCKED;
+
+-- name: ExpiredCheckouts :many
+SELECT checkout_id, min(payment_deadline)::timestamptz AS deadline
+FROM orders
+WHERE status = 'AWAITING_PAYMENT' AND payment_deadline <= @now
+GROUP BY checkout_id
+HAVING sqlc.narg(after_deadline)::timestamptz IS NULL
+    OR (min(payment_deadline), checkout_id) > (sqlc.narg(after_deadline)::timestamptz, sqlc.narg(after_checkout_id)::uuid)
+ORDER BY deadline, checkout_id
+LIMIT @batch_size;
+
+-- name: LockAwaitingPayment :many
+SELECT * FROM orders
+WHERE checkout_id = @checkout_id AND status = 'AWAITING_PAYMENT' AND payment_deadline <= @now
+ORDER BY id
+FOR UPDATE SKIP LOCKED;
+
+-- name: ClaimDueDelivered :many
+SELECT * FROM orders
+WHERE status = 'DELIVERED' AND delivered_at <= @delivered_before
+ORDER BY delivered_at, id
+LIMIT @batch_size
+FOR UPDATE SKIP LOCKED;

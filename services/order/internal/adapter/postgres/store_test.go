@@ -93,6 +93,54 @@ func ids(orders []domain.Order) []string {
 	return out
 }
 
+// awaiting stores an order of checkoutID and walks it to AWAITING_PAYMENT with
+// the given payment deadline, as an online checkout would.
+func awaiting(t *testing.T, s *postgres.Store, checkoutID string, deadline time.Time) domain.Order {
+	t.Helper()
+	o := newOrder(id(), id(), base)
+	o.CheckoutID = checkoutID
+	o.PaymentMethod = domain.PaymentVNPay
+	o.PaymentStatus = domain.PaymentUnpaid
+	insert(t, s, o)
+	prev := o.Version
+	o.PaymentDeadline = &deadline
+	ch, err := domain.Transition(o, domain.ActionAwaitPayment, domain.SystemActor())
+	require.NoError(t, err)
+	o.Apply(ch, "", base)
+	require.NoError(t, s.InTx(ctx, func(tx app.Tx) error { return tx.SaveTransition(ctx, o, prev) }))
+	o.Version = prev + 1
+	return o
+}
+
+// delivered stores a COD order and walks it to DELIVERED at deliveredAt.
+func delivered(t *testing.T, s *postgres.Store, deliveredAt time.Time) domain.Order {
+	t.Helper()
+	o := newOrder(id(), id(), base)
+	insert(t, s, o)
+	seller := domain.Actor{ID: o.SellerUserID, Role: domain.RoleSeller}
+	for _, step := range []struct {
+		action domain.Action
+		actor  domain.Actor
+	}{
+		{domain.ActionSubmit, domain.SystemActor()},
+		{domain.ActionConfirm, seller},
+		{domain.ActionShip, seller},
+		{domain.ActionDeliver, seller},
+	} {
+		ch, err := domain.Transition(o, step.action, step.actor)
+		require.NoError(t, err)
+		prev := o.Version
+		at := base
+		if step.action == domain.ActionDeliver {
+			at = deliveredAt
+		}
+		o.Apply(ch, "", at)
+		require.NoError(t, s.InTx(ctx, func(tx app.Tx) error { return tx.SaveTransition(ctx, o, prev) }))
+		o.Version = prev + 1
+	}
+	return o
+}
+
 func TestStore(t *testing.T) {
 	s, pool := newStore(t)
 
@@ -330,6 +378,111 @@ func TestStore(t *testing.T) {
 		assert.Equal(t, []string{old2.ID}, ids(claimed))
 		assert.Equal(t, domain.StatusPending, claimed[0].Status)
 		assert.Zero(t, claimed[0].Version)
+	})
+
+	t.Run("expired checkouts page with a keyset cursor, ignoring fresh and cancelled ones", func(t *testing.T) {
+		now := base
+		// Three expired checkouts, one order each, oldest deadline first.
+		var expired []string
+		for _, d := range []time.Duration{-30 * time.Minute, -20 * time.Minute, -10 * time.Minute} {
+			ck := id()
+			awaiting(t, s, ck, now.Add(d))
+			expired = append(expired, ck)
+		}
+		// A checkout that has not expired yet, and one already cancelled.
+		fresh := id()
+		awaiting(t, s, fresh, now.Add(time.Hour))
+		cancelledID := id()
+		cancelled := awaiting(t, s, cancelledID, now.Add(-40*time.Minute))
+		require.NoError(t, advance(s, &cancelled, domain.ActionCancel, domain.SystemActor(), domain.CancelPaymentTimeout, now))
+
+		var all []string
+		var after *app.CheckoutCursor
+		for range 10 {
+			page, err := s.ExpiredCheckouts(ctx, now, after, 2)
+			require.NoError(t, err)
+			require.LessOrEqual(t, len(page), 2)
+			for _, c := range page {
+				all = append(all, c.CheckoutID)
+			}
+			if len(page) < 2 {
+				break
+			}
+			after = &page[len(page)-1]
+		}
+		slices.Sort(expired)
+		assert.Equal(t, expired, all, "the fresh and cancelled checkouts are ignored")
+		assert.NotContains(t, all, fresh)
+		assert.NotContains(t, all, cancelledID)
+
+		page, err := s.ExpiredCheckouts(ctx, now, nil, 10)
+		require.NoError(t, err)
+		byCheckout := map[string]time.Time{}
+		for _, c := range page {
+			byCheckout[c.CheckoutID] = c.Deadline
+		}
+		assert.True(t, byCheckout[expired[0]].Equal(now.Add(-30*time.Minute)),
+			"the deadline is the checkout's earliest one")
+		assert.Len(t, page, 3)
+
+		// A cursor pointing at the last checkout yields nothing.
+		empty, err := s.ExpiredCheckouts(ctx, now, &page[len(page)-1], 10)
+		require.NoError(t, err)
+		assert.Empty(t, empty)
+	})
+
+	t.Run("lock awaiting payment skips rows another transaction holds", func(t *testing.T) {
+		now := base
+		checkoutID := id()
+		first := awaiting(t, s, checkoutID, now.Add(-time.Minute))
+		second := awaiting(t, s, checkoutID, now.Add(-time.Minute))
+		fresh := awaiting(t, s, id(), now.Add(time.Hour))
+
+		tx, err := pool.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = tx.Rollback(ctx) }()
+		var lockedID string
+		require.NoError(t, tx.QueryRow(ctx, `SELECT id FROM orders WHERE id = $1 FOR UPDATE`, first.ID).Scan(&lockedID))
+
+		var got []domain.Order
+		require.NoError(t, s.InTx(ctx, func(tx app.Tx) error {
+			var err error
+			got, err = tx.LockAwaitingPayment(ctx, checkoutID, now)
+			return err
+		}))
+		assert.Equal(t, []string{second.ID}, ids(got), "the locked row is skipped")
+		assert.Equal(t, domain.StatusAwaitingPayment, got[0].Status)
+		assert.Empty(t, got[0].Items, "items are not loaded")
+		assert.Empty(t, got[0].History, "history is not loaded")
+		assert.NotContains(t, ids(got), fresh.ID, "a checkout's other orders only")
+		assert.NotContains(t, ids(got), first.ID)
+	})
+
+	t.Run("claim due delivered respects delivered_at", func(t *testing.T) {
+		due1 := delivered(t, s, base.Add(-30*time.Hour))
+		due2 := delivered(t, s, base.Add(-29*time.Hour))
+		fresh := delivered(t, s, base.Add(-time.Hour))
+
+		var claimed []domain.Order
+		require.NoError(t, s.InTx(ctx, func(tx app.Tx) error {
+			var err error
+			claimed, err = tx.ClaimDueDelivered(ctx, base.Add(-24*time.Hour), 10)
+			return err
+		}))
+		assert.Equal(t, []string{due1.ID, due2.ID}, ids(claimed), "oldest delivered_at first")
+		assert.Equal(t, domain.StatusDelivered, claimed[0].Status)
+		assert.NotNil(t, claimed[0].DeliveredAt)
+		assert.Empty(t, claimed[0].Items)
+		assert.NotContains(t, ids(claimed), fresh.ID)
+
+		// A limit is respected.
+		var one []domain.Order
+		require.NoError(t, s.InTx(ctx, func(tx app.Tx) error {
+			var err error
+			one, err = tx.ClaimDueDelivered(ctx, base, 1)
+			return err
+		}))
+		assert.Equal(t, []string{due1.ID}, ids(one), "the oldest delivered order first")
 	})
 
 	t.Run("idempotency key lifecycle", func(t *testing.T) {

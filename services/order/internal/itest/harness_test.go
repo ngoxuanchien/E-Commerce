@@ -92,6 +92,10 @@ func TestOrderAPI(t *testing.T) {
 	t.Run("order lists paginate", h.testPagination)
 	t.Run("sweeper cancels a crashed checkout in time", h.testSweeperCancelsCrashedCheckout)
 	t.Run("readiness covers postgres, redis and kafka", h.testReadiness)
+	t.Run("sweeper cancels a checkout whose payment never arrives", h.testPaymentTimeout)
+	t.Run("a paid checkout survives the sweeper", h.testPaymentTimeoutPaidUntouched)
+	t.Run("an unavailable payment-svc is retried, then cancels", h.testPaymentTimeoutUnavailableThenNotPaid)
+	t.Run("sweeper completes a delivered order on time", h.testAutoComplete)
 	t.Run("every published event matches its schema", h.testEventsValid)
 }
 
@@ -105,8 +109,10 @@ func sellerOf(shop catalogfake.Shop) caller {
 type harness struct {
 	app      *bootstrap.App
 	pool     *pgxpool.Pool
+	rdb      *redis.Client
 	fake     *catalogfake.Fake
 	pay      *paymentfake.Fake
+	producer bootstrap.Producer
 	events   *eventLog
 	baseURL  string
 	contract *http.Client // validates against order.yaml
@@ -146,10 +152,45 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(srv.Close)
 
 	return &harness{
-		app: a, pool: pool, fake: fake, pay: pay, events: newEventLog(t, brokers), baseURL: srv.URL,
+		app: a, pool: pool, rdb: rdb, fake: fake, pay: pay, producer: producer,
+		events: newEventLog(t, brokers), baseURL: srv.URL,
 		contract: &http.Client{Transport: testutil.ContractTransport(t, orderSpec, nil)},
 		raw:      &http.Client{},
 	}
+}
+
+// deps wires a second App to the same containers and fakes.
+func (h *harness) deps(t *testing.T) bootstrap.Deps {
+	t.Helper()
+	return bootstrap.Deps{
+		Pool: h.pool, Redis: h.rdb, CatalogConn: h.fake.Dial(t), PaymentConn: h.pay.Dial(t),
+		Producer: h.producer,
+	}
+}
+
+// scoped starts a second App on the same containers and fakes with the base
+// config adjusted by mutate, serving HTTP and running its workers until the
+// subtest ends; it shares h.events. The main App keeps running with long
+// payment and auto-complete timers, so only the scoped App acts on scoped
+// orders — except that the main sweeper may also time out an expired
+// checkout, which is harmless: both ask the same payment fake.
+func (h *harness) scoped(t *testing.T, mutate func(*bootstrap.Config)) *harness {
+	t.Helper()
+	cfg := baseConfig()
+	mutate(&cfg)
+	a := bootstrap.New(cfg, h.deps(t))
+
+	wctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() { defer close(done); a.RunWorkers(wctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	srv := httptest.NewServer(authctx.Middleware(a.API))
+	t.Cleanup(srv.Close)
+
+	scoped := *h
+	scoped.app, scoped.baseURL = a, srv.URL
+	return &scoped
 }
 
 // try sends a request and returns status and body; safe off the test goroutine.

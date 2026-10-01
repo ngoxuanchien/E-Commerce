@@ -82,7 +82,6 @@ type App struct {
 	API     http.Handler // /api routes; wrap with authctx.Middleware
 	Relay   *outbox.Relay
 	Sweeper *app.Sweeper
-	pay     app.Payments // payment-svc; the sweeper's payment-timeout step
 	checks  map[string]server.Check
 }
 
@@ -109,10 +108,10 @@ func New(cfg Config, d Deps) *App {
 			Orders: app.NewOrderService(store, d.Now),
 		}),
 		Relay: outbox.NewRelay(d.Pool, d.Producer, outbox.RelayConfig{Interval: cfg.RelayInterval, Logger: d.Logger}),
-		Sweeper: app.NewSweeper(store, cat, app.SweeperConfig{
-			Interval: cfg.SweeperInterval, PendingTimeout: cfg.PendingTimeout, Now: d.Now, Logger: d.Logger,
+		Sweeper: app.NewSweeper(store, cat, pay, app.SweeperConfig{
+			Interval: cfg.SweeperInterval, PendingTimeout: cfg.PendingTimeout,
+			AutoCompleteAfter: cfg.AutoCompleteAfter, Now: d.Now, Logger: d.Logger,
 		}),
-		pay: pay,
 		checks: map[string]server.Check{
 			"postgres": d.Pool.Ping,
 			"redis":    func(ctx context.Context) error { return d.Redis.Ping(ctx).Err() },

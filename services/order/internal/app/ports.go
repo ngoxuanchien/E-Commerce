@@ -71,6 +71,11 @@ type Store interface {
 	// DeleteIdempotencyKey releases the key if claimedAt is still its claim.
 	DeleteIdempotencyKey(ctx context.Context, userID, key string, claimedAt time.Time) error
 	DeleteIdempotencyKeysBefore(ctx context.Context, before time.Time) (int64, error)
+	// ExpiredCheckouts returns up to limit checkouts with an AWAITING_PAYMENT
+	// order whose payment deadline is at or before now, oldest deadline
+	// first, strictly after after when set. Rows are not locked, so the
+	// sweeper may ask payment-svc about a checkout it will not act on.
+	ExpiredCheckouts(ctx context.Context, now time.Time, after *CheckoutCursor, limit int) ([]CheckoutCursor, error)
 }
 
 // Tx is the set of writes that must commit atomically.
@@ -91,6 +96,14 @@ type Tx interface {
 	// ClaimStalePending locks up to limit PENDING orders created before
 	// `before` (FOR UPDATE SKIP LOCKED). Items and history are not loaded.
 	ClaimStalePending(ctx context.Context, before time.Time, limit int) ([]domain.Order, error)
+	// LockAwaitingPayment locks the checkout's AWAITING_PAYMENT orders whose
+	// payment deadline is at or before now (FOR UPDATE SKIP LOCKED), so
+	// concurrent sweepers split them. Items and history are not loaded.
+	LockAwaitingPayment(ctx context.Context, checkoutID string, now time.Time) ([]domain.Order, error)
+	// ClaimDueDelivered locks up to limit DELIVERED orders delivered at or
+	// before deliveredBefore, oldest first (FOR UPDATE SKIP LOCKED). Items and
+	// history are not loaded.
+	ClaimDueDelivered(ctx context.Context, deliveredBefore time.Time, limit int) ([]domain.Order, error)
 	// CompleteIdempotencyKey stores the final response for (userID, key).
 	// ErrIdempotencyClaimLost when claimedAt is no longer the key's claim (a
 	// newer request reclaimed it), which rolls the transaction back.
@@ -118,6 +131,13 @@ type ListQuery struct {
 type Cursor struct {
 	CreatedAt time.Time
 	ID        string
+}
+
+// CheckoutCursor is a keyset position in the expired-checkout sweep, ordered
+// by (deadline, checkout_id).
+type CheckoutCursor struct {
+	Deadline   time.Time
+	CheckoutID string
 }
 
 // Response is a rendered HTTP response, stored for idempotent replays.

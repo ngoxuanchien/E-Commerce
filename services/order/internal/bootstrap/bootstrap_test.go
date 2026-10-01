@@ -8,10 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	paymentv1 "github.com/ngoxuanchien/e-commerce/gen/payment/v1"
 	"github.com/ngoxuanchien/e-commerce/pkg/kafkax"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/payment/paymentfake"
-	"github.com/ngoxuanchien/e-commerce/services/order/internal/app"
 )
 
 func TestClaimTimeoutOutlastsTheSweepOfADeadRun(t *testing.T) {
@@ -19,24 +17,22 @@ func TestClaimTimeoutOutlastsTheSweepOfADeadRun(t *testing.T) {
 	assert.Equal(t, 4*time.Minute, cfg.claimTimeout(), "PENDING_TIMEOUT + SWEEPER_INTERVAL + the pre-Tx A margin")
 }
 
-// TestNewWiresThePaymentClient pins the wiring: a PaymentConn reaches a working
-// app.Payments, which the sweeper's payment-timeout step will use.
-func TestNewWiresThePaymentClient(t *testing.T) {
+// TestNewWiresTheSweeperWithThePaymentClient: the sweeper is built with the
+// payment client, and building the App neither blocks on payment-svc nor calls
+// it (the client dials lazily, so /readyz does not depend on it — WS3' §6).
+// The sweeper actually asking payment-svc is covered by the app and itest
+// suites, which have a database.
+func TestNewWiresTheSweeperWithThePaymentClient(t *testing.T) {
 	const checkoutID = "01950000-0000-7000-8000-00000000000a"
 	fake := paymentfake.New()
-	fake.SetOutcome(checkoutID, paymentv1.Outcome_OUTCOME_NOT_PAID)
 
 	// The pool, the cache and the producer are only stored: no check runs and
-	// no query is issued here, so the fakes below are never called.
-	a := New(Config{PaymentCallTimeout: 200 * time.Millisecond}, Deps{
+	// no query is issued here, so the fake is never called.
+	a := New(Config{PaymentCallTimeout: 200 * time.Millisecond, AutoCompleteAfter: 72 * time.Hour}, Deps{
 		Pool: nil, Redis: nil, PaymentConn: fake.Dial(t), Producer: stubProducer{},
 	})
-	require.NotNil(t, a.pay)
-
-	outcome, err := a.pay.CancelCheckoutPayments(context.Background(), checkoutID)
-	require.NoError(t, err)
-	assert.Equal(t, app.OutcomeNotPaid, outcome)
-	assert.Equal(t, 1, fake.Calls(checkoutID))
+	require.NotNil(t, a.Sweeper)
+	assert.Zero(t, fake.Calls(checkoutID), "New does not call payment-svc")
 }
 
 // stubProducer satisfies Producer; only its method values are taken by New.
