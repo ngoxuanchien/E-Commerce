@@ -184,7 +184,7 @@ func New(cfg Config, d Deps) (*App, error) {
 	observer := app.NewObserver(store, d.Now, d.Logger)
 	creator := app.NewCreator(store, d.LockPool, orderadapter.New(d.OrderConn, cfg.Order), providers, observer,
 		app.CreateConfig{PublicBaseURL: cfg.PublicBaseURL, StripeMinAmount: cfg.StripeMinAmount}, d.Now)
-	refunds := app.NewRefunds(store, d.Now)
+	refunds := app.NewRefunds(store, d.Now, d.Logger)
 	worker := app.NewRefundWorker(store, providers, cfg.RefundMaxAttempts, d.Now, d.Logger)
 	reconciler := app.NewReconciler(store, providers, observer,
 		app.ReconcileConfig{Interval: cfg.ReconcileInterval, MinAge: cfg.ReconcileMinAge}, d.Now, d.Logger)

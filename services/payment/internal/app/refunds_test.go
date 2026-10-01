@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -55,7 +56,7 @@ func (e env) count(t *testing.T, query string, args ...any) int {
 func TestRefundsOrderCancelled(t *testing.T) {
 	e := newEnv(t)
 	clk := &clock{t: t0.Add(time.Hour)}
-	rf := app.NewRefunds(e.store, clk.now)
+	rf := app.NewRefunds(e.store, clk.now, quiet)
 
 	t.Run("capture then cancel creates one refund for the allocation", func(t *testing.T) {
 		p := newPayment(id(), domain.StatusPending, 100_000, 200_000)
@@ -223,7 +224,7 @@ func newWorkerEnv(t *testing.T) workerEnv {
 	e := newEnv(t)
 	clk := &clock{t: t0.Add(time.Hour)}
 	fp := fake.New(e.pool, fake.Config{})
-	return workerEnv{env: e, clk: clk, fp: fp, rf: app.NewRefunds(e.store, clk.now),
+	return workerEnv{env: e, clk: clk, fp: fp, rf: app.NewRefunds(e.store, clk.now, quiet),
 		w: app.NewRefundWorker(e.store, app.NewProviders(fp, fp), 3, clk.now, quiet)}
 }
 
@@ -351,7 +352,7 @@ func (s *scriptedProvider) QueryRefund(_ context.Context, r app.Refund) (app.Ref
 func TestRefundWorkerProviderOutcomes(t *testing.T) {
 	e := newEnv(t)
 	clk := &clock{t: t0.Add(time.Hour)}
-	rf := app.NewRefunds(e.store, clk.now)
+	rf := app.NewRefunds(e.store, clk.now, quiet)
 	sp := &scriptedProvider{stubProvider: &stubProvider{name: "fake"}}
 	w := app.NewRefundWorker(e.store, app.NewProviders(sp, sp), 3, clk.now, quiet)
 
@@ -544,7 +545,7 @@ func TestRefundWorkerTransactions(t *testing.T) {
 	t.Run("every provider call is bounded by a timeout", func(t *testing.T) {
 		e := newEnv(t)
 		clk := &clock{t: t0.Add(time.Hour)}
-		rf := app.NewRefunds(e.store, clk.now)
+		rf := app.NewRefunds(e.store, clk.now, quiet)
 		sp := &scriptedProvider{stubProvider: &stubProvider{name: "fake", refund: app.RefundObserved{State: app.RefundSucceeded}}}
 		w := app.NewRefundWorker(e.store, app.NewProviders(sp, sp), 3, clk.now, quiet)
 		p := newPayment(id(), domain.StatusPending)
@@ -556,6 +557,50 @@ func TestRefundWorkerTransactions(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, sp.deadline, "Refund got a context without a deadline")
 		assert.LessOrEqual(t, time.Until(*sp.deadline), 15*time.Second)
+	})
+}
+
+func TestRefundsOrderCancelledWarnsWithoutCheckoutData(t *testing.T) {
+	e := newEnv(t)
+	clk := &clock{t: t0.Add(time.Hour)}
+	buf := &bytes.Buffer{}
+	rf := app.NewRefunds(e.store, clk.now, slog.New(slog.NewTextHandler(buf, nil)))
+	p := newPayment(id(), domain.StatusPending)
+	e.insert(t, p)
+	_, err := e.obs.ApplyObserved(ctx, "fake", id(), p.ID, success(p))
+	require.NoError(t, err)
+	oid := p.Allocations[0].OrderID
+
+	t.Run("a P1-era event logs one warning and creates no refund", func(t *testing.T) {
+		for name, c := range map[string]struct {
+			ev      event.OrderCancelled
+			missing string
+		}{
+			"p1 era":      {cancelled(oid, "", ""), "missing=payment_method,checkout_id"},
+			"no checkout": {cancelled(oid, "", "VNPAY"), "missing=checkout_id"},
+			"no method":   {cancelled(oid, p.CheckoutID, ""), "missing=payment_method"},
+		} {
+			buf.Reset()
+			eid := id()
+			require.NoError(t, rf.OrderCancelled(ctx, eid, c.ev, t0), name)
+			out := buf.String()
+			assert.Equal(t, 1, strings.Count(out, "level=WARN"), name)
+			assert.Contains(t, out, "event_id="+eid, name)
+			assert.Contains(t, out, "order_id="+oid, name)
+			assert.Contains(t, out, c.missing, name)
+
+			buf.Reset()
+			require.NoError(t, rf.OrderCancelled(ctx, eid, c.ev, t0), name)
+			assert.Empty(t, buf.String(), name+": redelivery logs nothing")
+		}
+		assert.Empty(t, e.refunds(t, p.ID))
+	})
+
+	t.Run("a COD event logs no warning", func(t *testing.T) {
+		buf.Reset()
+		require.NoError(t, rf.OrderCancelled(ctx, id(), cancelled(oid, p.CheckoutID, "COD"), t0))
+		assert.NotContains(t, buf.String(), "level=WARN")
+		assert.Empty(t, e.refunds(t, p.ID))
 	})
 }
 
@@ -574,7 +619,7 @@ func newPendingEnv(t *testing.T) pendingEnv {
 	clk := &clock{t: t0.Add(time.Hour)}
 	sp := &scriptedProvider{stubProvider: &stubProvider{name: "fake"}}
 	buf := &bytes.Buffer{}
-	return pendingEnv{env: e, clk: clk, rf: app.NewRefunds(e.store, clk.now), sp: sp, log: buf,
+	return pendingEnv{env: e, clk: clk, rf: app.NewRefunds(e.store, clk.now, quiet), sp: sp, log: buf,
 		w: app.NewRefundWorker(e.store, app.NewProviders(sp, sp), 3, clk.now, slog.New(slog.NewTextHandler(buf, nil)))}
 }
 

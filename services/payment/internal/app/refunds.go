@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/ngoxuanchien/e-commerce/pkg/event"
@@ -13,17 +14,22 @@ import (
 
 // Refunds applies the OrderCancelled half of the refund-due rule (spec §3).
 type Refunds struct {
-	store Store
-	now   func() time.Time
+	store  Store
+	now    func() time.Time
+	logger *slog.Logger
 }
 
-func NewRefunds(store Store, now func() time.Time) *Refunds {
-	return &Refunds{store: store, now: now}
+func NewRefunds(store Store, now func() time.Time, logger *slog.Logger) *Refunds {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Refunds{store: store, now: now, logger: logger}
 }
 
 // OrderCancelled handles one order.events record in one transaction: dedupe by eventID, then record
 // the cancellation and create the order's refund if its allocation is already captured.
-// P1-era events (no payment_method or checkout_id) and COD events are only marked processed.
+// P1-era events (no payment_method or checkout_id) and COD events are only marked processed; a P1-era
+// event also logs a warning the first time it is seen.
 //
 // The checkout's payment rows are locked before the cancellation is recorded, exactly as the capture
 // path does. At READ COMMITTED a concurrent capture and cancellation would otherwise each miss the
@@ -37,7 +43,12 @@ func (r *Refunds) OrderCancelled(ctx context.Context, eventID string, e event.Or
 		if !first {
 			return nil
 		}
-		if e.PaymentMethod == "" || e.PaymentMethod == event.PaymentMethodCOD || e.CheckoutID == "" {
+		if e.PaymentMethod == event.PaymentMethodCOD {
+			return nil
+		}
+		if missing := missingCheckoutData(e); missing != "" {
+			r.logger.WarnContext(ctx, "order cancelled event without payment_method or checkout_id; no refund recorded",
+				"event_id", eventID, "order_id", e.OrderID, "missing", missing)
 			return nil
 		}
 		if _, err := tx.LockCheckoutPayments(ctx, e.CheckoutID); err != nil {
@@ -57,6 +68,18 @@ func (r *Refunds) OrderCancelled(ctx context.Context, eventID string, e event.Or
 		_, err = tx.InsertRefund(ctx, newRefund(p, &orderID, a.Amount, r.now()))
 		return err
 	})
+}
+
+// missingCheckoutData names the P2 fields absent from e, comma-separated, or "" when both are set.
+func missingCheckoutData(e event.OrderCancelled) string {
+	var missing []string
+	if e.PaymentMethod == "" {
+		missing = append(missing, "payment_method")
+	}
+	if e.CheckoutID == "" {
+		missing = append(missing, "checkout_id")
+	}
+	return strings.Join(missing, ",")
 }
 
 // Backoff is the wait after the given number of failed attempts: 10 s · 2^(attempts−1), capped at 10 min.
