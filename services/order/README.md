@@ -112,7 +112,7 @@ P2 spec gaps, resolved by WS3':
 24. **`shop_slug` is snapshotted at checkout** (`BuildOrders` copies the cart's shop slug into every order). P1 rows hold `''`, which is valid for the now-required `Order.shop.slug` — a buyer who opens an old order gets an empty slug rather than a 500.
 25. **COD completions emit `OrderCompleted`** (spec §3), so every completion — buyer or system, COD or online — writes exactly one. `OrderCancelled` carries `checkout_id` and `payment_method`; the P1 tests whose payload and dto shop assertions were extended are `internal/app/orders_test.go` (`OrderCancelled`), `internal/app/sweeper_test.go`, the lifecycle itest and `internal/adapter/http/dto_test.go`.
 26. **Consumer: an unknown or malformed allocation `order_id` is skipped per order**, not per event — one bad allocation does not discard the others. A lost optimistic-lock race is retried once in the handler (`paymentEventAttempts = 2`) against fresh state, because that state may still accept the event (a capture that lost to a cancel becomes a late capture rather than an error); a second loss returns the error to the consumer, which redelivers with kafkax backoff. The inbox row (`MarkProcessed(consumer="order-svc")`) commits in the same transaction as the effect, so an event is applied at most once.
-27. **The overall checkout deadline is `PENDING_TIMEOUT`**, so a checkout can never outlive the sweeper rule that cancels stale `PENDING` orders. Compensation has its own 30 s budget and runs even after the forward deadline fired. When the sweeper wins the race with Tx B/Tx C, the response is the real cause rather than a generic failure: an expired checkout answers 503 (`UPSTREAM_UNAVAILABLE`, catalog unavailable) and a checkout that was compensated because its orders were already cancelled answers 409 `CONFLICT` (overview §7).
+27. **The overall checkout deadline is `PENDING_TIMEOUT`**, so a checkout can never outlive the sweeper rule that cancels stale `PENDING` orders. Compensation has its own 30 s budget and runs even after the forward deadline fired. A checkout that exceeds the deadline answers 503 (`UPSTREAM_UNAVAILABLE`) with its orders cancelled and its key freed. When the sweeper wins the race with Tx B, the response is the real cause, never `CONFLICT`: `OUT_OF_STOCK` with its shortages (stored and replayed), or 503 for `RESERVE_FAILED` (overview §7). A checkout whose Tx C lost to the sweeper still answers 409 `CONFLICT` (decision 6).
 28. **`GetCheckout` answers `NOT_FOUND` for a malformed ID**, because the contract names only `NOT_FOUND` for that RPC — it does not invent a `VALIDATION_ERROR` the proto does not declare.
 
 Deviations recorded while implementing Tasks 1–10:
@@ -146,19 +146,13 @@ latency. The end-to-end suite validates every request/response against
 generated from it by `cd web && npm run gen:api` (`npm run gen:api:check`,
 which runs inside `npm run lint`, fails when the committed types are stale).
 
-> **Contract flip pending (Task 11, 2026-10-01).** `Order.required` must gain
+> **Contract flip (WS3', 2026-10-01).** `Order.required` now includes
 > `payment_status, payment_deadline, commission_rate_bps, commission_amount,
-> delivered_at` and `OrderShop.required` become `[id, name, slug]`, with the
-> "(optional until WS3' marks it required)" wording removed. The flip was
-> verified — `make lint-openapi` clean, the Go itest green against the flipped
-> spec, and the regenerated `web/src/api/gen/order.ts` correct — but it was
-> **not committed**: `npm run lint`'s `tsc -b` step fails because WS5'-owned
-> code builds `Order` objects without the new required fields. See
-> `web/src/mocks/db.ts:502` (missing `payment_status`,
-> `payment_deadline`, `commission_rate_bps`, `commission_amount`,
-> `delivered_at`) and `web/src/mocks/seed.ts:58,69` (missing `slug`). Both
-> files belong to WS5'; the fix is theirs. Once they are updated, re-apply the
-> flip, run `npm run gen:api`, and commit it with `web/src/api/gen/order.ts`.
+> delivered_at`, and `OrderShop.required` is `[id, name, slug]` (WS0' §12). The
+> same commit carries the regenerated `web/src/api/gen/order.ts` and, with the
+> user's approval, a defaults-only edit of the WS5'-owned mocks
+> (`web/src/mocks/db.ts`, `web/src/mocks/seed.ts`: COD payment fields and the
+> shop slug) so `npm run lint`'s `tsc -b` keeps passing.
 
 ### Compose smoke test
 

@@ -55,9 +55,10 @@ export function buildSeed(): DbState {
   const orders: MockOrder[] = [
     {
       id: SEED.orders.pending, checkout_id: id(91), status: 'PENDING_CONFIRMATION', buyer_id: U.an, seller_user_id: U.chi,
-      shop: { id: S.aoThun, name: 'Áo Thun Sài Gòn' },
+      shop: { id: S.aoThun, name: 'Áo Thun Sài Gòn', slug: 'ao-thun-sai-gon' },
       items: [{ sku_id: K.teeM, product_id: P.tee, product_name: 'Áo thun cotton trơn cổ tròn', variant_name: 'M', image_url: '/mock-images/ao-thun-tron.svg', unit_price: 149_000, quantity: 1, line_total: 149_000 }],
       subtotal: 149_000, shipping_fee: 30_000, total: 179_000, shipping_address: address, payment_method: 'COD', cancel_reason: null,
+      payment_status: 'NONE', payment_deadline: null, commission_rate_bps: 0, commission_amount: 0, delivered_at: null,
       history: [
         { from: null, to: 'PENDING', actor_role: 'system', note: null, created_at: at(30) },
         { from: 'PENDING', to: 'PENDING_CONFIRMATION', actor_role: 'system', note: null, created_at: at(30) },
@@ -66,9 +67,10 @@ export function buildSeed(): DbState {
     },
     {
       id: SEED.orders.delivered, checkout_id: id(92), status: 'DELIVERED', buyer_id: U.an, seller_user_id: U.binh,
-      shop: { id: S.gom, name: 'Gốm Bát Tràng Cô Bình' },
+      shop: { id: S.gom, name: 'Gốm Bát Tràng Cô Bình', slug: 'gom-bat-trang' },
       items: [{ sku_id: K.bowl11, product_id: P.bowl, product_name: 'Bát ăn cơm men lam Bát Tràng', variant_name: 'Đường kính 11 cm', image_url: '/mock-images/bat-com.svg', unit_price: 45_000, quantity: 2, line_total: 90_000 }],
       subtotal: 90_000, shipping_fee: 30_000, total: 120_000, shipping_address: address, payment_method: 'COD', cancel_reason: null,
+      payment_status: 'NONE', payment_deadline: null, commission_rate_bps: 0, commission_amount: 0, delivered_at: null,
       history: [
         { from: null, to: 'PENDING', actor_role: 'system', note: null, created_at: at(20) },
         { from: 'PENDING', to: 'PENDING_CONFIRMATION', actor_role: 'system', note: null, created_at: at(20) },

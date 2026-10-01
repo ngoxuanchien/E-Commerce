@@ -508,8 +508,10 @@ export class MockDb {
       const subtotal = items.reduce((sum, i) => sum + i.line_total, 0);
       return {
         id: uuid(), checkout_id: checkoutId, status: 'PENDING_CONFIRMATION', buyer_id: userId, seller_user_id: shop.owner_user_id,
-        shop: { id: shop.id, name: shop.name }, items, subtotal, shipping_fee: SHIPPING_FEE_FLAT, total: subtotal + SHIPPING_FEE_FLAT,
+        shop: { id: shop.id, name: shop.name, slug: shop.slug }, items, subtotal, shipping_fee: SHIPPING_FEE_FLAT, total: subtotal + SHIPPING_FEE_FLAT,
         shipping_address: { ...body.shipping_address }, payment_method: 'COD', cancel_reason: null,
+        // The mock only supports COD: payment_status NONE, no deadline, no commission, not delivered.
+        payment_status: 'NONE', payment_deadline: null, commission_rate_bps: 0, commission_amount: 0, delivered_at: null,
         history: [
           { from: null, to: 'PENDING', actor_role: 'system', note: null, created_at: ts },
           { from: 'PENDING', to: 'PENDING_CONFIRMATION', actor_role: 'system', note: null, created_at: ts },
