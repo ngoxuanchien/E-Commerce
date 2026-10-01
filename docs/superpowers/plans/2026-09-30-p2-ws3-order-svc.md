@@ -1061,7 +1061,7 @@ Run: `go test ./... -count=1`. Expected: PASS.
 
   It retries once. If the second attempt also loses the race, it returns the cause without storing it, and releases the key, as for a transient failure.
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
   - `checkout_compensation_test.go`, "sweeper racing Tx B still answers OUT_OF_STOCK":
     - a catalog wrapper whose `ReserveStock` (for the second order of a 2-shop checkout) first delegates, getting the fake's shortage for a SKU set to stock 0, and then, before returning, runs `sweeper.RunOnce` with the clock advanced past `PENDING_TIMEOUT`, so the sweeper cancels both `PENDING` orders before Tx B;
     - the response is the stored OUT_OF_STOCK rendering (extend the test encoder in `checkout_test.go` so its body includes the error's type, e.g. `{"error":"*app.OutOfStockError"}`, if it doesn't already distinguish it);
@@ -1077,7 +1077,7 @@ Run: `go test ./... -count=1`. Expected: PASS.
 
 Run: `go test ./internal/app/ -run 'TestCheckout' -count=1`. Expected: FAIL.
 
-- [ ] **Step 2: Implement.**
+- [x] **Step 2: Implement.**
   - In `Checkout`, derive `base := context.WithoutCancel(ctx)` and `fwd, cancel := s.forwardCtx(base)` (with `defer cancel()`).
   - Pass `base` to `run` along with `fwd`. `run` uses `fwd` for the forward steps.
   - `abort`, `recoverCommit`, the `ErrCheckoutExpired` release in `commit`, and the `DeleteIdempotencyKey` in `Checkout` each use `cctx, done := s.cleanupCtx(base); defer done()`.
@@ -1087,7 +1087,7 @@ Run: `go test ./internal/app/ -run 'TestCheckout' -count=1`. Expected: FAIL.
 
 Run: `go test -race ./... -count=1`. Expected: PASS, including every P1 checkout test unchanged.
 
-- [ ] **Step 3: Commit** — `fix(order): bound checkout duration and answer OUT_OF_STOCK when the sweeper wins Tx B`
+- [x] **Step 3: Commit** — `fix(order): bound checkout duration and answer OUT_OF_STOCK when the sweeper wins Tx B`
 
 ---
 
