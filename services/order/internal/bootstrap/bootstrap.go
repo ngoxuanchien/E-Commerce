@@ -29,6 +29,19 @@ type Config struct {
 	PendingTimeout  time.Duration
 	Catalog         catalog.Config
 	RelayInterval   time.Duration // 0 = outbox default (500ms)
+
+	// OnlineMethods are the accepted online payment methods
+	// (ONLINE_PAYMENT_METHODS); an empty list means COD only.
+	OnlineMethods []string
+	// CommissionRateBps is the platform commission in basis points, snapshotted
+	// on online orders at checkout (COMMISSION_RATE_BPS).
+	CommissionRateBps int32
+	// PaymentTimeout is how long an online order may stay AWAITING_PAYMENT
+	// before the sweeper cancels it (PAYMENT_TIMEOUT).
+	PaymentTimeout time.Duration
+	// AutoCompleteAfter is how long a DELIVERED order stays open before the
+	// system completes it; consumed by the sweep tick.
+	AutoCompleteAfter time.Duration
 }
 
 // claimMargin covers the time between claiming an idempotency key and Tx A
@@ -82,7 +95,9 @@ func New(cfg Config, d Deps) *App {
 			Cart: app.NewCartService(carts, cat, cfg.ShippingFeeFlat, d.Logger),
 			Checkout: app.NewCheckoutService(store, carts, cat, app.CheckoutConfig{
 				ShippingFee: cfg.ShippingFeeFlat, ClaimTimeout: cfg.claimTimeout(),
-				Now: d.Now, Logger: d.Logger,
+				OnlineMethods: cfg.OnlineMethods, CommissionRateBps: cfg.CommissionRateBps,
+				PaymentTimeout: cfg.PaymentTimeout,
+				Now:            d.Now, Logger: d.Logger,
 			}),
 			Orders: app.NewOrderService(store, d.Now),
 		}),

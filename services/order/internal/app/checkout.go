@@ -25,8 +25,17 @@ type CheckoutConfig struct {
 	// bootstrap uses PENDING_TIMEOUT + SWEEPER_INTERVAL + 1 min: by then the
 	// sweeper has cancelled whatever the crashed run left PENDING.
 	ClaimTimeout time.Duration
-	Now          func() time.Time // nil = UTC wall clock
-	Logger       *slog.Logger     // nil = slog.Default()
+	// OnlineMethods are the accepted online payment methods
+	// (ONLINE_PAYMENT_METHODS); an empty list means COD only.
+	OnlineMethods []string
+	// CommissionRateBps is the platform commission snapshot in basis points,
+	// applied to online orders at checkout.
+	CommissionRateBps int32
+	// PaymentTimeout is how long an online order may stay AWAITING_PAYMENT
+	// before the sweeper cancels it (PAYMENT_TIMEOUT).
+	PaymentTimeout time.Duration
+	Now            func() time.Time // nil = UTC wall clock
+	Logger         *slog.Logger     // nil = slog.Default()
 }
 
 // CheckoutInput is a validated checkout request.
@@ -93,6 +102,11 @@ func RequestHash(in CheckoutInput) []byte {
 // once orders exist the checkout must finish or compensate.
 func (s *CheckoutService) Checkout(ctx context.Context, in CheckoutInput, enc Encoder) (Response, error) {
 	ctx = context.WithoutCancel(ctx)
+	if domain.IsOnline(in.PaymentMethod) && !slices.Contains(s.cfg.OnlineMethods, in.PaymentMethod) {
+		// Before BeginIdempotency: a method this deployment does not accept is a
+		// bad request, so it must not consume the caller's idempotency key.
+		return Response{}, ErrPaymentMethodNotEnabled
+	}
 	in.SkuIDs = normalizeIDs(in.SkuIDs)
 	hash := RequestHash(in)
 	now := s.cfg.Now()
@@ -143,7 +157,8 @@ func (s *CheckoutService) run(ctx context.Context, in CheckoutInput, enc Encoder
 	orders, err := domain.BuildOrders(domain.CheckoutParams{
 		CheckoutID: checkoutID, BuyerID: in.BuyerID, Lines: lines, Skus: skus,
 		ShippingFee: s.cfg.ShippingFee, Address: in.Address, PaymentMethod: in.PaymentMethod,
-		Now: s.cfg.Now(), NewID: newID,
+		CommissionRateBps: s.cfg.CommissionRateBps,
+		Now:               s.cfg.Now(), NewID: newID,
 	})
 	if err != nil {
 		return s.reject(ctx, in, enc, err)
@@ -297,7 +312,8 @@ func mergeReserveErrors(errs []error) error {
 	return first
 }
 
-// commit is Tx C: every order moves to PENDING_CONFIRMATION with its events
+// commit is Tx C: every order moves to PENDING_CONFIRMATION — or, for an
+// online method, AWAITING_PAYMENT with a payment deadline — with its events
 // and the response is stored, atomically.
 func (s *CheckoutService) commit(ctx context.Context, in CheckoutInput, enc Encoder, res CheckoutResult, lines []domain.Line) (Response, error) {
 	now := s.cfg.Now()
@@ -305,10 +321,18 @@ func (s *CheckoutService) commit(ctx context.Context, in CheckoutInput, enc Enco
 	err := s.store.InTx(ctx, func(tx Tx) error {
 		for i := range res.Orders {
 			o := &res.Orders[i]
+			action := domain.ActionSubmit
+			if domain.IsOnline(o.PaymentMethod) {
+				// One deadline for the whole checkout: every order is paid by
+				// the same payment.
+				deadline := now.Add(s.cfg.PaymentTimeout)
+				o.PaymentDeadline = &deadline
+				action = domain.ActionAwaitPayment
+			}
 			if err := tx.Publish(ctx, o.ID, orderCreated(*o), now); err != nil {
 				return err
 			}
-			if err := applyTransition(ctx, tx, o, domain.ActionSubmit, domain.SystemActor(), "", now); err != nil {
+			if err := applyTransition(ctx, tx, o, action, domain.SystemActor(), "", now); err != nil {
 				return err
 			}
 		}

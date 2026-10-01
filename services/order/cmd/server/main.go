@@ -86,6 +86,8 @@ func run() error {
 	svc := bootstrap.New(bootstrap.Config{
 		ShippingFeeFlat: cfg.ShippingFeeFlat, SweeperInterval: cfg.SweeperInterval,
 		PendingTimeout: cfg.PendingTimeout, Catalog: catalog.DefaultConfig(),
+		OnlineMethods: cfg.onlineMethods(), CommissionRateBps: cfg.CommissionRateBps,
+		PaymentTimeout: cfg.PaymentTimeout, AutoCompleteAfter: cfg.AutoCompleteAfter,
 	}, bootstrap.Deps{Pool: pool, Redis: rdb, CatalogConn: catalogConn, Producer: producer, Logger: logger})
 
 	// Workers stop (deferred last, so run first) before the connections close.

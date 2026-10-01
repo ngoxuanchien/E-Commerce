@@ -40,7 +40,24 @@ const (
 	eventsDir       = "../../../../api/events"
 	pendingTimeout  = 2 * time.Second
 	sweeperInterval = 500 * time.Millisecond
+	paymentTimeout  = time.Hour
+	autoComplete    = time.Hour
+	commissionRate  = 500
 )
+
+// baseConfig is the wiring every scenario shares: VNPAY is the only online
+// method, the commission is 5 % and a checkout waits an hour for its payment.
+func baseConfig() bootstrap.Config {
+	return bootstrap.Config{
+		ShippingFeeFlat: 30_000, SweeperInterval: sweeperInterval, PendingTimeout: pendingTimeout,
+		Catalog:           catalog.Config{Timeout: 300 * time.Millisecond, Retries: 2, Backoff: 10 * time.Millisecond},
+		RelayInterval:     50 * time.Millisecond,
+		OnlineMethods:     []string{"VNPAY"},
+		CommissionRateBps: commissionRate,
+		PaymentTimeout:    paymentTimeout,
+		AutoCompleteAfter: autoComplete,
+	}
+}
 
 var ctx = context.Background()
 
@@ -59,6 +76,8 @@ func TestOrderAPI(t *testing.T) {
 	t.Run("cart flags a SKU that became unavailable", h.testCartFlagsUnavailable)
 	t.Run("cart answers 503 while catalog is down", h.testCartCatalogDown)
 	t.Run("checkout from two shops", h.testCheckoutTwoShops)
+	t.Run("checkout with VNPAY awaits payment", h.testCheckoutOnline)
+	t.Run("checkout rejects a method that is not enabled", h.testCheckoutMethodNotEnabled)
 	t.Run("checkout is all-or-nothing on shortage", h.testCheckoutOutOfStock)
 	t.Run("checkout 503 frees the idempotency key", h.testCheckoutCatalogDownThenRetry)
 	t.Run("checkout with an empty cart", h.testCheckoutEmptyCart)
@@ -109,11 +128,7 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(producer.Close)
 
 	fake := catalogfake.New()
-	a := bootstrap.New(bootstrap.Config{
-		ShippingFeeFlat: 30_000, SweeperInterval: sweeperInterval, PendingTimeout: pendingTimeout,
-		Catalog:       catalog.Config{Timeout: 300 * time.Millisecond, Retries: 2, Backoff: 10 * time.Millisecond},
-		RelayInterval: 50 * time.Millisecond,
-	}, bootstrap.Deps{Pool: pool, Redis: rdb, CatalogConn: fake.Dial(t), Producer: producer})
+	a := bootstrap.New(baseConfig(), bootstrap.Deps{Pool: pool, Redis: rdb, CatalogConn: fake.Dial(t), Producer: producer})
 
 	wctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
@@ -195,7 +210,12 @@ func (h *harness) addToCart(t *testing.T, c caller, skuID string, q int) {
 }
 
 func checkoutBody(skuIDs ...string) map[string]any {
-	b := map[string]any{"shipping_address": address, "payment_method": "COD"}
+	return checkoutBodyWith("COD", skuIDs...)
+}
+
+// checkoutBodyWith is a checkout body paying with method (COD, VNPAY, STRIPE).
+func checkoutBodyWith(method string, skuIDs ...string) map[string]any {
+	b := map[string]any{"shipping_address": address, "payment_method": method}
 	if len(skuIDs) > 0 {
 		b["sku_ids"] = skuIDs
 	}

@@ -51,6 +51,13 @@ func checkoutInput(buyer, key string, skuIDs ...string) app.CheckoutInput {
 	return app.CheckoutInput{BuyerID: buyer, IdempotencyKey: key, SkuIDs: skuIDs, Address: testAddress, PaymentMethod: domain.PaymentCOD}
 }
 
+// checkoutInputWith is checkoutInput with another payment method.
+func checkoutInputWith(buyer, key, method string, skuIDs ...string) app.CheckoutInput {
+	in := checkoutInput(buyer, key, skuIDs...)
+	in.PaymentMethod = method
+	return in
+}
+
 func createdOrderIDs(t *testing.T, resp app.Response) []string {
 	t.Helper()
 	require.Equal(t, http.StatusCreated, resp.Status, string(resp.Body))
@@ -344,5 +351,127 @@ func TestCheckout(t *testing.T) {
 		o, err := e.store.GetOrder(ctx, ids[0])
 		require.NoError(t, err)
 		assert.Equal(t, domain.StatusPendingConfirmation, o.Status)
+	})
+}
+
+// TestCheckoutOnline covers the P2' online checkout: VNPAY orders are created
+// in AWAITING_PAYMENT/UNPAID with one shared payment deadline and a commission
+// snapshot, and a method missing from OnlineMethods is rejected before the
+// idempotency key is claimed.
+func TestCheckoutOnline(t *testing.T) {
+	e := newEnv(t, envOpts{postgres: true, redis: true})
+	svc := app.NewCheckoutService(e.store, e.carts, e.catalog, app.CheckoutConfig{
+		ShippingFee: 30_000, OnlineMethods: []string{"VNPAY", "STRIPE"},
+		CommissionRateBps: 500, PaymentTimeout: 30 * time.Minute, Now: e.clock.Now,
+	})
+	vnpayOnly := app.NewCheckoutService(e.store, e.carts, e.catalog, app.CheckoutConfig{
+		ShippingFee: 30_000, OnlineMethods: []string{"VNPAY"},
+		CommissionRateBps: 500, PaymentTimeout: 30 * time.Minute, Now: e.clock.Now,
+	})
+
+	t.Run("online checkout from two shops", func(t *testing.T) {
+		buyer, shopA, shopB := uid(), catalogfake.NewShop("Online A"), catalogfake.NewShop("Online B")
+		a := e.fake.AddSku(shopA, 120_000, 10)
+		b := e.fake.AddSku(shopB, 45_000, 10)
+		e.cartSet(t, buyer, a.GetSkuId(), 2)
+		e.cartSet(t, buyer, b.GetSkuId(), 1)
+		reserves := e.fake.Calls(catalogfake.ReserveStock)
+
+		rec := &recorder{}
+		resp, err := svc.Checkout(ctx, checkoutInputWith(buyer, "on-1", domain.PaymentVNPay), rec.encode)
+		require.NoError(t, err)
+		ids := createdOrderIDs(t, resp)
+		require.Len(t, ids, 2)
+		assert.Equal(t, reserves+2, e.fake.Calls(catalogfake.ReserveStock))
+
+		wantDeadline := e.clock.Now().Add(30 * time.Minute)
+		commissions := map[string]int64{shopA.ID: 12_000, shopB.ID: 2_250}
+		for _, id := range ids {
+			o, err := e.store.GetOrder(ctx, id)
+			require.NoError(t, err)
+			assert.Equal(t, domain.StatusAwaitingPayment, o.Status)
+			assert.Equal(t, domain.PaymentUnpaid, o.PaymentStatus)
+			assert.Equal(t, domain.PaymentVNPay, o.PaymentMethod)
+			require.NotNil(t, o.PaymentDeadline, "an online order carries a payment deadline")
+			assert.Equal(t, wantDeadline, *o.PaymentDeadline, "one deadline for the whole checkout")
+			assert.Equal(t, int32(500), o.CommissionRateBps)
+			assert.Equal(t, commissions[o.ShopID], o.CommissionAmount)
+			assert.True(t, e.fake.Reserved(o.ID))
+
+			evs := e.events(t, id)
+			assert.Equal(t, []event.Type{event.TypeOrderCreated, event.TypeOrderStatusChanged}, types(evs))
+			created, err := event.DecodeData[event.OrderCreated](evs[0])
+			require.NoError(t, err)
+			assert.Equal(t, domain.PaymentVNPay, created.PaymentMethod)
+			assert.Equal(t, int32(500), created.CommissionRateBps)
+			assert.Equal(t, o.CommissionAmount, created.CommissionAmount)
+			changed, err := event.DecodeData[event.OrderStatusChanged](evs[1])
+			require.NoError(t, err)
+			assert.Equal(t, "PENDING", changed.From)
+			assert.Equal(t, "AWAITING_PAYMENT", changed.To)
+		}
+	})
+
+	t.Run("online replay returns the stored response without new reservations", func(t *testing.T) {
+		buyer := uid()
+		s := e.fake.AddSku(catalogfake.NewShop("Online Replay"), 10_000, 10)
+		e.cartSet(t, buyer, s.GetSkuId(), 1)
+		in := checkoutInputWith(buyer, "on-replay", domain.PaymentVNPay)
+
+		first, err := svc.Checkout(ctx, in, (&recorder{}).encode)
+		require.NoError(t, err)
+		reserves := e.fake.Calls(catalogfake.ReserveStock)
+
+		again, err := svc.Checkout(ctx, in, (&recorder{}).encode)
+		require.NoError(t, err)
+		assert.Equal(t, first.Status, again.Status)
+		// The stored response comes back from a jsonb column, which
+		// normalises key order, so compare the decoded JSON, not the bytes.
+		assert.JSONEq(t, string(first.Body), string(again.Body), "the replayed response is the stored one")
+		assert.Equal(t, reserves, e.fake.Calls(catalogfake.ReserveStock), "the replay reserves nothing")
+
+		rec, found, err := e.store.IdempotencyKey(ctx, buyer, "on-replay")
+		require.NoError(t, err)
+		require.True(t, found)
+		require.NotNil(t, rec.Response)
+		assert.JSONEq(t, string(first.Body), string(rec.Response.Body))
+	})
+
+	t.Run("a method missing from OnlineMethods is rejected before the key is claimed", func(t *testing.T) {
+		buyer := uid()
+		s := e.fake.AddSku(catalogfake.NewShop("Disabled Method"), 10_000, 10)
+		e.cartSet(t, buyer, s.GetSkuId(), 1)
+		getSkus := e.fake.Calls(catalogfake.GetSkus)
+		reserves := e.fake.Calls(catalogfake.ReserveStock)
+
+		_, err := vnpayOnly.Checkout(ctx, checkoutInputWith(buyer, "on-off", domain.PaymentStripe), (&recorder{}).encode)
+		assert.ErrorIs(t, err, app.ErrPaymentMethodNotEnabled)
+
+		_, found, err := e.store.IdempotencyKey(ctx, buyer, "on-off")
+		require.NoError(t, err)
+		assert.False(t, found, "a rejected method leaves the key untouched")
+		assert.Equal(t, getSkus, e.fake.Calls(catalogfake.GetSkus), "no catalog calls")
+		assert.Equal(t, reserves, e.fake.Calls(catalogfake.ReserveStock))
+
+		// The same key still works for an enabled method.
+		_, err = vnpayOnly.Checkout(ctx, checkoutInputWith(buyer, "on-off", domain.PaymentVNPay), (&recorder{}).encode)
+		require.NoError(t, err)
+	})
+
+	t.Run("COD keeps PENDING_CONFIRMATION, no deadline and no commission", func(t *testing.T) {
+		buyer, shop := uid(), catalogfake.NewShop("COD Unchanged")
+		s := e.fake.AddSku(shop, 120_000, 10)
+		e.cartSet(t, buyer, s.GetSkuId(), 2)
+
+		// The online-enabled service must not change COD behaviour.
+		resp, err := svc.Checkout(ctx, checkoutInput(buyer, "cod-unchanged"), (&recorder{}).encode)
+		require.NoError(t, err)
+		o, err := e.store.GetOrder(ctx, createdOrderIDs(t, resp)[0])
+		require.NoError(t, err)
+		assert.Equal(t, domain.StatusPendingConfirmation, o.Status)
+		assert.Equal(t, domain.PaymentNone, o.PaymentStatus)
+		assert.Nil(t, o.PaymentDeadline)
+		assert.Zero(t, o.CommissionRateBps)
+		assert.Zero(t, o.CommissionAmount)
 	})
 }

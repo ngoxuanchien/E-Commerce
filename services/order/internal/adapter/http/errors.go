@@ -43,6 +43,8 @@ func toAppError(err error) *httpx.AppError {
 		return httpx.ValidationError(map[string]string{"quantity": fmt.Sprintf("must be between %d and %d", domain.MinQuantity, domain.MaxQuantity)})
 	case errors.Is(err, app.ErrEmptyCart):
 		return httpx.ValidationError(map[string]string{"sku_ids": "no cart items to check out"})
+	case errors.Is(err, app.ErrPaymentMethodNotEnabled):
+		return httpx.ValidationError(map[string]string{"payment_method": "is not enabled"})
 	case errors.As(err, &sel):
 		return httpx.ValidationError(map[string]string{"sku_ids": "not in cart: " + strings.Join(sel.NotInCart, ", ")})
 	case errors.As(err, &lp):
