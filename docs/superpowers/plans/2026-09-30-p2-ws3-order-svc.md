@@ -394,7 +394,7 @@ Run: `go test ./internal/domain/ -count=1`. Expected: PASS. `go test -short ./..
   ```
 - `orderShopDTO` gains `Slug string \`json:"slug"\``.
 
-- [ ] **Step 1: Failing unit tests** (`transition_internal_test.go`)
+- [x] **Step 1: Failing unit tests** (`transition_internal_test.go`)
   - A COD order (`PENDING_CONFIRMATION`→…→`DELIVERED`) completed by the buyer yields `[OrderStatusChanged, OrderCompleted]`, where the `OrderCompleted` equals `{OrderID, CheckoutID, SellerUserID, PaymentMethod: "COD", Total: o.Total, CommissionAmount: 0, CompletedBy: "buyer"}`.
   - A system completion of a VNPAY order yields `CompletedBy "system"` and the order's `CommissionAmount`.
   - A cancel of a VNPAY order yields `OrderCancelled{…, CheckoutID: o.CheckoutID, PaymentMethod: "VNPAY"}`.
@@ -403,9 +403,9 @@ Run: `go test ./internal/domain/ -count=1`. Expected: PASS. `go test -short ./..
 
 Run: `go test ./internal/app/ -run Transition -count=1`. Expected: FAIL.
 
-- [ ] **Step 2: Implement** `transition.go` and `dto.go` as in **Interfaces**. In `toOrderDTO`, map the new fields and `Shop: orderShopDTO{ID: o.ShopID, Name: o.ShopName, Slug: o.ShopSlug}`.
+- [x] **Step 2: Implement** `transition.go` and `dto.go` as in **Interfaces**. In `toOrderDTO`, map the new fields and `Shop: orderShopDTO{ID: o.ShopID, Name: o.ShopName, Slug: o.ShopSlug}`.
 
-- [ ] **Step 3: Update the itests**
+- [x] **Step 3: Update the itests**
 
 COD completion now emits `OrderCompleted` (WS3' §3: "written for every completion, COD included").
 - In `newEventLog`, register `event.TypeOrderCompleted: "order-completed.schema.json"`.
@@ -426,7 +426,7 @@ This is the only P1 test assertion that changes. Task 11 records it in the READM
 
 Run: `go test ./... -count=1`. Expected: PASS (Docker).
 
-- [ ] **Step 4: Commit** — `feat(order): OrderCompleted, P2 fields on OrderCancelled/OrderCreated and the Order API`
+- [x] **Step 4: Commit** — `feat(order): OrderCompleted, P2 fields on OrderCancelled/OrderCreated and the Order API`
 
 ---
 
