@@ -706,7 +706,7 @@ Run: `go test ./... -count=1`. Expected: PASS.
 - `NewSweeper(store Store, catalog Catalog, payments Payments, cfg SweeperConfig) *Sweeper`. A nil `payments` disables the payment-timeout step.
 - `RunOnce(ctx) (int, error)` runs P1 pending → payment timeout → auto-complete → idempotency purge. It returns the number of orders it cancelled or completed. Existing tests pass `nil` payments and no `AutoCompleteAfter`, so their counts are unchanged.
 
-- [ ] **Step 1: Queries and store tests**
+- [x] **Step 1: Queries and store tests**
 ```sql
 -- name: ExpiredCheckouts :many
 SELECT checkout_id, min(payment_deadline)::timestamptz AS deadline
@@ -736,7 +736,7 @@ Store tests:
 - `LockAwaitingPayment` skips a row locked by another open tx: `pool.Begin` → `SELECT id FROM orders WHERE id=$1 FOR UPDATE`, then assert that order is missing from the result.
 - `ClaimDueDelivered` respects `delivered_at`.
 
-- [ ] **Step 2: Failing app tests** (`sweeper_test.go`, a new `TestSweeperPayments` using `newEnv`, a `paymentfake`, `payment.New(fake.Dial(t), 200*time.Millisecond)`, the clock and `awaitingCheckout` from Task 5)
+- [x] **Step 2: Failing app tests** (`sweeper_test.go`, a new `TestSweeperPayments` using `newEnv`, a `paymentfake`, `payment.New(fake.Dial(t), 200*time.Millisecond)`, the clock and `awaitingCheckout` from Task 5)
   - "NOT_PAID cancels every order of the checkout and releases stock":
     - `awaitingCheckout(n=2, 30m)`, `SetOutcome(checkout, NOT_PAID)`, `clock.Advance(31m)`;
     - `RunOnce` returns 2;
@@ -763,7 +763,7 @@ Store tests:
 
 Run: `go test ./internal/app/ -run TestSweeper -count=1`. Expected: FAIL.
 
-- [ ] **Step 3: Implement** in `sweeper.go`:
+- [x] **Step 3: Implement** in `sweeper.go`:
 ```go
 // timeoutPayments cancels AWAITING_PAYMENT checkouts past their deadline that
 // payment-svc confirms are unpaid (WS3' §5.2). payment-svc is asked before
@@ -838,7 +838,7 @@ If `AutoCompleteAfter == 0`, it returns 0. In `RunOnce`, call the steps in order
 
 In bootstrap, `app.NewSweeper(store, cat, pay, app.SweeperConfig{…, AutoCompleteAfter: cfg.AutoCompleteAfter})`.
 
-- [ ] **Step 4: Scoped-app itest helper and scenarios**
+- [x] **Step 4: Scoped-app itest helper and scenarios**
 
 In `harness_test.go`, keep `pay`, `rdb`, `producer` and `brokers` on the harness, and add:
 ```go
@@ -872,7 +872,7 @@ Register them in `TestOrderAPI` before "every published event matches its schema
 
 Run: `go test ./... -count=1`. Expected: PASS.
 
-- [ ] **Step 5: Commit** — `feat(order): sweeper payment timeout and auto-complete`
+- [x] **Step 5: Commit** — `feat(order): sweeper payment timeout and auto-complete`
 
 ---
 
