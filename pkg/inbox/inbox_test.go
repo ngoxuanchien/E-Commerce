@@ -3,6 +3,7 @@ package inbox_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
@@ -56,6 +57,37 @@ func TestMarkProcessedRollsBackWithTheEffect(t *testing.T) {
 	first, err = inbox.MarkProcessed(ctx, pool, "payment-svc", id)
 	require.NoError(t, err)
 	assert.True(t, first, "the redelivery is processed again")
+}
+
+func TestPurgeBefore(t *testing.T) {
+	ctx := context.Background()
+	pool := newPool(t)
+	const (
+		oldID    = "01890000-0000-7000-8000-000000000003"
+		recentID = "01890000-0000-7000-8000-000000000004"
+		consumer = "payment-svc"
+	)
+
+	for _, id := range []string{oldID, recentID} {
+		first, err := inbox.MarkProcessed(ctx, pool, consumer, id)
+		require.NoError(t, err)
+		require.True(t, first)
+	}
+	_, err := pool.Exec(ctx, `UPDATE processed_events SET processed_at = now() - interval '40 days'
+		WHERE consumer = $1 AND event_id = $2`, consumer, oldID)
+	require.NoError(t, err)
+
+	purged, err := inbox.PurgeBefore(ctx, pool, time.Now().Add(-30*24*time.Hour))
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), purged, "only the marker past the retention window goes")
+
+	first, err := inbox.MarkProcessed(ctx, pool, consumer, oldID)
+	require.NoError(t, err)
+	assert.True(t, first, "a purged marker is processed again")
+
+	again, err := inbox.MarkProcessed(ctx, pool, consumer, recentID)
+	require.NoError(t, err)
+	assert.False(t, again, "a marker inside the retention window stays")
 }
 
 func TestSchemaIsIdempotent(t *testing.T) {

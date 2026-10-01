@@ -13,7 +13,7 @@ Each task does the following:
 
 ## F1 — purge `processed_events` (the deferred `pkg/inbox` item)
 
-- [ ] **F1a — `pkg/inbox`: `PurgeBefore`.**
+- [x] **F1a — `pkg/inbox`: `PurgeBefore`.**
   - Add to `pkg/inbox/inbox.go`:
     ```go
     // PurgeBefore deletes markers processed before t and reports how many went. A redelivery older

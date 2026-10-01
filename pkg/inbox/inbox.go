@@ -6,6 +6,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -31,4 +32,15 @@ func MarkProcessed(ctx context.Context, db Execer, consumer, eventID string) (fi
 		return false, fmt.Errorf("inbox: mark %s/%s: %w", consumer, eventID, err)
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+// PurgeBefore deletes markers processed before t and reports how many went. A redelivery older
+// than the retention window would be processed again, so t must be far older than any broker
+// retention or retry horizon.
+func PurgeBefore(ctx context.Context, db Execer, t time.Time) (int64, error) {
+	tag, err := db.Exec(ctx, `DELETE FROM processed_events WHERE processed_at < $1`, t)
+	if err != nil {
+		return 0, fmt.Errorf("inbox: purge before %s: %w", t, err)
+	}
+	return tag.RowsAffected(), nil
 }
