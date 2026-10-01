@@ -64,14 +64,20 @@ func TestDownRemovesEveryTable(t *testing.T) {
 	pool, err := pgxx.NewPool(ctx, dsn)
 	require.NoError(t, err)
 	defer pool.Close()
-	down, err := fs.ReadFile(migrations.FS, "000004_review_fixes.down.sql")
+	// Run 000005 down first to remove the index it created.
+	down, err := fs.ReadFile(migrations.FS, "000005_processed_events_purge.down.sql")
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(down))
+	require.NoError(t, err)
+	// Then run 000004 down.
+	down, err = fs.ReadFile(migrations.FS, "000004_review_fixes.down.sql")
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.NoError(t, err)
 	for _, index := range reviewFixIndexes {
 		var exists bool
 		require.NoError(t, pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, index).Scan(&exists))
-		assert.False(t, exists, "000004 down drops %s", index)
+		assert.False(t, exists, "down sequence removes %s", index)
 	}
 	var hasLease bool
 	require.NoError(t, pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns

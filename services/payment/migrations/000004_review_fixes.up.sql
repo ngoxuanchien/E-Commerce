@@ -15,6 +15,3 @@ CREATE INDEX IF NOT EXISTS refunds_provider_ref_idx ON refunds (provider_refund_
 
 -- For age-based scans (and a future purge) of the webhook dedupe table.
 CREATE INDEX IF NOT EXISTS provider_events_received_idx ON provider_events (received_at);
-
--- For the reconciler's age-based purge of the idempotent-consumer processed_events table.
-CREATE INDEX IF NOT EXISTS processed_events_processed_at_idx ON processed_events (processed_at);
