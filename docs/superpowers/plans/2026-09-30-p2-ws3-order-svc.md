@@ -920,7 +920,7 @@ Run: `go test ./... -count=1`. Expected: PASS.
   `Handle` decodes the envelope and dispatches the two types. Other types return nil. Undecodable envelopes, malformed data, or a non-UUID `event_id`, `checkout_id` or refund `order_id` → a warning and return nil. A non-UUID allocation `order_id` is dropped with a warning while the others are kept. Handler errors are returned.
 - `bootstrap.Deps` gains `KafkaBrokers []string`. `bootstrap.New(cfg, d) (*App, error)` builds the consumer. `RunWorkers` runs the relay, the sweeper and the consumer, and closes the consumer after its `Run` returns.
 
-- [ ] **Step 1: Failing handler tests** (`payment_events_test.go`, real Postgres via `newEnv`, `awaitingCheckout` from Task 5)
+- [x] **Step 1: Failing handler tests** (`payment_events_test.go`, real Postgres via `newEnv`, `awaitingCheckout` from Task 5)
   - "success moves every allocated order to PENDING_CONFIRMATION/PAID":
     - 2 orders; the last history entry has `ActorRole system` and `*Note == paymentID`;
     - outbox `OrderStatusChanged{From: "AWAITING_PAYMENT", To: "PENDING_CONFIRMATION"}`.
@@ -940,9 +940,9 @@ Run: `go test ./... -count=1`. Expected: PASS.
 
 Run: `go test ./internal/app/ -run TestPaymentEvent -count=1`. Expected: FAIL.
 
-- [ ] **Step 2: Implement** `payment_events.go` and `txStore.MarkProcessed`.
+- [x] **Step 2: Implement** `payment_events.go` and `txStore.MarkProcessed`.
 
-- [ ] **Step 3: Kafka adapter tests** (`consumer_test.go`, unit, a stub `PaymentEvents` recording calls), with messages built by `event.Encode`:
+- [x] **Step 3: Kafka adapter tests** (`consumer_test.go`, unit, a stub `PaymentEvents` recording calls), with messages built by `event.Encode`:
   - `PaymentSucceeded` → the stub gets the envelope event ID and the decoded payload;
   - `PaymentRefunded` → dispatched;
   - `PaymentFailed`, `RefundFailed`, `PayoutSettled` → no call, nil;
@@ -951,7 +951,7 @@ Run: `go test ./internal/app/ -run TestPaymentEvent -count=1`. Expected: FAIL.
   - a non-UUID `checkout_id` → skipped;
   - a stub error is returned.
 
-- [ ] **Step 4: Wiring and itest**
+- [x] **Step 4: Wiring and itest**
   - bootstrap: `New` returns `(*App, error)`. Update `main.go` (`svc, err := bootstrap.New(...)`, passing `KafkaBrokers: cfg.KafkaBrokers`), `bootstrap_test.go` and the itest harness (and `scoped`).
   - harness: `testutil.CreateTopic(t, brokers, event.TopicPaymentEvents, 3)`, plus:
     ```go
@@ -980,7 +980,7 @@ Run: `go test ./internal/app/ -run TestPaymentEvent -count=1`. Expected: FAIL.
 
 Run: `go test ./... -count=1`. Expected: PASS.
 
-- [ ] **Step 5: Commit** — `feat(order): consume payment.events (paid, late success, refunded)`
+- [x] **Step 5: Commit** — `feat(order): consume payment.events (paid, late success, refunded)`
 
 ---
 
