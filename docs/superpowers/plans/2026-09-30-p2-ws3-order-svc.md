@@ -535,14 +535,14 @@ Run: `go test ./... -count=1`. Expected: PASS.
   Task 9 also uses it.
 - `OrderService.Act` with a buyer cancel of an `AWAITING_PAYMENT` order cancels, in one tx, the requested order plus every **other** `AWAITING_PAYMENT` order of its checkout. Each gets the same buyer actor and note, and each writes `OrderStatusChanged` + `OrderCancelled`. The return value is the requested order. On `ErrConcurrentUpdate`, the whole thing (re-read included) is retried once, as P1 does.
 
-- [ ] **Step 1: Query and store**
+- [x] **Step 1: Query and store**
 ```sql
 -- name: ListCheckoutOrders :many
 SELECT * FROM orders WHERE checkout_id = @checkout_id ORDER BY id;
 ```
 `Store.ListCheckoutOrders`: if `parseUUID` fails, return `[]domain.Order{}, nil`. Otherwise run the query and `s.hydrate(ctx, rows)`. Store test: 2 orders of one checkout and 1 of another → exactly the 2, sorted by id, with items and history loaded. An unknown ID gives an empty slice; `"x"` gives an empty slice.
 
-- [ ] **Step 2: Failing app tests** (`orders_test.go`, with a helper `awaitingCheckout(t, e, n int, deadline time.Duration) []domain.Order` in `env_test.go`, shared with Tasks 7 and 8). The helper:
+- [x] **Step 2: Failing app tests** (`orders_test.go`, with a helper `awaitingCheckout(t, e, n int, deadline time.Duration) []domain.Order` in `env_test.go`, shared with Tasks 7 and 8). The helper:
   - calls `BuildOrders` for `n` shops with `PaymentMethod VNPAY` and `CommissionRateBps 500`;
   - calls `InsertOrder`;
   - sets `PaymentDeadline = clock.Now()+deadline`;
@@ -561,7 +561,7 @@ SELECT * FROM orders WHERE checkout_id = @checkout_id ORDER BY id;
 
 Run: `go test ./internal/app/ -run TestOrder -count=1`. Expected: FAIL.
 
-- [ ] **Step 3: Implement** in `Act`, inside the existing `for range 2` loop, after `canAct`:
+- [x] **Step 3: Implement** in `Act`, inside the existing `for range 2` loop, after `canAct`:
 ```go
 var siblings []domain.Order
 if in.Action == domain.ActionCancel && in.Actor.Role == domain.RoleBuyer && o.Status == domain.StatusAwaitingPayment {
@@ -590,7 +590,7 @@ err = s.store.InTx(ctx, func(tx Tx) error {
 ```
 Stock is released asynchronously by catalog on `OrderCancelled`, as for P1 buyer cancels.
 
-- [ ] **Step 4: itest**
+- [x] **Step 4: itest**
   - `testBuyerCancelsAwaitingCheckout`:
     - an online checkout from 2 shops;
     - `POST /api/orders/{first}/cancel {"reason":"no longer needed"}` → 200 with the first order `CANCELLED`;
@@ -603,7 +603,7 @@ Stock is released asynchronously by catalog on `OrderCancelled`, as for P1 buyer
 
 Run: `go test ./... -count=1`. Expected: PASS.
 
-- [ ] **Step 5: Commit** — `feat(order): buyer cancel of an unpaid checkout cancels all of its orders`
+- [x] **Step 5: Commit** — `feat(order): buyer cancel of an unpaid checkout cancels all of its orders`
 
 ---
 
