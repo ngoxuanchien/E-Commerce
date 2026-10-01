@@ -21,6 +21,7 @@ var (
 	ErrCatalogUnavailable      = errors.New("catalog unavailable")
 	ErrCatalogRejected         = errors.New("catalog rejected the request")
 	ErrPaymentUnavailable      = errors.New("payment service unavailable")
+	ErrPaymentTimeout          = errors.New("payment service did not answer in time")
 	ErrIdempotencyInProgress   = errors.New("idempotency key is in progress")
 	ErrIdempotencyKeyReused    = errors.New("idempotency key reused with a different request")
 	ErrIdempotencyClaimLost    = errors.New("idempotency key was reclaimed by a newer request")

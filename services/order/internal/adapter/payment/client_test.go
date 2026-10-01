@@ -65,6 +65,15 @@ func TestRPCErrorsMapToUnavailable(t *testing.T) {
 	}
 }
 
+func TestDeadlineExceededMapsToTimeout(t *testing.T) {
+	c, f := setup(t, 0)
+	f.SetError(checkoutID, codes.DeadlineExceeded)
+
+	_, err := c.CancelCheckoutPayments(ctx, checkoutID)
+	assert.ErrorIs(t, err, app.ErrPaymentTimeout)
+	assert.NotErrorIs(t, err, app.ErrPaymentUnavailable)
+}
+
 func TestUnexpectedOutcomeMapsToUnavailable(t *testing.T) {
 	c, f := setup(t, 0)
 	f.SetDefault(paymentv1.Outcome_OUTCOME_UNSPECIFIED)
@@ -79,7 +88,8 @@ func TestPerCallTimeoutGivesUpWithoutRetrying(t *testing.T) {
 
 	start := time.Now()
 	_, err := c.CancelCheckoutPayments(ctx, checkoutID)
-	assert.ErrorIs(t, err, app.ErrPaymentUnavailable)
+	assert.ErrorIs(t, err, app.ErrPaymentTimeout, "the sweeper stops the tick on a timeout")
+	assert.NotErrorIs(t, err, app.ErrPaymentUnavailable)
 	assert.Less(t, time.Since(start), 250*time.Millisecond)
 	assert.Equal(t, 1, f.Calls(checkoutID), "no retry within a tick")
 }

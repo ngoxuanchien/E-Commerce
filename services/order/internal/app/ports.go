@@ -33,8 +33,11 @@ const (
 // Payments is payment-svc's internal API (adapter/payment).
 type Payments interface {
 	// CancelCheckoutPayments makes sure no attempt of the checkout can still
-	// succeed and reports whether one did. ErrPaymentUnavailable when
-	// payment-svc can't answer; the caller retries on a later tick.
+	// succeed and reports whether one did. ErrPaymentTimeout when payment-svc
+	// did not answer within the call's deadline (it may be down, so the
+	// sweeper stops asking for the rest of the tick); ErrPaymentUnavailable
+	// for any other failure, which concerns only that checkout. Either way the
+	// caller retries on a later tick.
 	CancelCheckoutPayments(ctx context.Context, checkoutID string) (PaymentOutcome, error)
 }
 

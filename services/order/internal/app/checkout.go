@@ -428,7 +428,11 @@ func (s *CheckoutService) commit(base, fwd context.Context, in CheckoutInput, en
 	if err != nil {
 		return s.recoverCommit(base, in, res.Orders, lines, err)
 	}
-	s.clearCart(fwd, in.BuyerID, lines)
+	// The commit may have landed just before the forward deadline; the cart
+	// cleanup gets its own budget so the purchased lines still leave the cart.
+	cctx, stop := s.cleanupCtx(base)
+	defer stop()
+	s.clearCart(cctx, in.BuyerID, lines)
 	return resp, nil
 }
 

@@ -5,10 +5,13 @@ package payment
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	paymentv1 "github.com/ngoxuanchien/e-commerce/gen/payment/v1"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/app"
@@ -33,15 +36,20 @@ func New(cc grpc.ClientConnInterface, timeout time.Duration) *Client {
 	return &Client{rpc: paymentv1.NewPaymentInternalClient(cc), timeout: timeout}
 }
 
-// CancelCheckoutPayments cancels the checkout's attempts. Every failure — an
-// RPC error or an answer that is not PAID/NOT_PAID — is reported as
-// ErrPaymentUnavailable, so the caller leaves the checkout alone and retries.
+// CancelCheckoutPayments cancels the checkout's attempts. A call that ran out
+// of time (the per-call deadline, or DEADLINE_EXCEEDED from the server) is
+// reported as ErrPaymentTimeout; every other failure — an RPC error or an
+// answer that is not PAID/NOT_PAID — as ErrPaymentUnavailable. Either way the
+// caller leaves the checkout alone and retries.
 func (c *Client) CancelCheckoutPayments(ctx context.Context, checkoutID string) (app.PaymentOutcome, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	resp, err := c.rpc.CancelCheckoutPayments(ctx, &paymentv1.CancelCheckoutPaymentsRequest{CheckoutId: checkoutID})
 	if err != nil {
+		if status.Code(err) == codes.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
+			return 0, fmt.Errorf("%w: %w", app.ErrPaymentTimeout, err)
+		}
 		return 0, fmt.Errorf("%w: %w", app.ErrPaymentUnavailable, err)
 	}
 	switch o := resp.GetOutcome(); o {

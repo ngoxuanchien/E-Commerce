@@ -5,12 +5,13 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/domain"
 )
 
-// defaultBatchSize is the WS3' §6 batch size of every sweeper step.
+// defaultBatchSize is the WS3' §5 batch size of every sweeper step.
 const defaultBatchSize = 50
 
 // defaultPaidGrace is how long a paid checkout may stay AWAITING_PAYMENT past
@@ -85,26 +86,15 @@ func (s *Sweeper) Run(ctx context.Context) error {
 
 // RunOnce runs every sweep step in order — stale PENDING orders, expired
 // checkouts, delivered orders past their auto-complete deadline, idempotency
-// keys — and returns how many orders it cancelled or completed.
+// keys — and returns how many orders it cancelled or completed. Every step
+// runs even when an earlier one failed, so one broken step cannot starve the
+// others; the errors are joined.
 func (s *Sweeper) RunOnce(ctx context.Context) (int, error) {
-	cancelled, err := s.cancelStalePending(ctx)
-	if err != nil {
-		return cancelled, err
-	}
-	timedOut, err := s.timeoutPayments(ctx)
-	n := cancelled + timedOut
-	if err != nil {
-		return n, err
-	}
-	completed, err := s.autoComplete(ctx)
-	n += completed
-	if err != nil {
-		return n, err
-	}
-	if _, err := s.store.DeleteIdempotencyKeysBefore(ctx, s.cfg.Now().Add(-s.cfg.IdempotencyTTL)); err != nil {
-		return n, err
-	}
-	return n, nil
+	cancelled, errPending := s.cancelStalePending(ctx)
+	timedOut, errPayments := s.timeoutPayments(ctx)
+	completed, errComplete := s.autoComplete(ctx)
+	_, errPurge := s.store.DeleteIdempotencyKeysBefore(ctx, s.cfg.Now().Add(-s.cfg.IdempotencyTTL))
+	return cancelled + timedOut + completed, errors.Join(errPending, errPayments, errComplete, errPurge)
 }
 
 // cancelStalePending cancels every PENDING order created before
@@ -141,10 +131,23 @@ func (s *Sweeper) cancelStalePending(ctx context.Context) (int, error) {
 	return len(cancelled), nil
 }
 
+// paymentConcurrency bounds the parallel CancelCheckoutPayments calls of one
+// sweep, like releaseConcurrency.
+const paymentConcurrency = 10
+
+// errStopPayments tells timeoutPayments that payment-svc timed out (or the
+// sweep was cancelled), so no further checkout is asked about this tick.
+var errStopPayments = errors.New("payment-svc timed out; stop asking this tick")
+
 // timeoutPayments cancels the AWAITING_PAYMENT checkouts past their deadline
 // that payment-svc confirms are unpaid (WS3' §5.2). payment-svc is asked
-// before any row is locked; a PAID or unavailable answer leaves the orders
-// alone, and the checkout is re-evaluated on the next tick.
+// before any row is locked, for up to paymentConcurrency checkouts at once; a
+// PAID or unavailable answer leaves the orders alone, and the checkout is
+// re-evaluated on the next tick. The first call that times out stops the step
+// for the rest of the tick, so a black-holed payment-svc costs about one call
+// timeout per tick rather than one per expired checkout. A plain UNAVAILABLE
+// answer does not: payment-svc also gives it for a checkout that is still
+// payable, so it concerns only that checkout.
 func (s *Sweeper) timeoutPayments(ctx context.Context) (int, error) {
 	if s.payments == nil {
 		return 0, nil
@@ -157,23 +160,60 @@ func (s *Sweeper) timeoutPayments(ctx context.Context) (int, error) {
 		if err != nil {
 			return n, err
 		}
-		for _, c := range batch {
-			cancelled, err := s.timeoutCheckout(ctx, c, now)
-			if err != nil {
-				return n, err
-			}
-			n += cancelled
-		}
-		if len(batch) < s.cfg.BatchSize {
-			return n, nil
+		cancelled, stopped, err := s.timeoutBatch(ctx, batch, now)
+		n += cancelled
+		if err != nil || stopped || len(batch) < s.cfg.BatchSize {
+			return n, err
 		}
 		after = &batch[len(batch)-1]
 	}
 }
 
+// timeoutBatch runs timeoutCheckout for every checkout of batch, at most
+// paymentConcurrency at a time. Once a call reports errStopPayments no further
+// checkout is started (calls already in flight finish) and stopped is true.
+// The other errors are joined.
+func (s *Sweeper) timeoutBatch(ctx context.Context, batch []CheckoutCursor, now time.Time) (n int, stopped bool, err error) {
+	var (
+		mu   sync.Mutex
+		errs []error
+		stop atomic.Bool
+		wg   sync.WaitGroup
+	)
+	sem := make(chan struct{}, paymentConcurrency)
+	for _, c := range batch {
+		sem <- struct{}{}
+		if stop.Load() {
+			<-sem
+			break
+		}
+		wg.Add(1)
+		go func() {
+			defer func() { <-sem; wg.Done() }()
+			cancelled, err := s.timeoutCheckout(ctx, c, now)
+			if errors.Is(err, errStopPayments) {
+				stop.Store(true) // before the deferred release, so the next dispatch sees it
+				return
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			n += cancelled
+			if err != nil {
+				errs = append(errs, err)
+			}
+		}()
+	}
+	wg.Wait()
+	return n, stop.Load(), errors.Join(errs...)
+}
+
 func (s *Sweeper) timeoutCheckout(ctx context.Context, c CheckoutCursor, now time.Time) (int, error) {
 	outcome, err := s.payments.CancelCheckoutPayments(ctx, c.CheckoutID)
 	switch {
+	case err != nil && (errors.Is(err, ErrPaymentTimeout) || ctx.Err() != nil):
+		s.cfg.Logger.WarnContext(ctx, "payment-svc timed out; remaining payment timeouts retried next tick",
+			"checkout_id", c.CheckoutID, "error", err)
+		return 0, errStopPayments
 	case err != nil:
 		s.cfg.Logger.WarnContext(ctx, "payment-svc unavailable; payment timeout retried next tick",
 			"checkout_id", c.CheckoutID, "error", err)

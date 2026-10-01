@@ -1,9 +1,13 @@
 package app_test
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
+	"slices"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -252,41 +256,47 @@ func TestPaymentEventHandler(t *testing.T) {
 	})
 }
 
-// raceOnFirstTx cancels the order just before the handler's first transaction,
-// so the handler's optimistic lock is stale and it must re-read.
-type raceOnFirstTx struct {
+// raceAfterRead lets the handler read the order, then cancels it as the buyer
+// before handing the (now stale) read back, so the handler's write loses the
+// optimistic lock deterministically and it must retry against fresh state.
+type raceAfterRead struct {
 	app.Store
 	svc     *app.OrderService
 	order   domain.Order
 	raced   atomic.Bool
+	reads   atomic.Int32
 	cancels int
 }
 
-func (s *raceOnFirstTx) InTx(ctx context.Context, fn func(app.Tx) error) error {
-	if s.raced.CompareAndSwap(false, true) {
-		_, err := s.svc.Act(ctx, app.ActInput{
-			OrderID: s.order.ID, Actor: domain.Actor{ID: s.order.BuyerID, Role: domain.RoleBuyer},
-			Action: domain.ActionCancel, Note: "bought it elsewhere",
-		})
-		if err != nil {
-			return err
-		}
-		s.cancels++
+func (s *raceAfterRead) GetOrder(ctx context.Context, id string) (domain.Order, error) {
+	s.reads.Add(1)
+	o, err := s.Store.GetOrder(ctx, id)
+	if err != nil || id != s.order.ID || !s.raced.CompareAndSwap(false, true) {
+		return o, err
 	}
-	return s.Store.InTx(ctx, fn)
+	if _, err := s.svc.Act(ctx, app.ActInput{
+		OrderID: s.order.ID, Actor: domain.Actor{ID: s.order.BuyerID, Role: domain.RoleBuyer},
+		Action: domain.ActionCancel, Note: "bought it elsewhere",
+	}); err != nil {
+		return domain.Order{}, err
+	}
+	s.cancels++
+	return o, nil // stale: still AWAITING_PAYMENT at the old version
 }
 
-// TestPaymentEventHandlerRetriesALostRace: a cancel that lands between the
-// handler's read and its write must not fail the event; the retry sees
-// CANCELLED and records the capture as a late one.
+// TestPaymentEventHandlerRetriesALostRace (final review M6): a buyer cancel
+// that lands between the handler's read and its write makes the capture lose
+// the optimistic lock; the retry sees CANCELLED and records a late capture.
 func TestPaymentEventHandlerRetriesALostRace(t *testing.T) {
 	e := newEnv(t, envOpts{postgres: true})
 	o := awaitingCheckout(t, e, 1, 30*time.Minute)[0]
-	store := &raceOnFirstTx{Store: e.store, svc: app.NewOrderService(e.store, e.clock.Now), order: o}
+	store := &raceAfterRead{Store: e.store, svc: app.NewOrderService(e.store, e.clock.Now), order: o}
 	h := app.NewPaymentEventHandler(store, e.clock.Now, quietLogger)
+	eventID := uid()
 
-	require.NoError(t, h.PaymentSucceeded(ctx, uid(), paymentSucceeded(o.CheckoutID, uid(), o)))
+	require.NoError(t, h.PaymentSucceeded(ctx, eventID, paymentSucceeded(o.CheckoutID, uid(), o)))
 	assert.Equal(t, 1, store.cancels)
+	assert.Equal(t, int32(2), store.reads.Load(), "the lost race is retried once against fresh state")
 
 	got, err := e.store.GetOrder(ctx, o.ID)
 	require.NoError(t, err)
@@ -294,4 +304,87 @@ func TestPaymentEventHandlerRetriesALostRace(t *testing.T) {
 	assert.Equal(t, domain.PaymentRefundPending, got.PaymentStatus)
 	require.NotNil(t, got.CancelReason)
 	assert.Equal(t, "bought it elsewhere", *got.CancelReason)
+	assert.Equal(t, 0, countTo(got, domain.StatusPendingConfirmation), "the losing capture left no history")
+	assert.True(t, processed(t, e, eventID))
+}
+
+// recordingStore records the order IDs passed to Tx.SaveTransition, in order,
+// so a test can check the order in which rows are locked.
+type recordingStore struct {
+	app.Store
+	mu    sync.Mutex
+	saved []string
+}
+
+func (s *recordingStore) InTx(ctx context.Context, fn func(app.Tx) error) error {
+	return s.Store.InTx(ctx, func(tx app.Tx) error { return fn(recordingTx{Tx: tx, s: s}) })
+}
+
+func (s *recordingStore) Saved() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.saved)
+}
+
+type recordingTx struct {
+	app.Tx
+	s *recordingStore
+}
+
+func (t recordingTx) SaveTransition(ctx context.Context, o domain.Order, prevVersion int) error {
+	t.s.mu.Lock()
+	t.s.saved = append(t.s.saved, o.ID)
+	t.s.mu.Unlock()
+	return t.Tx.SaveTransition(ctx, o, prevVersion)
+}
+
+func sortedIDs(orders []domain.Order) []string {
+	ids := make([]string, 0, len(orders))
+	for _, o := range orders {
+		ids = append(ids, o.ID)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+// TestPaymentEventHandlerLocksInOrderIDOrder (final review M1): allocations
+// are applied in ascending order ID, whatever order the event lists them in,
+// so the handler and a buyer cancel fan-out lock rows in the same order.
+func TestPaymentEventHandlerLocksInOrderIDOrder(t *testing.T) {
+	e := newEnv(t, envOpts{postgres: true})
+	orders := awaitingCheckout(t, e, 3, 30*time.Minute)
+	want := sortedIDs(orders)
+	byIDDesc := slices.Clone(orders)
+	slices.SortFunc(byIDDesc, func(a, b domain.Order) int { return strings.Compare(b.ID, a.ID) })
+	store := &recordingStore{Store: e.store}
+	h := app.NewPaymentEventHandler(store, e.clock.Now, quietLogger)
+
+	require.NoError(t, h.PaymentSucceeded(ctx, uid(), paymentSucceeded(orders[0].CheckoutID, uid(), byIDDesc...)))
+	assert.Equal(t, want, store.Saved())
+}
+
+// TestPaymentEventHandlerSkipsAnotherCheckoutsOrder (final review M2): an
+// allocation whose order belongs to a different checkout is skipped with a
+// warning; the event's own orders are still applied.
+func TestPaymentEventHandlerSkipsAnotherCheckoutsOrder(t *testing.T) {
+	e := newEnv(t, envOpts{postgres: true})
+	log := &bytes.Buffer{}
+	h := app.NewPaymentEventHandler(e.store, e.clock.Now, slog.New(slog.NewTextHandler(log, nil)))
+	own := awaitingCheckout(t, e, 1, 30*time.Minute)[0]
+	foreign := awaitingCheckout(t, e, 1, 30*time.Minute)[0]
+
+	ev := paymentSucceeded(own.CheckoutID, uid(), own, foreign)
+	require.NoError(t, h.PaymentSucceeded(ctx, uid(), ev))
+
+	got, err := e.store.GetOrder(ctx, own.ID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusPendingConfirmation, got.Status)
+	assert.Equal(t, domain.PaymentPaid, got.PaymentStatus)
+	got, err = e.store.GetOrder(ctx, foreign.ID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusAwaitingPayment, got.Status, "another checkout's order is not marked paid")
+	assert.Equal(t, domain.PaymentUnpaid, got.PaymentStatus)
+	assert.Empty(t, e.events(t, foreign.ID))
+	assert.Contains(t, log.String(), "another checkout")
+	assert.Contains(t, log.String(), foreign.ID)
 }

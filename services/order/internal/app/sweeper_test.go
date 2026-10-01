@@ -3,6 +3,7 @@ package app_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -542,4 +543,118 @@ func TestSweeperAutoComplete(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, domain.StatusDelivered, got.Status)
 	})
+}
+
+// TestSweeperSlowPaymentDoesNotStallTheSweep (final review I1): a payment-svc
+// that accepts calls but answers after the client timeout must cost about one
+// timeout per tick, not one per expired checkout, and the steps after the
+// payment step must still run in the same RunOnce.
+func TestSweeperSlowPaymentDoesNotStallTheSweep(t *testing.T) {
+	p := newPaymentsEnv(t) // 200 ms client timeout
+	sw := p.sweeper(app.SweeperConfig{AutoCompleteAfter: 10 * time.Minute})
+	const expired = 30 // sequentially 30 × 200 ms = 6 s
+	var awaiting []domain.Order
+	for range expired {
+		o := awaitingCheckout(t, p.env, 1, 30*time.Minute)[0]
+		p.payFake.SetOutcome(o.CheckoutID, paymentv1.Outcome_OUTCOME_NOT_PAID)
+		awaiting = append(awaiting, o)
+	}
+	stale, _ := crashedCheckout(t, p.env, p.clock.Now(), 5)
+	delivered := p.seedOrder(t, uid(), catalogfake.NewShop("Slow pay"), domain.StatusDelivered)
+	p.clock.Advance(31 * time.Minute)
+	p.payFake.SetDelay(time.Second) // > the 200 ms client timeout
+
+	start := time.Now()
+	n, err := sw.RunOnce(ctx)
+	elapsed := time.Since(start)
+	require.NoError(t, err, "a slow payment-svc is not a sweep failure")
+	assert.Less(t, elapsed, 2*time.Second, "one tick must not cost one timeout per checkout")
+	assert.Equal(t, 2, n, "the stale PENDING order and the delivered order")
+
+	calls := 0
+	for _, o := range awaiting {
+		calls += p.payFake.Calls(o.CheckoutID)
+		got, err := p.store.GetOrder(ctx, o.ID)
+		require.NoError(t, err)
+		assert.Equal(t, domain.StatusAwaitingPayment, got.Status)
+	}
+	assert.LessOrEqual(t, calls, 10, "the step stops asking after the first timeout")
+	assert.Positive(t, calls)
+	got, err := p.store.GetOrder(ctx, stale.ID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusCancelled, got.Status)
+	got, err = p.store.GetOrder(ctx, delivered.ID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusCompleted, got.Status, "auto-complete ran in the same RunOnce")
+
+	p.payFake.SetDelay(0)
+	n, err = sw.RunOnce(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, expired, n, "the next tick asks again")
+}
+
+// A plain UNAVAILABLE answer is per checkout (payment-svc also returns it for a
+// checkout that is still payable), so it must not stop the rest of the tick.
+func TestSweeperUnavailableCheckoutDoesNotStopOthers(t *testing.T) {
+	p := newPaymentsEnv(t)
+	sw := p.sweeper(app.SweeperConfig{})
+	payable := awaitingCheckout(t, p.env, 1, 29*time.Minute)[0] // earliest deadline
+	p.payFake.SetError(payable.CheckoutID, codes.Unavailable)
+	var unpaid []domain.Order
+	for range 3 {
+		o := awaitingCheckout(t, p.env, 1, 30*time.Minute)[0]
+		p.payFake.SetOutcome(o.CheckoutID, paymentv1.Outcome_OUTCOME_NOT_PAID)
+		unpaid = append(unpaid, o)
+	}
+	p.clock.Advance(31 * time.Minute)
+
+	n, err := sw.RunOnce(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 3, n)
+	for _, o := range unpaid {
+		got, err := p.store.GetOrder(ctx, o.ID)
+		require.NoError(t, err)
+		assert.Equal(t, domain.StatusCancelled, got.Status)
+	}
+	got, err := p.store.GetOrder(ctx, payable.ID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusAwaitingPayment, got.Status)
+}
+
+// failingExpiredCheckouts breaks the payment-timeout step's paging query.
+type failingExpiredCheckouts struct{ app.Store }
+
+var errExpiredCheckouts = errors.New("expired checkouts query failed")
+
+func (failingExpiredCheckouts) ExpiredCheckouts(context.Context, time.Time, *app.CheckoutCursor, int) ([]app.CheckoutCursor, error) {
+	return nil, errExpiredCheckouts
+}
+
+// TestSweeperFailingStepDoesNotStopLaterSteps: every step runs every tick; the
+// errors are joined and the counts summed.
+func TestSweeperFailingStepDoesNotStopLaterSteps(t *testing.T) {
+	p := newPaymentsEnv(t)
+	sw := app.NewSweeper(failingExpiredCheckouts{p.store}, p.catalog, p.pay, app.SweeperConfig{
+		Interval: time.Minute, PendingTimeout: 2 * time.Minute, AutoCompleteAfter: 10 * time.Minute,
+		Now: p.clock.Now, Logger: slog.New(slog.NewTextHandler(p.log, nil)),
+	})
+	stale, _ := crashedCheckout(t, p.env, p.clock.Now(), 5)
+	delivered := p.seedOrder(t, uid(), catalogfake.NewShop("Failing step"), domain.StatusDelivered)
+	user, hash := uid(), []byte("h")
+	_, _, err := p.store.BeginIdempotency(ctx, user, "k", hash, p.clock.Now(), time.Time{})
+	require.NoError(t, err)
+	p.clock.Advance(25 * time.Hour)
+
+	n, err := sw.RunOnce(ctx)
+	require.ErrorIs(t, err, errExpiredCheckouts)
+	assert.Equal(t, 2, n)
+	got, err := p.store.GetOrder(ctx, stale.ID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusCancelled, got.Status)
+	got, err = p.store.GetOrder(ctx, delivered.ID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusCompleted, got.Status, "auto-complete runs after a failed payment step")
+	_, created, err := p.store.BeginIdempotency(ctx, user, "k", hash, p.clock.Now(), time.Time{})
+	require.NoError(t, err)
+	assert.True(t, created, "the purge runs after a failed payment step")
 }

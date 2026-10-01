@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/ngoxuanchien/e-commerce/pkg/event"
@@ -43,13 +45,18 @@ func NewPaymentEventHandler(store Store, now func() time.Time, logger *slog.Logg
 
 // PaymentSucceeded moves every allocated order out of AWAITING_PAYMENT, or
 // records the capture as a late one on an order that was cancelled unpaid.
-// An allocation of an unknown order is skipped with a warning; an event with no
+// Allocations are applied in ascending order ID, the lock order of a buyer
+// cancel fan-out and the sweeper, so they cannot deadlock. An allocation of an
+// unknown order, or of an order of another checkout, is skipped with a
+// warning; an event with no
 // allocations (a duplicate charge, refunded automatically) changes nothing but
 // is still marked processed.
 func (h *PaymentEventHandler) PaymentSucceeded(ctx context.Context, eventID string, ev event.PaymentSucceeded) error {
+	allocations := slices.Clone(ev.Allocations)
+	slices.SortFunc(allocations, func(a, b event.Allocation) int { return strings.Compare(a.OrderID, b.OrderID) })
 	for range paymentEventAttempts {
 		err := h.apply(ctx, eventID, func(ctx context.Context, tx Tx) error {
-			for _, a := range ev.Allocations {
+			for _, a := range allocations {
 				o, err := h.store.GetOrder(ctx, a.OrderID)
 				if errors.Is(err, ErrNotFound) {
 					h.logger.WarnContext(ctx, "skipping allocation of an unknown order",
@@ -58,6 +65,12 @@ func (h *PaymentEventHandler) PaymentSucceeded(ctx context.Context, eventID stri
 				}
 				if err != nil {
 					return err
+				}
+				if o.CheckoutID != ev.CheckoutID {
+					h.logger.WarnContext(ctx, "skipping allocation of an order of another checkout",
+						"event_id", eventID, "order_id", a.OrderID, "order_checkout_id", o.CheckoutID,
+						"checkout_id", ev.CheckoutID, "payment_id", ev.PaymentID)
+					continue
 				}
 				if err := h.capture(ctx, tx, &o, ev.PaymentID); err != nil {
 					return err

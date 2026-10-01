@@ -260,3 +260,25 @@ func TestOrderService(t *testing.T) {
 		assert.ErrorIs(t, err, app.ErrInvalidCursor)
 	})
 }
+
+// TestBuyerCancelFanOutLocksInOrderIDOrder (final review M1): a buyer cancel
+// of an AWAITING_PAYMENT checkout applies the transitions in ascending order
+// ID, whichever order was clicked, so it locks rows in the same order as the
+// payment-event handler; it still returns the clicked order.
+func TestBuyerCancelFanOutLocksInOrderIDOrder(t *testing.T) {
+	e := newEnv(t, envOpts{postgres: true})
+	orders := awaitingCheckout(t, e, 3, 30*time.Minute)
+	want := sortedIDs(orders)
+	clicked := want[len(want)-1] // the highest ID
+	store := &recordingStore{Store: e.store}
+	svc := app.NewOrderService(store, e.clock.Now)
+
+	got, err := svc.Act(ctx, app.ActInput{
+		OrderID: clicked, Actor: domain.Actor{ID: orders[0].BuyerID, Role: domain.RoleBuyer},
+		Action: domain.ActionCancel, Note: "changed my mind",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, clicked, got.ID, "Act returns the requested order")
+	assert.Equal(t, domain.StatusCancelled, got.Status)
+	assert.Equal(t, want, store.Saved())
+}

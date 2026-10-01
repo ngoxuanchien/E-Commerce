@@ -101,3 +101,37 @@ func TestCheckoutTxCFailure(t *testing.T) {
 		assert.Empty(t, lines)
 	})
 }
+
+// commitAtDeadline lets Tx C commit, then holds the reply until the forward
+// context's deadline has fired, as if the commit landed right at the deadline.
+type commitAtDeadline struct{ app.Store }
+
+func (s commitAtDeadline) InTx(ctx context.Context, fn func(app.Tx) error) error {
+	completed := false
+	err := s.Store.InTx(ctx, func(tx app.Tx) error {
+		return fn(&faultyTx{Tx: tx, store: &faultyStore{}, completed: &completed})
+	})
+	if err == nil && completed {
+		<-ctx.Done()
+	}
+	return err
+}
+
+// A Tx C that commits just before the forward deadline still clears the
+// purchased cart lines: the cart is cleaned up under its own context (T10).
+func TestCheckoutClearsCartAfterACommitAtTheDeadline(t *testing.T) {
+	e := newEnv(t, envOpts{postgres: true, redis: true})
+	svc := app.NewCheckoutService(commitAtDeadline{e.store}, e.carts, e.catalog, app.CheckoutConfig{
+		ShippingFee: 30_000, Now: e.clock.Now, Deadline: 2 * time.Second,
+	})
+	buyer := uid()
+	s := e.fake.AddSku(catalogfake.NewShop("Deadline cart"), 10_000, 5)
+	e.cartSet(t, buyer, s.GetSkuId(), 1)
+
+	resp, err := svc.Checkout(ctx, checkoutInput(buyer, "deadline-cart"), (&recorder{}).encode)
+	require.NoError(t, err)
+	assert.Len(t, createdOrderIDs(t, resp), 1)
+	lines, err := e.carts.Lines(ctx, buyer)
+	require.NoError(t, err)
+	assert.Empty(t, lines, "purchased lines leave the cart")
+}

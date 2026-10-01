@@ -43,7 +43,7 @@ it asks payment-svc through `PaymentInternal`.
 | `ONLINE_PAYMENT_METHODS` | `VNPAY,STRIPE` | Enabled online methods; only `VNPAY` / `STRIPE`, empty = COD only |
 | `COMMISSION_RATE_BPS` | `500` | Platform commission in basis points (0–10000); `commission_amount = floor(subtotal × bps / 10000)` |
 | `PAYMENT_TIMEOUT` | `30m` | How long an online checkout waits for its capture before the sweeper cancels it |
-| `AUTO_COMPLETE_AFTER` | `72h` | How long a `DELIVERED` order stays open before the system completes it (`0` disables the step) |
+| `AUTO_COMPLETE_AFTER` | `72h` | How long a `DELIVERED` order stays open before the system completes it; must be > 0 (the config rejects `0`) |
 | `DATABASE_URL`, `REDIS_URL`, `KAFKA_BROKERS` | — | Dependencies (checked by `/readyz`; empty `KAFKA_BROKERS` means no `payment.events` consumer) |
 | `HTTP_ADDR`, `GRPC_ADDR`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `LOG_LEVEL`, `SERVICE_NAME` | WS0 | Common service settings |
 
@@ -61,7 +61,7 @@ it asks payment-svc through `PaymentInternal`.
 The sweeper runs four steps, each in batches of 50 with `FOR UPDATE SKIP LOCKED`:
 
 - **stale `PENDING`** — cancelled after `PENDING_TIMEOUT` (`CHECKOUT_TIMEOUT`), stock released after commit.
-- **payment timeout** — pages distinct expired checkouts by `(deadline, checkout_id)` *without* locks, asks payment-svc `CancelCheckoutPayments` first, and only then locks the checkout's `AWAITING_PAYMENT` orders and cancels them (`PAYMENT_TIMEOUT`). A `PAID` checkout is left alone and, still `AWAITING_PAYMENT` more than 10 min past its deadline, logged at warn on every tick.
+- **payment timeout** — pages distinct expired checkouts by `(deadline, checkout_id)` *without* locks, asks payment-svc `CancelCheckoutPayments` first, and only then locks the checkout's `AWAITING_PAYMENT` orders and cancels them (`PAYMENT_TIMEOUT`). A `PAID` checkout is left alone and, still `AWAITING_PAYMENT` more than 10 min past its deadline, logged at warn on every tick. Up to 10 checkouts are asked at once, and the first call that times out ends the step for the tick (decision 34).
 - **auto-complete** — completes `DELIVERED` orders older than `AUTO_COMPLETE_AFTER` with `OrderCompleted`.
 - **idempotency keys** — purged after 24 h.
 
@@ -120,8 +120,14 @@ Deviations recorded while implementing Tasks 1–10:
 29. **`ONLINE_PAYMENT_METHODS` set but blank means COD only.** `caarlos0/env` substitutes `envDefault` for an explicitly empty value, so parsing cannot tell `""` from unset; `Config.onlineMethods` reads the environment directly (`os.LookupEnv`) for that case. Unset still means the `VNPAY,STRIPE` default.
 30. **`Deps.KafkaBrokers` empty means no `payment.events` consumer.** Bootstrap skips the consumer and its goroutine instead of dialling a broker list of zero addresses; the rest of the service (HTTP, gRPC, sweeper) starts normally.
 31. **The payment-timeout step treats every `PaymentInternal` error as "retry next tick"**, including `UNAVAILABLE` for an attempt that is still payable: the sweeper logs at warn and leaves the orders alone rather than cancelling a payment it could not check. The checkout is re-evaluated on the next tick.
-32. **A checkout that exceeds `PENDING_TIMEOUT` answers 503 (catalog unavailable) or 409 (Tx C lost)**, has its orders cancelled and releases its idempotency key — see decision 27.
+32. Merged into decision 27 (the checkout deadline and its answers).
 33. **A buyer cancel in `AWAITING_PAYMENT` cancels every `AWAITING_PAYMENT` order of the checkout in one transaction**, so a two-shop checkout cannot end up half cancelled.
+
+Final-review fixes:
+
+34. **The payment-timeout step is bounded per tick, and every sweeper step runs every tick.** `CancelCheckoutPayments` is called for up to 10 checkouts at once (3 s each). The first call that times out (`DEADLINE_EXCEEDED` or the client deadline, `app.ErrPaymentTimeout`) stops the step for the rest of the tick, so a black-holed payment-svc costs about one call timeout per tick instead of one per expired checkout. A plain `UNAVAILABLE` answer skips only that checkout, because payment-svc also returns it for a checkout that is still payable. `RunOnce` runs the stale-`PENDING`, payment-timeout, auto-complete and idempotency-purge steps even when an earlier one fails, joins their errors and sums the counts.
+35. **`delivered_at` is backfilled for pre-P2 orders** (migration `000007_backfill_delivered_at`): `DELIVERED` and `COMPLETED` orders with a NULL `delivered_at` take the time of their latest `DELIVERED` history row, so orders delivered before the upgrade still auto-complete. Its down migration is a no-op.
+36. **Rows of one checkout are locked in ascending order ID everywhere** (buyer cancel fan-out, payment-event handler, sweeper), so a capture and a buyer cancel cannot deadlock. The handler also skips, with a warning, an allocation whose order belongs to another checkout than the event's.
 
 ## Testing
 

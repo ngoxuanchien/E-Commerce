@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/domain"
@@ -83,9 +85,12 @@ type ActInput struct {
 // Act performs the action. The actor must be the order's buyer (buyer role) or
 // seller (seller role), otherwise ErrNotFound. A buyer who cancels an
 // AWAITING_PAYMENT order cancels every order of its checkout that is still
-// AWAITING_PAYMENT, in the same transaction. Illegal moves return
-// domain.ErrInvalidTransition. A lost optimistic-lock race is retried once
-// against the fresh state; losing again returns ErrConcurrentUpdate.
+// AWAITING_PAYMENT, in the same transaction, applying the transitions in
+// ascending order ID — the lock order of the payment-event handler and the
+// sweeper too, so they cannot deadlock. It returns the requested order.
+// Illegal moves return domain.ErrInvalidTransition. A lost optimistic-lock
+// race is retried once against the fresh state; losing again returns
+// ErrConcurrentUpdate.
 func (s *OrderService) Act(ctx context.Context, in ActInput) (domain.Order, error) {
 	for range 2 {
 		o, err := s.store.GetOrder(ctx, in.OrderID)
@@ -99,13 +104,16 @@ func (s *OrderService) Act(ctx context.Context, in ActInput) (domain.Order, erro
 		if err != nil {
 			return domain.Order{}, err
 		}
+		targets := make([]*domain.Order, 0, 1+len(siblings))
+		targets = append(targets, &o)
+		for i := range siblings {
+			targets = append(targets, &siblings[i])
+		}
+		slices.SortFunc(targets, func(a, b *domain.Order) int { return strings.Compare(a.ID, b.ID) })
 		err = s.store.InTx(ctx, func(tx Tx) error {
 			now := s.now()
-			if err := applyTransition(ctx, tx, &o, in.Action, in.Actor, in.Note, now); err != nil {
-				return err
-			}
-			for i := range siblings {
-				if err := applyTransition(ctx, tx, &siblings[i], in.Action, in.Actor, in.Note, now); err != nil {
+			for _, t := range targets {
+				if err := applyTransition(ctx, tx, t, in.Action, in.Actor, in.Note, now); err != nil {
 					return err
 				}
 			}
