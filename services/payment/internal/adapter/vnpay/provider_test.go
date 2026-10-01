@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -189,6 +190,18 @@ func TestQueryUnavailable(t *testing.T) {
 		_, err := newProvider(stub.srv.URL, fixedNow).Query(bg, pendingPayment(350_000))
 		assert.ErrorIs(t, err, app.ErrProviderUnavailable)
 	})
+	t.Run("429 too many requests is retryable", func(t *testing.T) {
+		stub := newAPIStub(t, "querydr_paid")
+		stub.set("querydr_paid", 429, false)
+		_, err := newProvider(stub.srv.URL, fixedNow).Query(bg, pendingPayment(350_000))
+		assert.ErrorIs(t, err, app.ErrProviderUnavailable)
+	})
+	t.Run("409 conflict is retryable", func(t *testing.T) {
+		stub := newAPIStub(t, "querydr_paid")
+		stub.set("querydr_paid", 409, false)
+		_, err := newProvider(stub.srv.URL, fixedNow).Query(bg, pendingPayment(350_000))
+		assert.ErrorIs(t, err, app.ErrProviderUnavailable)
+	})
 	t.Run("transport", func(t *testing.T) {
 		_, err := newProvider("http://127.0.0.1:1", fixedNow).Query(bg, pendingPayment(350_000))
 		assert.ErrorIs(t, err, app.ErrProviderUnavailable)
@@ -307,6 +320,37 @@ func TestRefundAlreadyRequestedResolvesThroughQuerydr(t *testing.T) {
 	stub.set("querydr_refunded", 0, true)
 	_, err = p.QueryRefund(bg, refund)
 	assert.ErrorIs(t, err, app.ErrProviderUnavailable)
+}
+
+// A refund the provider already accepted (its reference is stored) is only ever polled, so a
+// throttled VNPay keeps it PENDING: no attempt is spent and no RefundFailed is emitted, however many
+// runs pass. This is the adapter side of review #3 — a 429 must read as unavailable, never as a
+// failure — and the worker side is covered by TestRefundWorkerAccepted.
+func TestRefundWorkerKeepsAcceptedRefundPendingOn429(t *testing.T) {
+	stub := newAPIStub(t, "querydr_paid")
+	refundID := "0192f0c1-0000-7000-8000-00000000abcd"
+	ref := vnpay.TxnRef(refundID)
+	refund := app.Refund{ID: refundID, PaymentID: payID, Provider: "vnpay", Amount: 350_000, ProviderRefundRef: ref}
+	pay := pendingPayment(350_000)
+	cfg := testConfig(stub.srv.URL, fixedNow)
+	cfg.Payments = paymentsByID{payID: pay}
+	p := vnpay.New(cfg)
+
+	for _, tc := range []struct {
+		name   string
+		status int
+		obs    app.RefundObserved
+	}{
+		{"429 throttled", http.StatusTooManyRequests, app.RefundObserved{}},
+		{"409 conflict", http.StatusConflict, app.RefundObserved{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stub.set("querydr_paid", tc.status, false)
+			got, err := p.QueryRefund(bg, refund)
+			assert.ErrorIs(t, err, app.ErrProviderUnavailable, tc.name)
+			assert.Equal(t, tc.obs, got, "no state to settle: the worker reschedules by age")
+		})
+	}
 }
 
 func TestQueryRefundAndCancel(t *testing.T) {

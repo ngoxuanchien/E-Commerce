@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"sync"
@@ -618,6 +619,21 @@ func TestRefundWorkerPending(t *testing.T) {
 }
 
 func TestRefundWorkerAccepted(t *testing.T) {
+	// A throttled provider (429) on an accepted refund is unavailable, never a failure: the refund
+	// stays PENDING with attempts untouched and no RefundFailed, however many runs pass (review #3).
+	t.Run("throttling on an accepted refund never fails it", func(t *testing.T) {
+		e := newPendingEnv(t)
+		e.sp.queryErr = fmt.Errorf("%w: vnpay querydr: status 429", app.ErrProviderUnavailable)
+		pid, _, co := e.refund(t, "re_429", 2*time.Minute)
+		for i := 0; i < 6; i++ { // more runs than REFUND_MAX_ATTEMPTS (3)
+			_, err := e.w.RunOnce(ctx)
+			require.NoError(t, err)
+			assert.Equal(t, "PENDING", e.row(t, pid).Status, "run %d", i+1)
+			e.clk.advance(11 * time.Minute)
+		}
+		assert.Zero(t, e.row(t, pid).Attempts, "an unavailable provider is not a failed attempt")
+		assert.Empty(t, eventsOf(e.outbox(t, co), "RefundFailed"))
+	})
 	t.Run("unavailable on an accepted refund is not an attempt", func(t *testing.T) {
 		e := newPendingEnv(t)
 		e.sp.queryErr = app.ErrProviderUnavailable

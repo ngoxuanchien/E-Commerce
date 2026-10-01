@@ -295,7 +295,9 @@ func (p *Provider) QueryRefund(ctx context.Context, r app.Refund) (app.RefundObs
 }
 
 // call signs req with the request field order, POSTs it as JSON to APIURL and returns the response
-// fields once their checksum is verified. Transport errors, 5xx and bad checksums are ErrProviderUnavailable.
+// fields once their checksum is verified. Transport errors, 5xx, 429 and 409 are ErrProviderUnavailable:
+// the first two are outages, the last two mean VNPay is throttling or already processing the request,
+// and a retry is the right answer to all of them. Any other non-200 is a plain error.
 func (p *Provider) call(ctx context.Context, req map[string]string, reqFields, respFields []string) (map[string]string, error) {
 	cmd := req["vnp_Command"]
 	req[fieldSecureHash] = PipeHash(p.cfg.HashSecret, pick(req, reqFields)...)
@@ -317,7 +319,7 @@ func (p *Provider) call(ctx context.Context, req map[string]string, reqFields, r
 	switch {
 	case err != nil:
 		return nil, fmt.Errorf("%w: vnpay %s: read: %w", app.ErrProviderUnavailable, cmd, err)
-	case res.StatusCode >= 500:
+	case res.StatusCode >= 500, res.StatusCode == http.StatusTooManyRequests, res.StatusCode == http.StatusConflict:
 		return nil, fmt.Errorf("%w: vnpay %s: status %d", app.ErrProviderUnavailable, cmd, res.StatusCode)
 	case res.StatusCode != http.StatusOK:
 		return nil, fmt.Errorf("vnpay %s: status %d", cmd, res.StatusCode)

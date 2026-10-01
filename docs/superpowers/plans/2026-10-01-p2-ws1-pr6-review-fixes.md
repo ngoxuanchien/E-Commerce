@@ -27,7 +27,7 @@ Each task: write the failing test first, make it pass, run `go test -race -count
   - `make gen` / sqlc regenerate; update the `Store` port, postgres store, fakes and `RunOnce`. Check every `SELECT *`/`RETURNING *` consumer and the domain conversion still compile with the new column.
   - Tests: itest — two concurrent `ClaimPendingForReconcile` calls never return the same id; a claimed row is not returned again before its lease ends.
 
-- [ ] **T3 — VNPay 429/409 are retryable (review #3).**
+- [x] **T3 — VNPay 429/409 are retryable (review #3).**
   `internal/adapter/vnpay/provider.go` (the `switch` after `ReadAll`): wrap `>= 500`, `429` and `409` as `app.ErrProviderUnavailable`, mirroring the Stripe adapter's `wrap`.
   Tests: adapter stub returning 429 → `errors.Is(err, app.ErrProviderUnavailable)`; refund-worker test where the provider keeps answering 429 for more than `REFUND_MAX_ATTEMPTS` runs and the refund stays PENDING with `attempts` unchanged and no `RefundFailed` outbox row.
 
