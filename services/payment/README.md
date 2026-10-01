@@ -33,6 +33,7 @@ Ports: HTTP `:8084` (`/healthz`, `/readyz` checking Postgres and Kafka), gRPC `:
 | `DATABASE_URL`, `KAFKA_BROKERS` | required | Dependencies (checked by `/readyz`) |
 | `ORDER_GRPC_ADDR` | required | order-svc gRPC address |
 | `PUBLIC_BASE_URL` | required | Public origin used to build provider return URLs |
+| `GRPC_ADDR` | required | Address the `PaymentInternal` gRPC service listens on (order-svc calls it) |
 | `PROVIDER_VNPAY` | `fake` | `fake` or `vnpay`: the adapter behind method `VNPAY` |
 | `PROVIDER_STRIPE` | `fake` | `fake` or `stripe`: the adapter behind method `STRIPE` |
 | `FAKE_WEBHOOK_URL` | required if any provider is `fake` | Where the FAKE provider posts its signed webhook (the gateway URL) |
@@ -44,7 +45,7 @@ Ports: HTTP `:8084` (`/healthz`, `/readyz` checking Postgres and Kafka), gRPC `:
 | `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET`, `VNPAY_PAY_URL`, `VNPAY_API_URL` | required if `PROVIDER_VNPAY=vnpay` | Sandbox merchant code, hash secret, pay page URL, merchant API URL |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | required if `PROVIDER_STRIPE=stripe` | Test-mode secret key (`sk_test_...`) and the webhook signing secret (`whsec_...`) |
 | `STRIPE_MIN_AMOUNT` | `10000` | Smallest checkout (VND) sent to Stripe; smaller answers 409 `BELOW_PROVIDER_MINIMUM` (must be >= 0) |
-| `HTTP_ADDR`, `GRPC_ADDR`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `LOG_LEVEL`, `SERVICE_NAME` | WS0 | Common service settings |
+| `HTTP_ADDR`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `LOG_LEVEL`, `SERVICE_NAME` | WS0 | Common service settings |
 
 Secrets belong in `deploy/secrets/payment.env` (gitignored; template `payment.env.example`).
 

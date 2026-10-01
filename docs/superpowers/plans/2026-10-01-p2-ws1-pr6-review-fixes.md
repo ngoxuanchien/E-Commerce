@@ -35,7 +35,7 @@ Each task: write the failing test first, make it pass, run `go test -race -count
   Extract one helper used by both `Query` (`provider.go`) and `IPN` (`callback.go`): TS `00` with RC `00` → Succeeded; TS `01/05/06` → Pending; `07` → Pending + WARN; anything else → Failed with `Reason` = RC for IPN / TS for querydr (keep today's reasons). For an IPN that maps to Pending, do not call `ApplyObserved`; answer VNPay `RspCode 00` (received) and log at INFO — the reconciler resolves it.
   Tests: signed IPN with `vnp_ResponseCode=00, vnp_TransactionStatus=05` → payment stays PENDING, no outbox row, response `00`; same for `07`; existing success/failure IPN tests still pass.
 
-- [ ] **T5 — `GRPC_ADDR` is required (review #5).**
+- [x] **T5 — `GRPC_ADDR` is required (review #5).**
   `cmd/server/config.go` `validate`: add `{"GRPC_ADDR", c.GRPCAddr}` to `required`. Add the table case in `config_test.go` (and set it in the valid base config). Check `deploy/` compose and the README config table already set it; fix if not.
 
 ## Should fix (accepted)

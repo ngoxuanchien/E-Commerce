@@ -62,6 +62,7 @@ func validConfig() Config {
 	c.ServiceName = "payment"
 	c.OrderGRPCAddr = "order:9083"
 	c.PublicBaseURL = "http://localhost:3000"
+	c.GRPCAddr = "payment:9084"
 	c.DatabaseURL = "postgres://x"
 	c.KafkaBrokers = []string{"kafka:9092"}
 	c.ProviderVNPay, c.ProviderStripe = "fake", "fake"
@@ -96,6 +97,7 @@ func TestConfigValidate(t *testing.T) {
 		}, ""},
 		{"missing ORDER_GRPC_ADDR", func(c *Config) { c.OrderGRPCAddr = "" }, "ORDER_GRPC_ADDR"},
 		{"missing PUBLIC_BASE_URL", func(c *Config) { c.PublicBaseURL = "" }, "PUBLIC_BASE_URL"},
+		{"missing GRPC_ADDR", func(c *Config) { c.GRPCAddr = "" }, "GRPC_ADDR"},
 		{"missing DATABASE_URL", func(c *Config) { c.DatabaseURL = "" }, "DATABASE_URL"},
 		{"missing KAFKA_BROKERS", func(c *Config) { c.KafkaBrokers = nil }, "KAFKA_BROKERS"},
 		{"bad PROVIDER_VNPAY", func(c *Config) { c.ProviderVNPay = "stripe" }, "PROVIDER_VNPAY"},

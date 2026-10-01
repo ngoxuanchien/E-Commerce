@@ -53,6 +53,7 @@ func (c Config) validate() error {
 	required := []struct{ name, value string }{
 		{"ORDER_GRPC_ADDR", c.OrderGRPCAddr},
 		{"PUBLIC_BASE_URL", c.PublicBaseURL},
+		{"GRPC_ADDR", c.GRPCAddr},
 		{"DATABASE_URL", c.DatabaseURL},
 	}
 	for _, r := range required {
