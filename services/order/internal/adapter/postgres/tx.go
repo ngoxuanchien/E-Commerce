@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/ngoxuanchien/e-commerce/pkg/event"
@@ -93,11 +94,11 @@ func (t *txStore) SaveTransition(ctx context.Context, o domain.Order, prevVersio
 	if len(o.History) == 0 {
 		return errors.New("save transition: order has no history entry")
 	}
-	if err := t.update(ctx, o, prevVersion); err != nil {
-		return err
-	}
 	id, err := mustParseUUID(o.ID)
 	if err != nil {
+		return err
+	}
+	if err := t.update(ctx, id, o, prevVersion); err != nil {
 		return err
 	}
 	p, err := historyParams(id, o.History[len(o.History)-1])
@@ -111,11 +112,7 @@ func (t *txStore) SaveTransition(ctx context.Context, o domain.Order, prevVersio
 }
 
 // update writes o's mutable columns if the stored version is still prevVersion.
-func (t *txStore) update(ctx context.Context, o domain.Order, prevVersion int) error {
-	id, err := mustParseUUID(o.ID)
-	if err != nil {
-		return err
-	}
+func (t *txStore) update(ctx context.Context, id uuid.UUID, o domain.Order, prevVersion int) error {
 	n, err := t.q.UpdateOrder(ctx, sqlcdb.UpdateOrderParams{
 		Status: string(o.Status), CancelReason: o.CancelReason, PaymentStatus: string(o.PaymentStatus),
 		PaymentDeadline: o.PaymentDeadline, DeliveredAt: o.DeliveredAt, UpdatedAt: o.UpdatedAt,
@@ -131,7 +128,17 @@ func (t *txStore) update(ctx context.Context, o domain.Order, prevVersion int) e
 }
 
 func (t *txStore) SavePaymentStatus(ctx context.Context, o domain.Order, prevVersion int) error {
-	return t.update(ctx, o, prevVersion)
+	id, err := mustParseUUID(o.ID)
+	if err != nil {
+		return err
+	}
+	return t.update(ctx, id, o, prevVersion)
+}
+
+// GetOrder reads an order with its items and history inside the transaction, so
+// a consumer sees the same snapshot as the effects it writes.
+func (t *txStore) GetOrder(ctx context.Context, id string) (domain.Order, error) {
+	return getOrder(ctx, t.q, id)
 }
 
 // InboxConsumer is this service's inbox identity (WS3' §5).

@@ -17,7 +17,7 @@ import (
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/app"
 )
 
-// DefaultTimeout is WS3' §6: one attempt of CancelCheckoutPayments gets 3 s.
+// DefaultTimeout is WS3' §5.2: one attempt of CancelCheckoutPayments gets 3 s.
 const DefaultTimeout = 3 * time.Second
 
 // Client implements app.Payments.

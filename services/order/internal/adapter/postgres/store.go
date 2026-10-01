@@ -38,22 +38,7 @@ func (s *Store) InTx(ctx context.Context, fn func(app.Tx) error) error {
 }
 
 func (s *Store) GetOrder(ctx context.Context, id string) (domain.Order, error) {
-	uid, ok := parseUUID(id)
-	if !ok {
-		return domain.Order{}, app.ErrNotFound
-	}
-	row, err := s.q.GetOrder(ctx, uid)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.Order{}, app.ErrNotFound
-	}
-	if err != nil {
-		return domain.Order{}, fmt.Errorf("get order: %w", err)
-	}
-	orders, err := s.hydrate(ctx, []sqlcdb.Order{row})
-	if err != nil {
-		return domain.Order{}, err
-	}
-	return orders[0], nil
+	return getOrder(ctx, s.q, id)
 }
 
 func (s *Store) ListOrders(ctx context.Context, q app.ListQuery) ([]domain.Order, error) {
@@ -93,7 +78,7 @@ func (s *Store) ListOrders(ctx context.Context, q app.ListQuery) ([]domain.Order
 	if err != nil {
 		return nil, fmt.Errorf("list orders: %w", err)
 	}
-	return s.hydrate(ctx, rows)
+	return hydrate(ctx, s.q, rows)
 }
 
 // ListCheckoutOrders returns every order of a checkout, in any status,
@@ -108,7 +93,7 @@ func (s *Store) ListCheckoutOrders(ctx context.Context, checkoutID string) ([]do
 	if err != nil {
 		return nil, fmt.Errorf("list checkout orders: %w", err)
 	}
-	return s.hydrate(ctx, rows)
+	return hydrate(ctx, s.q, rows)
 }
 
 // ExpiredCheckouts returns up to limit checkouts with an AWAITING_PAYMENT
@@ -140,8 +125,40 @@ func (s *Store) ExpiredCheckouts(ctx context.Context, now time.Time, after *app.
 	return out, nil
 }
 
-// hydrate converts rows and attaches their items and history (two queries).
-func (s *Store) hydrate(ctx context.Context, rows []sqlcdb.Order) ([]domain.Order, error) {
+// getOrder reads one order with its items and history, through q — the pool or
+// a transaction. A malformed or unknown id gives app.ErrNotFound.
+func getOrder(ctx context.Context, q queryer, id string) (domain.Order, error) {
+	uid, ok := parseUUID(id)
+	if !ok {
+		return domain.Order{}, app.ErrNotFound
+	}
+	row, err := q.GetOrder(ctx, uid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Order{}, app.ErrNotFound
+	}
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("get order: %w", err)
+	}
+	orders, err := hydrate(ctx, q, []sqlcdb.Order{row})
+	if err != nil {
+		return domain.Order{}, err
+	}
+	return orders[0], nil
+}
+
+// queryer is the part of the sqlc queries the order readers use, so they can
+// run on the pool or inside a transaction.
+type queryer interface {
+	GetOrder(ctx context.Context, id uuid.UUID) (sqlcdb.Order, error)
+	ListItemsByOrderIDs(ctx context.Context, orderIds []uuid.UUID) ([]sqlcdb.OrderItem, error)
+	ListHistoryByOrderIDs(ctx context.Context, orderIds []uuid.UUID) ([]sqlcdb.OrderStatusHistory, error)
+}
+
+var _ queryer = (*sqlcdb.Queries)(nil)
+
+// hydrate converts rows and attaches their items and history (two queries),
+// through q — the pool or a transaction.
+func hydrate(ctx context.Context, q queryer, rows []sqlcdb.Order) ([]domain.Order, error) {
 	orders := make([]domain.Order, 0, len(rows))
 	if len(rows) == 0 {
 		return orders, nil
@@ -150,11 +167,11 @@ func (s *Store) hydrate(ctx context.Context, rows []sqlcdb.Order) ([]domain.Orde
 	for i, r := range rows {
 		ids[i] = r.ID
 	}
-	items, err := s.q.ListItemsByOrderIDs(ctx, ids)
+	items, err := q.ListItemsByOrderIDs(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("list order items: %w", err)
 	}
-	history, err := s.q.ListHistoryByOrderIDs(ctx, ids)
+	history, err := q.ListHistoryByOrderIDs(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("list order history: %w", err)
 	}

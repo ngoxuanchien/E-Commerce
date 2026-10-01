@@ -163,6 +163,12 @@ func TestStore(t *testing.T) {
 		got, err := s.GetOrder(ctx, o.ID)
 		require.NoError(t, err)
 		assert.Equal(t, o, got)
+		require.NoError(t, s.InTx(ctx, func(tx app.Tx) error {
+			inTx, err := tx.GetOrder(ctx, o.ID)
+			require.NoError(t, err)
+			assert.Equal(t, o, inTx, "a read through the transaction sees the same order")
+			return nil
+		}))
 
 		deadline := base.Add(30 * time.Minute)
 		o.PaymentDeadline = &deadline
@@ -194,6 +200,13 @@ func TestStore(t *testing.T) {
 		assert.ErrorIs(t, err, app.ErrNotFound)
 		_, err = s.GetOrder(ctx, "not-a-uuid")
 		assert.ErrorIs(t, err, app.ErrNotFound)
+		require.NoError(t, s.InTx(ctx, func(tx app.Tx) error {
+			_, err := tx.GetOrder(ctx, id())
+			assert.ErrorIs(t, err, app.ErrNotFound)
+			_, err = tx.GetOrder(ctx, "not-a-uuid")
+			assert.ErrorIs(t, err, app.ErrNotFound)
+			return nil
+		}))
 	})
 
 	t.Run("save transition bumps version and appends history", func(t *testing.T) {

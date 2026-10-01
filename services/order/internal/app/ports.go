@@ -89,14 +89,18 @@ type Tx interface {
 	// InsertOrder stores a new order with its items and history entries.
 	InsertOrder(ctx context.Context, o domain.Order) error
 	// SaveTransition persists o's status, cancel reason, payment status,
-	// payment deadline, delivered_at and updated_at if the stored version is still prevVersion (and bumps it), then appends o's
-	// last history entry. ErrConcurrentUpdate when the version moved on.
+	// payment deadline, delivered_at and updated_at if the stored version is
+	// still prevVersion (and bumps it), then appends o's last history entry.
+	// ErrConcurrentUpdate when the version moved on.
 	SaveTransition(ctx context.Context, o domain.Order, prevVersion int) error
 	// SavePaymentStatus persists o's payment status, payment deadline, cancel
-	// reason, status and updated_at if the stored version is still prevVersion
-	// (and bumps it). It adds no history row. ErrConcurrentUpdate when the
-	// version moved on.
+	// reason, status, delivered_at and updated_at if the stored version is
+	// still prevVersion (and bumps it). It adds no history row.
+	// ErrConcurrentUpdate when the version moved on.
 	SavePaymentStatus(ctx context.Context, o domain.Order, prevVersion int) error
+	// GetOrder returns an order with items and history, read inside the
+	// transaction. ErrNotFound if the id is unknown or malformed.
+	GetOrder(ctx context.Context, id string) (domain.Order, error)
 	// MarkProcessed records eventID in the inbox as this consumer. firstTime is
 	// false when it was already recorded, in which case the caller must skip
 	// the event. It is called in the same transaction as the event's effect.

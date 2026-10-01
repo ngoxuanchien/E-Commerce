@@ -265,12 +265,22 @@ type raceAfterRead struct {
 	order   domain.Order
 	raced   atomic.Bool
 	reads   atomic.Int32
-	cancels int
+	cancels atomic.Int32
 }
 
-func (s *raceAfterRead) GetOrder(ctx context.Context, id string) (domain.Order, error) {
+func (s *raceAfterRead) InTx(ctx context.Context, fn func(app.Tx) error) error {
+	return s.Store.InTx(ctx, func(tx app.Tx) error { return fn(&raceAfterReadTx{Tx: tx, s: s}) })
+}
+
+type raceAfterReadTx struct {
+	app.Tx
+	s *raceAfterRead
+}
+
+func (t *raceAfterReadTx) GetOrder(ctx context.Context, id string) (domain.Order, error) {
+	s := t.s
 	s.reads.Add(1)
-	o, err := s.Store.GetOrder(ctx, id)
+	o, err := t.Tx.GetOrder(ctx, id)
 	if err != nil || id != s.order.ID || !s.raced.CompareAndSwap(false, true) {
 		return o, err
 	}
@@ -280,7 +290,7 @@ func (s *raceAfterRead) GetOrder(ctx context.Context, id string) (domain.Order, 
 	}); err != nil {
 		return domain.Order{}, err
 	}
-	s.cancels++
+	s.cancels.Add(1)
 	return o, nil // stale: still AWAITING_PAYMENT at the old version
 }
 
@@ -295,7 +305,7 @@ func TestPaymentEventHandlerRetriesALostRace(t *testing.T) {
 	eventID := uid()
 
 	require.NoError(t, h.PaymentSucceeded(ctx, eventID, paymentSucceeded(o.CheckoutID, uid(), o)))
-	assert.Equal(t, 1, store.cancels)
+	assert.Equal(t, int32(1), store.cancels.Load())
 	assert.Equal(t, int32(2), store.reads.Load(), "the lost race is retried once against fresh state")
 
 	got, err := e.store.GetOrder(ctx, o.ID)

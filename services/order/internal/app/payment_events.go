@@ -47,17 +47,16 @@ func NewPaymentEventHandler(store Store, now func() time.Time, logger *slog.Logg
 // records the capture as a late one on an order that was cancelled unpaid.
 // Allocations are applied in ascending order ID, the lock order of a buyer
 // cancel fan-out and the sweeper, so they cannot deadlock. An allocation of an
-// unknown order, or of an order of another checkout, is skipped with a
-// warning; an event with no
-// allocations (a duplicate charge, refunded automatically) changes nothing but
-// is still marked processed.
+// unknown order, or of an order of another checkout, is skipped with a warning;
+// an event with no allocations (a duplicate charge, refunded automatically)
+// changes nothing but is still marked processed.
 func (h *PaymentEventHandler) PaymentSucceeded(ctx context.Context, eventID string, ev event.PaymentSucceeded) error {
 	allocations := slices.Clone(ev.Allocations)
 	slices.SortFunc(allocations, func(a, b event.Allocation) int { return strings.Compare(a.OrderID, b.OrderID) })
-	for range paymentEventAttempts {
-		err := h.apply(ctx, eventID, func(ctx context.Context, tx Tx) error {
+	return retryOnLostRace(func() error {
+		return h.apply(ctx, eventID, func(ctx context.Context, tx Tx) error {
 			for _, a := range allocations {
-				o, err := h.store.GetOrder(ctx, a.OrderID)
+				o, err := tx.GetOrder(ctx, a.OrderID)
 				if errors.Is(err, ErrNotFound) {
 					h.logger.WarnContext(ctx, "skipping allocation of an unknown order",
 						"event_id", eventID, "order_id", a.OrderID, "payment_id", ev.PaymentID)
@@ -78,11 +77,7 @@ func (h *PaymentEventHandler) PaymentSucceeded(ctx context.Context, eventID stri
 			}
 			return nil
 		})
-		if !lostRace(err) {
-			return err
-		}
-	}
-	return ErrConcurrentUpdate
+	})
 }
 
 // PaymentRefunded marks the refunded order REFUNDED. A nil OrderID — the refund
@@ -91,9 +86,9 @@ func (h *PaymentEventHandler) PaymentRefunded(ctx context.Context, eventID strin
 	if ev.OrderID == nil {
 		return h.apply(ctx, eventID, nil)
 	}
-	for range paymentEventAttempts {
-		err := h.apply(ctx, eventID, func(ctx context.Context, tx Tx) error {
-			o, err := h.store.GetOrder(ctx, *ev.OrderID)
+	return retryOnLostRace(func() error {
+		return h.apply(ctx, eventID, func(ctx context.Context, tx Tx) error {
+			o, err := tx.GetOrder(ctx, *ev.OrderID)
 			if errors.Is(err, ErrNotFound) {
 				h.logger.WarnContext(ctx, "skipping refund of an unknown order",
 					"event_id", eventID, "order_id", *ev.OrderID, "refund_id", ev.RefundID)
@@ -104,6 +99,15 @@ func (h *PaymentEventHandler) PaymentRefunded(ctx context.Context, eventID strin
 			}
 			return h.refund(ctx, tx, &o)
 		})
+	})
+}
+
+// retryOnLostRace runs fn until it succeeds, until it fails for a reason
+// another attempt cannot fix, or until paymentEventAttempts is used up — then
+// it reports ErrConcurrentUpdate.
+func retryOnLostRace(fn func() error) error {
+	for range paymentEventAttempts {
+		err := fn()
 		if !lostRace(err) {
 			return err
 		}

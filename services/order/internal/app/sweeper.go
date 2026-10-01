@@ -172,13 +172,15 @@ func (s *Sweeper) timeoutPayments(ctx context.Context) (int, error) {
 // timeoutBatch runs timeoutCheckout for every checkout of batch, at most
 // paymentConcurrency at a time. Once a call reports errStopPayments no further
 // checkout is started (calls already in flight finish) and stopped is true.
-// The other errors are joined.
+// The other errors are joined. The stock of the whole batch is returned to
+// catalog in one releaseAll, after every transaction has committed.
 func (s *Sweeper) timeoutBatch(ctx context.Context, batch []CheckoutCursor, now time.Time) (n int, stopped bool, err error) {
 	var (
-		mu   sync.Mutex
-		errs []error
-		stop atomic.Bool
-		wg   sync.WaitGroup
+		mu        sync.Mutex
+		errs      []error
+		cancelled []domain.Order
+		stop      atomic.Bool
+		wg        sync.WaitGroup
 	)
 	sem := make(chan struct{}, paymentConcurrency)
 	for _, c := range batch {
@@ -190,40 +192,45 @@ func (s *Sweeper) timeoutBatch(ctx context.Context, batch []CheckoutCursor, now 
 		wg.Add(1)
 		go func() {
 			defer func() { <-sem; wg.Done() }()
-			cancelled, err := s.timeoutCheckout(ctx, c, now)
+			orders, err := s.timeoutCheckout(ctx, c, now)
 			if errors.Is(err, errStopPayments) {
 				stop.Store(true) // before the deferred release, so the next dispatch sees it
 				return
 			}
 			mu.Lock()
 			defer mu.Unlock()
-			n += cancelled
+			n += len(orders)
+			cancelled = append(cancelled, orders...)
 			if err != nil {
 				errs = append(errs, err)
 			}
 		}()
 	}
 	wg.Wait()
+	s.releaseAll(ctx, cancelled)
 	return n, stop.Load(), errors.Join(errs...)
 }
 
-func (s *Sweeper) timeoutCheckout(ctx context.Context, c CheckoutCursor, now time.Time) (int, error) {
+// timeoutCheckout cancels the expired orders of c's checkout and returns them,
+// so the caller releases their stock once for the whole batch. It returns
+// nothing when the checkout is left alone, so its stock stays reserved.
+func (s *Sweeper) timeoutCheckout(ctx context.Context, c CheckoutCursor, now time.Time) ([]domain.Order, error) {
 	outcome, err := s.payments.CancelCheckoutPayments(ctx, c.CheckoutID)
 	switch {
 	case err != nil && (errors.Is(err, ErrPaymentTimeout) || ctx.Err() != nil):
 		s.cfg.Logger.WarnContext(ctx, "payment-svc timed out; remaining payment timeouts retried next tick",
 			"checkout_id", c.CheckoutID, "error", err)
-		return 0, errStopPayments
+		return nil, errStopPayments
 	case err != nil:
 		s.cfg.Logger.WarnContext(ctx, "payment-svc unavailable; payment timeout retried next tick",
 			"checkout_id", c.CheckoutID, "error", err)
-		return 0, nil
+		return nil, nil
 	case outcome == OutcomePaid:
 		if now.Sub(c.Deadline) > s.cfg.PaidGrace {
 			s.cfg.Logger.WarnContext(ctx, "paid checkout still awaiting payment after its deadline",
 				"checkout_id", c.CheckoutID, "deadline", c.Deadline)
 		}
-		return 0, nil
+		return nil, nil
 	}
 	var cancelled []domain.Order
 	err = s.store.InTx(ctx, func(tx Tx) error {
@@ -240,13 +247,12 @@ func (s *Sweeper) timeoutCheckout(ctx context.Context, c CheckoutCursor, now tim
 		return nil
 	})
 	if errors.Is(err, ErrConcurrentUpdate) {
-		return 0, nil // an order moved concurrently; the next tick re-evaluates the checkout
+		return nil, nil // an order moved concurrently; the next tick re-evaluates the checkout
 	}
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	s.releaseAll(ctx, cancelled)
-	return len(cancelled), nil
+	return cancelled, nil
 }
 
 // autoComplete completes the orders delivered more than AutoCompleteAfter ago
