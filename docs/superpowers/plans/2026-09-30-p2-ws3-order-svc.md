@@ -650,7 +650,7 @@ Run: `go test ./... -count=1`. Expected: PASS.
 - `bootstrap.Deps` gains `PaymentConn grpc.ClientConnInterface`, and `bootstrap.Config` gains `PaymentCallTimeout time.Duration` (0 = the client default).
 - `cmd/server.Config` gains `PaymentGRPCAddr string \`env:"PAYMENT_GRPC_ADDR,required,notEmpty"\``. `main` dials it with `grpcx.Dial` next to the catalog dial, with a deferred close.
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 `client_test.go` (package `payment_test`, with the fake):
 - `SetOutcome(c, OUTCOME_NOT_PAID)` → `OutcomeNotPaid`;
@@ -667,9 +667,9 @@ Run: `go test ./... -count=1`. Expected: PASS.
 
 Run: `go test ./internal/adapter/payment/... -count=1`. Expected: FAIL.
 
-- [ ] **Step 2: Implement** the client and the fake. The fake mirrors `catalogfake`: a `bufconn.Listen(1<<20)` server, `grpc.NewServer()`, `paymentv1.RegisterPaymentInternalServer`, `t.Cleanup` stopping the server, and a client via `grpc.NewClient("passthrough:///bufnet", WithContextDialer, insecure)`, exactly as `catalogfake.Dial` does. Honour `ctx` during the delay (`select` on `ctx.Done()`).
+- [x] **Step 2: Implement** the client and the fake. The fake mirrors `catalogfake`: a `bufconn.Listen(1<<20)` server, `grpc.NewServer()`, `paymentv1.RegisterPaymentInternalServer`, `t.Cleanup` stopping the server, and a client via `grpc.NewClient("passthrough:///bufnet", WithContextDialer, insecure)`, exactly as `catalogfake.Dial` does. Honour `ctx` during the delay (`select` on `ctx.Done()`).
 
-- [ ] **Step 3: Wiring**
+- [x] **Step 3: Wiring**
   - bootstrap: `pay := payment.New(d.PaymentConn, cfg.PaymentCallTimeout)`, stored for the sweeper (Task 7);
   - `main` dials and passes `PaymentConn`;
   - the itest harness creates `h.pay = paymentfake.New()` and passes `PaymentConn: h.pay.Dial(t)`;
@@ -680,7 +680,7 @@ Run: `go test ./internal/adapter/payment/... -count=1`. Expected: FAIL.
 
 Run: `go test ./... -count=1`. Expected: PASS.
 
-- [ ] **Step 4: Commit** — `feat(order): PaymentInternal client and bufconn fake`
+- [x] **Step 4: Commit** — `feat(order): PaymentInternal client and bufconn fake`
 
 ---
 
