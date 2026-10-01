@@ -96,6 +96,21 @@ func (s *Store) ListOrders(ctx context.Context, q app.ListQuery) ([]domain.Order
 	return s.hydrate(ctx, rows)
 }
 
+// ListCheckoutOrders returns every order of a checkout, in any status,
+// hydrated with items and history and ordered by id. An unknown or malformed
+// checkoutID gives an empty slice.
+func (s *Store) ListCheckoutOrders(ctx context.Context, checkoutID string) ([]domain.Order, error) {
+	uid, ok := parseUUID(checkoutID)
+	if !ok {
+		return []domain.Order{}, nil
+	}
+	rows, err := s.q.ListCheckoutOrders(ctx, uid)
+	if err != nil {
+		return nil, fmt.Errorf("list checkout orders: %w", err)
+	}
+	return s.hydrate(ctx, rows)
+}
+
 // hydrate converts rows and attaches their items and history (two queries).
 func (s *Store) hydrate(ctx context.Context, rows []sqlcdb.Order) ([]domain.Order, error) {
 	orders := make([]domain.Order, 0, len(rows))

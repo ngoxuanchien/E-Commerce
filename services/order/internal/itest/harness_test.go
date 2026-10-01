@@ -83,6 +83,8 @@ func TestOrderAPI(t *testing.T) {
 	t.Run("checkout with an empty cart", h.testCheckoutEmptyCart)
 	t.Run("lifecycle to COMPLETED", h.testLifecycle)
 	t.Run("buyer cannot cancel a confirmed order", h.testBuyerCannotCancelConfirmed)
+	t.Run("buyer cancels an unpaid checkout", h.testBuyerCancelsAwaitingCheckout)
+	t.Run("seller cannot act on an unpaid order", h.testSellerCannotActOnAwaitingPayment)
 	t.Run("strangers get 404 and non-sellers 403", h.testStrangers)
 	t.Run("concurrent confirm and cancel: exactly one wins", h.testConcurrentConfirmCancel)
 	t.Run("upper-case ids are canonicalized", h.testUppercaseIDs)

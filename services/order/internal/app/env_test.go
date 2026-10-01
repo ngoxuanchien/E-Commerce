@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -154,4 +155,68 @@ func (e *env) seedOrder(t *testing.T, buyer string, shop catalogfake.Shop, statu
 	}
 	require.Equal(t, status, o.Status, "seedOrder only walks the happy path")
 	return o
+}
+
+// awaitingCheckout is a checkout of n shops paying online (VNPAY): every order
+// is AWAITING_PAYMENT, shares the payment deadline now+deadline and holds a
+// reservation in the catalog fake, so stock releases are assertable. Tasks 7–9
+// reuse it.
+func awaitingCheckout(t *testing.T, e *env, n int, deadline time.Duration) []domain.Order {
+	t.Helper()
+	return checkout(t, e, n, domain.PaymentVNPay, deadline)
+}
+
+// checkout stores n one-shop orders of one checkout for a fresh buyer, walks
+// each to the status its payment method reaches (COD: PENDING_CONFIRMATION,
+// online: AWAITING_PAYMENT with the shared deadline now+deadline) and reserves
+// their stock, without writing any event.
+func checkout(t *testing.T, e *env, n int, method string, deadline time.Duration) []domain.Order {
+	t.Helper()
+	buyer, checkoutID := uid(), uid()
+	lines := make([]domain.Line, 0, n)
+	skus := make(map[string]domain.Sku, n)
+	for i := range n {
+		shop := catalogfake.NewShop(fmt.Sprintf("Await Shop %d", i))
+		s := e.fake.AddSku(shop, 10_000, 5)
+		lines = append(lines, domain.Line{SkuID: s.GetSkuId(), Quantity: 1})
+		skus[s.GetSkuId()] = domain.Sku{
+			ID: s.GetSkuId(), ProductID: s.GetProductId(), ProductName: s.GetProductName(),
+			VariantName: s.GetVariantName(), Price: s.GetPrice(), Stock: s.GetStock(), Available: true,
+			ShopID: shop.ID, ShopName: shop.Name, ShopSlug: shop.Slug, SellerUserID: shop.SellerUserID,
+		}
+	}
+	orders, err := domain.BuildOrders(domain.CheckoutParams{
+		CheckoutID: checkoutID, BuyerID: buyer, Lines: lines, Skus: skus,
+		ShippingFee: 30_000, Address: testAddress, PaymentMethod: method, CommissionRateBps: 500,
+		Now: e.clock.Now(), NewID: uid,
+	})
+	require.NoError(t, err)
+	require.Len(t, orders, n, "one order per shop")
+	require.NoError(t, e.store.InTx(ctx, func(tx app.Tx) error {
+		for _, o := range orders {
+			if err := tx.InsertOrder(ctx, o); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+
+	action := domain.ActionSubmit
+	var due *time.Time
+	if domain.IsOnline(method) {
+		d := e.clock.Now().Add(deadline)
+		due, action = &d, domain.ActionAwaitPayment
+	}
+	for i := range orders {
+		o := &orders[i]
+		o.PaymentDeadline = due
+		ch, err := domain.Transition(*o, action, domain.SystemActor())
+		require.NoError(t, err)
+		prev := o.Version
+		o.Apply(ch, "", e.clock.Now())
+		require.NoError(t, e.store.InTx(ctx, func(tx app.Tx) error { return tx.SaveTransition(ctx, *o, prev) }))
+		o.Version = prev + 1
+		require.NoError(t, e.catalog.ReserveStock(ctx, o.ID, o.StockLines()))
+	}
+	return orders
 }

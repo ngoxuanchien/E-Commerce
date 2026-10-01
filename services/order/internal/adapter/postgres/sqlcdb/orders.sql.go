@@ -297,6 +297,53 @@ func (q *Queries) ListBuyerOrders(ctx context.Context, arg ListBuyerOrdersParams
 	return items, nil
 }
 
+const listCheckoutOrders = `-- name: ListCheckoutOrders :many
+SELECT id, checkout_id, buyer_id, shop_id, shop_name, seller_user_id, status, subtotal, shipping_fee, total, shipping_address, payment_method, cancel_reason, version, created_at, updated_at, shop_slug, payment_status, payment_deadline, commission_rate_bps, commission_amount, delivered_at FROM orders WHERE checkout_id = $1 ORDER BY id
+`
+
+func (q *Queries) ListCheckoutOrders(ctx context.Context, checkoutID uuid.UUID) ([]Order, error) {
+	rows, err := q.db.Query(ctx, listCheckoutOrders, checkoutID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Order
+	for rows.Next() {
+		var i Order
+		if err := rows.Scan(
+			&i.ID,
+			&i.CheckoutID,
+			&i.BuyerID,
+			&i.ShopID,
+			&i.ShopName,
+			&i.SellerUserID,
+			&i.Status,
+			&i.Subtotal,
+			&i.ShippingFee,
+			&i.Total,
+			&i.ShippingAddress,
+			&i.PaymentMethod,
+			&i.CancelReason,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ShopSlug,
+			&i.PaymentStatus,
+			&i.PaymentDeadline,
+			&i.CommissionRateBps,
+			&i.CommissionAmount,
+			&i.DeliveredAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listHistoryByOrderIDs = `-- name: ListHistoryByOrderIDs :many
 SELECT id, order_id, from_status, to_status, actor_id, actor_role, note, created_at FROM order_status_history WHERE order_id = ANY($1::uuid[]) ORDER BY order_id, created_at, id
 `

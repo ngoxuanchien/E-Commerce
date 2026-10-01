@@ -43,6 +43,9 @@ WHERE seller_user_id = @seller_user_id
 ORDER BY created_at DESC, id DESC
 LIMIT @page_limit;
 
+-- name: ListCheckoutOrders :many
+SELECT * FROM orders WHERE checkout_id = @checkout_id ORDER BY id;
+
 -- name: UpdateOrder :execrows
 UPDATE orders
 SET status = @status, cancel_reason = sqlc.narg(cancel_reason), payment_status = @payment_status,

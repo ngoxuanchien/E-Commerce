@@ -39,6 +39,10 @@ type Store interface {
 	// ListOrders returns up to q.Limit orders, newest first, with items and
 	// history, strictly after q.After when set.
 	ListOrders(ctx context.Context, q ListQuery) ([]domain.Order, error)
+	// ListCheckoutOrders returns every order of a checkout, whatever its
+	// status, with items and history, ordered by id. An unknown or malformed
+	// checkoutID gives an empty slice.
+	ListCheckoutOrders(ctx context.Context, checkoutID string) ([]domain.Order, error)
 	// BeginIdempotency claims (userID, key) at `at`. created reports whether
 	// this call holds the claim now: it inserted the row, or took over an
 	// orphaned one (same requestHash, no response, claimed before

@@ -81,7 +81,9 @@ type ActInput struct {
 }
 
 // Act performs the action. The actor must be the order's buyer (buyer role) or
-// seller (seller role), otherwise ErrNotFound. Illegal moves return
+// seller (seller role), otherwise ErrNotFound. A buyer who cancels an
+// AWAITING_PAYMENT order cancels every order of its checkout that is still
+// AWAITING_PAYMENT, in the same transaction. Illegal moves return
 // domain.ErrInvalidTransition. A lost optimistic-lock race is retried once
 // against the fresh state; losing again returns ErrConcurrentUpdate.
 func (s *OrderService) Act(ctx context.Context, in ActInput) (domain.Order, error) {
@@ -93,8 +95,21 @@ func (s *OrderService) Act(ctx context.Context, in ActInput) (domain.Order, erro
 		if !canAct(o, in.Actor) {
 			return domain.Order{}, ErrNotFound
 		}
+		siblings, err := s.checkoutSiblings(ctx, in, o)
+		if err != nil {
+			return domain.Order{}, err
+		}
 		err = s.store.InTx(ctx, func(tx Tx) error {
-			return applyTransition(ctx, tx, &o, in.Action, in.Actor, in.Note, s.now())
+			now := s.now()
+			if err := applyTransition(ctx, tx, &o, in.Action, in.Actor, in.Note, now); err != nil {
+				return err
+			}
+			for i := range siblings {
+				if err := applyTransition(ctx, tx, &siblings[i], in.Action, in.Actor, in.Note, now); err != nil {
+					return err
+				}
+			}
+			return nil
 		})
 		if errors.Is(err, ErrConcurrentUpdate) {
 			continue
@@ -105,6 +120,27 @@ func (s *OrderService) Act(ctx context.Context, in ActInput) (domain.Order, erro
 		return o, nil
 	}
 	return domain.Order{}, ErrConcurrentUpdate
+}
+
+// checkoutSiblings returns the orders a buyer cancel of an unpaid checkout must
+// cancel along with o: the other AWAITING_PAYMENT orders of the same checkout.
+// One payment covers the whole checkout, so leaving a sibling awaiting payment
+// would strand its shop's stock until the deadline. Nothing else fans out.
+func (s *OrderService) checkoutSiblings(ctx context.Context, in ActInput, o domain.Order) ([]domain.Order, error) {
+	if in.Action != domain.ActionCancel || in.Actor.Role != domain.RoleBuyer || o.Status != domain.StatusAwaitingPayment {
+		return nil, nil
+	}
+	all, err := s.store.ListCheckoutOrders(ctx, o.CheckoutID)
+	if err != nil {
+		return nil, err
+	}
+	var siblings []domain.Order
+	for _, x := range all {
+		if x.ID != o.ID && x.Status == domain.StatusAwaitingPayment {
+			siblings = append(siblings, x)
+		}
+	}
+	return siblings, nil
 }
 
 func canAct(o domain.Order, a domain.Actor) bool {

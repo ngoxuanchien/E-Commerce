@@ -253,6 +253,41 @@ func TestStore(t *testing.T) {
 		assert.Empty(t, none)
 	})
 
+	t.Run("checkout orders are returned by id with items and history", func(t *testing.T) {
+		checkoutID := id()
+		first := newOrder(id(), id(), base)
+		first.CheckoutID = checkoutID
+		second := newOrder(id(), id(), base.Add(time.Second))
+		second.CheckoutID = checkoutID
+		insert(t, s, first, second, newOrder(id(), id(), base)) // another checkout
+		require.NoError(t, advance(s, &first, domain.ActionSubmit, domain.SystemActor(), "", base.Add(time.Minute)))
+
+		got, err := s.ListCheckoutOrders(ctx, checkoutID)
+		require.NoError(t, err)
+		want := []string{first.ID, second.ID}
+		slices.Sort(want) // the query orders by id
+		assert.Equal(t, want, ids(got), "exactly the checkout's orders")
+
+		byID := make(map[string]domain.Order, len(got))
+		for _, o := range got {
+			byID[o.ID] = o
+		}
+		assert.Equal(t, domain.StatusPendingConfirmation, byID[first.ID].Status)
+		assert.Len(t, byID[first.ID].Items, 2, "items are hydrated")
+		assert.Len(t, byID[first.ID].History, 2, "history is hydrated")
+		assert.Equal(t, domain.StatusPending, byID[second.ID].Status, "every status is returned")
+		assert.Len(t, byID[second.ID].Items, 2)
+
+		unknown, err := s.ListCheckoutOrders(ctx, id())
+		require.NoError(t, err)
+		assert.Empty(t, unknown)
+		assert.NotNil(t, unknown)
+		malformed, err := s.ListCheckoutOrders(ctx, "x")
+		require.NoError(t, err)
+		assert.Empty(t, malformed)
+		assert.NotNil(t, malformed)
+	})
+
 	t.Run("claim stale pending skips fresh, non-pending and locked rows", func(t *testing.T) {
 		cutoff := base.Add(-5 * time.Minute)
 		old1 := newOrder(id(), id(), base.Add(-10*time.Minute))

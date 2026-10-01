@@ -100,6 +100,83 @@ func TestOrderService(t *testing.T) {
 		assert.Equal(t, domain.StatusCancelled, got.Status)
 	})
 
+	t.Run("buyer cancel of AWAITING_PAYMENT cancels the whole checkout", func(t *testing.T) {
+		orders := awaitingCheckout(t, e, 3, 30*time.Minute)
+		first, second, timedOut := orders[0], orders[1], orders[2]
+		require.Len(t, e.fake.ReleasedOrders(), 0)
+
+		// The payment deadline passed for one order only: the sweeper (Task 7)
+		// already cancelled it as the system.
+		ch, err := domain.Transition(timedOut, domain.ActionCancel, domain.SystemActor())
+		require.NoError(t, err)
+		prev := timedOut.Version
+		timedOut.Apply(ch, domain.CancelPaymentTimeout, e.clock.Now())
+		require.NoError(t, e.store.InTx(ctx, func(tx app.Tx) error { return tx.SaveTransition(ctx, timedOut, prev) }))
+
+		got, err := svc.Act(ctx, app.ActInput{
+			OrderID: first.ID, Actor: domain.Actor{ID: first.BuyerID, Role: domain.RoleBuyer},
+			Action: domain.ActionCancel, Note: "changed my mind",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, domain.StatusCancelled, got.Status, "the requested order is returned")
+
+		for _, o := range []domain.Order{first, second} {
+			stored, err := svc.Get(ctx, o.BuyerID, o.ID)
+			require.NoError(t, err)
+			require.Equal(t, domain.StatusCancelled, stored.Status)
+			require.NotNil(t, stored.CancelReason)
+			assert.Equal(t, "changed my mind", *stored.CancelReason)
+			assert.Equal(t, domain.PaymentUnpaid, stored.PaymentStatus)
+			last := stored.History[len(stored.History)-1]
+			assert.Equal(t, domain.RoleBuyer, last.ActorRole)
+			assert.Equal(t, o.BuyerID, last.ActorID)
+
+			evs := e.events(t, o.ID)
+			assert.Equal(t, []event.Type{event.TypeOrderStatusChanged, event.TypeOrderCancelled}, types(evs))
+			c, err := event.DecodeData[event.OrderCancelled](evs[1])
+			require.NoError(t, err)
+			assert.Equal(t, event.OrderCancelled{
+				OrderID: o.ID, Reason: "changed my mind", CancelledBy: "buyer",
+				CheckoutID: o.CheckoutID, PaymentMethod: domain.PaymentVNPay,
+			}, c)
+		}
+
+		untouched, err := svc.Get(ctx, timedOut.BuyerID, timedOut.ID)
+		require.NoError(t, err)
+		assert.Equal(t, prev+1, untouched.Version, "the already cancelled order is not touched again")
+		assert.Equal(t, domain.StatusCancelled, untouched.Status)
+		assert.Len(t, untouched.History, 3)
+		assert.Empty(t, e.events(t, timedOut.ID), "the helper writes no events")
+	})
+
+	t.Run("seller cannot confirm or cancel AWAITING_PAYMENT", func(t *testing.T) {
+		o := awaitingCheckout(t, e, 1, 30*time.Minute)[0]
+		seller := domain.Actor{ID: o.SellerUserID, Role: domain.RoleSeller}
+		for _, action := range []domain.Action{domain.ActionConfirm, domain.ActionCancel} {
+			_, err := svc.Act(ctx, app.ActInput{OrderID: o.ID, Actor: seller, Action: action, Note: "x"})
+			assert.ErrorIs(t, err, domain.ErrInvalidTransition, string(action))
+		}
+		stored, err := svc.Get(ctx, o.BuyerID, o.ID)
+		require.NoError(t, err)
+		assert.Equal(t, domain.StatusAwaitingPayment, stored.Status)
+	})
+
+	t.Run("buyer cancel of PENDING_CONFIRMATION stays per order", func(t *testing.T) {
+		orders := checkout(t, e, 2, domain.PaymentCOD, 0)
+		got, err := svc.Act(ctx, app.ActInput{
+			OrderID: orders[0].ID, Actor: domain.Actor{ID: orders[0].BuyerID, Role: domain.RoleBuyer},
+			Action: domain.ActionCancel, Note: "changed my mind",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, domain.StatusCancelled, got.Status)
+		assert.Equal(t, orders[0].CheckoutID, orders[1].CheckoutID)
+
+		sibling, err := svc.Get(ctx, orders[1].BuyerID, orders[1].ID)
+		require.NoError(t, err)
+		assert.Equal(t, domain.StatusPendingConfirmation, sibling.Status)
+		assert.Len(t, e.events(t, orders[1].ID), 0, "the sibling is not cancelled")
+	})
+
 	t.Run("strangers get not found", func(t *testing.T) {
 		buyer, shop := uid(), catalogfake.NewShop("Shop Owner")
 		o := e.seedOrder(t, buyer, shop, domain.StatusPendingConfirmation)
