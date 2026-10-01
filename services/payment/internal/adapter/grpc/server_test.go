@@ -1,9 +1,12 @@
 package grpc_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net"
 	"testing"
 
@@ -31,9 +34,14 @@ func (s stub) CancelCheckoutPayments(context.Context, string) (paymentv1.Outcome
 
 func client(t *testing.T, c pgrpc.Canceller) paymentv1.PaymentInternalClient {
 	t.Helper()
+	return clientLog(t, c, slog.New(slog.NewTextHandler(io.Discard, nil)))
+}
+
+func clientLog(t *testing.T, c pgrpc.Canceller, log *slog.Logger) paymentv1.PaymentInternalClient {
+	t.Helper()
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
-	paymentv1.RegisterPaymentInternalServer(srv, pgrpc.NewServer(c))
+	paymentv1.RegisterPaymentInternalServer(srv, pgrpc.NewServer(c, log))
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
 	conn, err := grpc.NewClient("passthrough:///bufnet",
@@ -45,7 +53,7 @@ func client(t *testing.T, c pgrpc.Canceller) paymentv1.PaymentInternalClient {
 }
 
 func TestCancelCheckoutPayments(t *testing.T) {
-	req := &paymentv1.CancelCheckoutPaymentsRequest{CheckoutId: "c1"}
+	req := &paymentv1.CancelCheckoutPaymentsRequest{CheckoutId: "0198f0a4-7c1e-7b2a-8d3e-1f2a3b4c5d6e"}
 	for _, tc := range []struct {
 		name string
 		s    stub
@@ -58,6 +66,7 @@ func TestCancelCheckoutPayments(t *testing.T) {
 		{"provider unavailable", stub{err: fmt.Errorf("x: %w", app.ErrProviderUnavailable)}, req, 0, codes.Unavailable},
 		{"still payable", stub{err: fmt.Errorf("x: %w", app.ErrStillPayable)}, req, 0, codes.Unavailable},
 		{"other error", stub{err: errors.New("db down")}, req, 0, codes.Internal},
+		{"malformed checkout id", stub{out: paymentv1.Outcome_OUTCOME_NOT_PAID}, &paymentv1.CancelCheckoutPaymentsRequest{CheckoutId: "not-a-uuid"}, 0, codes.InvalidArgument},
 		{"missing checkout id", stub{}, &paymentv1.CancelCheckoutPaymentsRequest{}, 0, codes.InvalidArgument},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -68,4 +77,16 @@ func TestCancelCheckoutPayments(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestInternalErrorIsLogged(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	id := "0198f0a4-7c1e-7b2a-8d3e-1f2a3b4c5d6e"
+	_, err := clientLog(t, stub{err: errors.New("db down")}, log).CancelCheckoutPayments(context.Background(),
+		&paymentv1.CancelCheckoutPaymentsRequest{CheckoutId: id})
+	assert.Equal(t, codes.Internal, status.Code(err))
+	assert.Contains(t, buf.String(), "db down")
+	assert.Contains(t, buf.String(), id)
+	assert.NotContains(t, status.Convert(err).Message(), "db down")
 }

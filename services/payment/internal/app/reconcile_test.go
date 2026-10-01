@@ -1,6 +1,7 @@
 package app_test
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -106,6 +107,34 @@ func TestReconcilerRunOnce(t *testing.T) {
 		assert.Equal(t, domain.StatusExpired, c.status(t, p.ID).Status)
 	})
 
+	t.Run("past expires_at but inside the 5 min grace stays PENDING", func(t *testing.T) {
+		c.clk.set(t0)
+		p := c.fakePayment(t)
+		require.NoError(t, c.fake.ArmHooks(ctx, p.ID, fake.Hooks{Cancel: "unsupported"}))
+		stub := &stubProvider{name: "stripe", observed: domain.Observed{State: domain.ObservedPending}}
+		g := newPayment(id(), domain.StatusPending)
+		g.Provider = "stripe"
+		g.ExpiresAt = t0.Add(15 * time.Minute)
+		c.insert(t, g)
+		rec := app.NewReconciler(c.store, app.NewProviders(c.fake, stub), app.NewObserver(c.store, c.clk.now, slog.Default()),
+			app.ReconcileConfig{MinAge: time.Minute}, c.clk.now, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		c.clk.set(g.ExpiresAt.Add(3 * time.Minute))
+		require.NoError(t, rec.RunOnce(ctx))
+		assert.Equal(t, domain.StatusPending, c.status(t, g.ID).Status)
+		assert.Equal(t, 0, stub.cancels)
+		c.clk.set(g.ExpiresAt.Add(6 * time.Minute))
+		require.NoError(t, rec.RunOnce(ctx))
+		assert.Equal(t, 1, stub.cancels)
+	})
+
+	t.Run("Run survives a non-positive interval", func(t *testing.T) {
+		rec := app.NewReconciler(c.store, app.NewProviders(c.fake, nil), app.NewObserver(c.store, c.clk.now, slog.Default()),
+			app.ReconcileConfig{Interval: 0, MinAge: time.Minute}, c.clk.now, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		rctx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+		defer cancel()
+		assert.NotPanics(t, func() { assert.ErrorIs(t, rec.Run(rctx), context.DeadlineExceeded) })
+	})
+
 	t.Run("a late success past the grace still wins over expiry", func(t *testing.T) {
 		c.clk.set(t0)
 		p := c.fakePayment(t)
@@ -173,6 +202,24 @@ func TestCancelCheckoutPayments(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, paymentv1.Outcome_OUTCOME_PAID, out)
 		assert.True(t, c.status(t, p.ID).Captured)
+	})
+
+	t.Run("an EXPIRED row captured by a late success plus a PENDING row: PAID", func(t *testing.T) {
+		c := newCancelEnv(t, nil)
+		checkout := id()
+		old := newPayment(checkout, domain.StatusExpired)
+		c.insert(t, old)
+		_, err := c.obs.ApplyObserved(ctx, "fake", "late", old.ID, success(old))
+		require.NoError(t, err)
+		require.True(t, c.status(t, old.ID).Captured)
+		open := newPayment(checkout, domain.StatusPending)
+		c.insert(t, open)
+		_, err = c.fake.CreateSession(ctx, app.SessionInput{PaymentID: open.ID})
+		require.NoError(t, err)
+		out, err := c.can.CancelCheckoutPayments(ctx, checkout)
+		require.NoError(t, err)
+		assert.Equal(t, paymentv1.Outcome_OUTCOME_PAID, out)
+		assert.Equal(t, domain.StatusExpired, c.status(t, open.ID).Status)
 	})
 
 	t.Run("an unknown checkout: NOT_PAID", func(t *testing.T) {

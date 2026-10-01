@@ -10,10 +10,11 @@ import (
 )
 
 const (
-	reconcileBatch    = 200
-	expiryGrace       = 5 * time.Minute
-	idempotencyKeyTTL = 24 * time.Hour
-	providerEventTTL  = 30 * 24 * time.Hour
+	reconcileBatch           = 200
+	defaultReconcileInterval = time.Minute
+	expiryGrace              = 5 * time.Minute
+	idempotencyKeyTTL        = 24 * time.Hour
+	providerEventTTL         = 30 * 24 * time.Hour
 )
 
 // ReconcileConfig sets the polling period and the minimum age of a payment worth polling.
@@ -32,6 +33,9 @@ type Reconciler struct {
 func NewReconciler(store Store, providers Providers, obs *Observer, cfg ReconcileConfig, now func() time.Time, logger *slog.Logger) *Reconciler {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	if cfg.Interval <= 0 {
+		cfg.Interval = defaultReconcileInterval
 	}
 	return &Reconciler{store: store, providers: providers, obs: obs, cfg: cfg, now: now, logger: logger}
 }
