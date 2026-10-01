@@ -85,6 +85,8 @@ CREATE TABLE IF NOT EXISTS processed_events (
     PRIMARY KEY (consumer, event_id)
 );
 
+CREATE INDEX IF NOT EXISTS processed_events_processed_at_idx ON processed_events (processed_at);
+
 -- Idempotency-Key store (pkg/idemkey). created_at is the claim: completing
 -- or releasing a key requires it (see idemkey.go). Copy into a migration.
 CREATE TABLE IF NOT EXISTS idempotency_keys (

@@ -26,7 +26,7 @@ Each task does the following:
   - Add an index in `pkg/inbox/schema.sql`: `CREATE INDEX IF NOT EXISTS processed_events_processed_at_idx ON processed_events (processed_at);`. `TestSchemaIsIdempotent` must still pass.
   - Commit: `feat(pkg): inbox.PurgeBefore`.
 
-- [ ] **F1b — payment: the reconciler purges `processed_events` older than 30 days.**
+- [x] **F1b — payment: the reconciler purges `processed_events` older than 30 days.**
   - Add `PurgeProcessedEventsBefore(ctx, t) (int64, error)` to the `Store` port (`internal/app/ports.go`).
   - The postgres store implements it with `inbox.PurgeBefore` on its pool.
   - `RunOnce` in `internal/app/reconcile.go` calls it after the provider-events purge, with the same `providerEventTTL` (30 days), or a new const `processedEventTTL = 30 * 24 * time.Hour` if that reads clearer.

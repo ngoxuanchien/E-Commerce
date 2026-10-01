@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ngoxuanchien/e-commerce/pkg/idemkey"
+	"github.com/ngoxuanchien/e-commerce/pkg/inbox"
 	"github.com/ngoxuanchien/e-commerce/pkg/pgxx"
 	"github.com/ngoxuanchien/e-commerce/services/payment/internal/adapter/postgres/sqlcdb"
 	"github.com/ngoxuanchien/e-commerce/services/payment/internal/app"
@@ -97,4 +98,8 @@ func (s *Store) PurgeProviderEventsBefore(ctx context.Context, t time.Time) (int
 
 func (s *Store) PurgeIdempotencyKeysBefore(ctx context.Context, t time.Time) (int64, error) {
 	return idemkey.Purge(ctx, s.pool, t)
+}
+
+func (s *Store) PurgeProcessedEventsBefore(ctx context.Context, t time.Time) (int64, error) {
+	return inbox.PurgeBefore(ctx, s.pool, t)
 }

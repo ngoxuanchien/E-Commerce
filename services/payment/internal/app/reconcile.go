@@ -15,6 +15,7 @@ const (
 	expiryGrace              = 5 * time.Minute
 	idempotencyKeyTTL        = 24 * time.Hour
 	providerEventTTL         = 30 * 24 * time.Hour
+	processedEventTTL        = 30 * 24 * time.Hour
 )
 
 // ReconcileConfig sets the polling period, the minimum age of a payment worth polling and the budget of
@@ -45,8 +46,9 @@ func NewReconciler(store Store, providers Providers, obs *Observer, cfg Reconcil
 }
 
 // RunOnce leases PENDING payments older than MinAge and expires those stuck past expires_at plus a
-// 5 minute grace, then purges idempotency keys (24 h) and provider events (30 days). A provider error
-// for one payment is logged and skipped; the next run retries it once the lease expires.
+// 5 minute grace, then purges idempotency keys (24 h), provider events (30 days) and the inbox's
+// processed_events markers (30 days). A provider error for one payment is logged and skipped; the
+// next run retries it once the lease expires.
 //
 // The lease is what keeps two replicas off the same row without holding a row lock across a provider
 // call, which would block the webhooks that ApplyObserved runs in their own transaction. A replica
@@ -76,6 +78,9 @@ func (r *Reconciler) RunOnce(ctx context.Context) error {
 		return err
 	}
 	if _, err := r.store.PurgeProviderEventsBefore(ctx, now.Add(-providerEventTTL)); err != nil {
+		return err
+	}
+	if _, err := r.store.PurgeProcessedEventsBefore(ctx, now.Add(-processedEventTTL)); err != nil {
 		return err
 	}
 	return nil

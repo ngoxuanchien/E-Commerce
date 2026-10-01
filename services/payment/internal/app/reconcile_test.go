@@ -199,6 +199,21 @@ func TestReconcilerRunOnce(t *testing.T) {
 		assert.Equal(t, 0, c.count(t, `SELECT count(*) FROM idempotency_keys WHERE user_id = $1 AND key = 'old'`, uid))
 		assert.Equal(t, 1, c.count(t, `SELECT count(*) FROM provider_events WHERE provider = 'purge-test' AND event_key = 'fresh'`))
 		assert.Equal(t, 0, c.count(t, `SELECT count(*) FROM provider_events WHERE provider = 'purge-test' AND event_key = 'old'`))
+
+		const (
+			oldID    = "01890000-0000-7000-8000-00000000000a"
+			freshID  = "01890000-0000-7000-8000-00000000000b"
+			consumer = "payment-svc"
+		)
+		for k, at := range map[string]time.Time{oldID: c.clk.now().Add(-31 * 24 * time.Hour), freshID: c.clk.now().Add(-29 * 24 * time.Hour)} {
+			_, err := c.pool.Exec(ctx, `INSERT INTO processed_events (consumer, event_id, processed_at) VALUES ($1, $2, $3)`, consumer, k, at)
+			require.NoError(t, err)
+		}
+		require.NoError(t, c.rec.RunOnce(ctx))
+		assert.Equal(t, 0, c.count(t, `SELECT count(*) FROM processed_events WHERE consumer = $1 AND event_id = $2`, consumer, oldID),
+			"a processed_events marker past 30 days is purged")
+		assert.Equal(t, 1, c.count(t, `SELECT count(*) FROM processed_events WHERE consumer = $1 AND event_id = $2`, consumer, freshID),
+			"a marker inside the 30 day window stays")
 	})
 }
 

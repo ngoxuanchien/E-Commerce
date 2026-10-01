@@ -45,6 +45,7 @@ type Store interface {
 	GetRefundByProviderRef(ctx context.Context, provider, ref string) (Refund, error) // ErrNotFound
 	PurgeProviderEventsBefore(ctx context.Context, t time.Time) (int64, error)
 	PurgeIdempotencyKeysBefore(ctx context.Context, t time.Time) (int64, error)
+	PurgeProcessedEventsBefore(ctx context.Context, t time.Time) (int64, error) // pkg/inbox, consumer "payment-svc"
 }
 
 // Tx is the write side, inside one database transaction.

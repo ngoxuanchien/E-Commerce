@@ -18,8 +18,8 @@ import (
 )
 
 // reviewFixIndexes are the lookup indexes 000004 adds: the provider-hint refund lookup and the
-// age scan over provider_events.
-var reviewFixIndexes = []string{"refunds_provider_ref_idx", "provider_events_received_idx"}
+// age scans over provider_events and processed_events.
+var reviewFixIndexes = []string{"refunds_provider_ref_idx", "provider_events_received_idx", "processed_events_processed_at_idx"}
 
 func TestSharedSchemasCopiedVerbatim(t *testing.T) {
 	b, err := fs.ReadFile(migrations.FS, "000002_payment_schema.up.sql")

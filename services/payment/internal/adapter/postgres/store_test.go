@@ -442,6 +442,29 @@ func TestStore(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), n)
 	})
+
+	t.Run("purge processed events keeps a marker inside the window", func(t *testing.T) {
+		old, fresh := id(), id()
+		for _, e := range []struct {
+			id string
+			at time.Time
+		}{{old, base.Add(-48 * time.Hour)}, {fresh, base}} {
+			_, err := pool.Exec(ctx, `INSERT INTO processed_events (consumer, event_id, processed_at) VALUES ('purge-test', $1, $2)`, e.id, e.at)
+			require.NoError(t, err)
+		}
+		n, err := s.PurgeProcessedEventsBefore(ctx, base.Add(-24*time.Hour))
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), n, "only the marker past the window goes")
+		assert.Equal(t, 1, count(t, pool, `SELECT count(*) FROM processed_events WHERE consumer = 'purge-test' AND event_id = $1`, fresh))
+	})
+}
+
+// count runs a single-value count query.
+func count(t *testing.T, pool *pgxpool.Pool, sql string, args ...any) int {
+	t.Helper()
+	var n int
+	require.NoError(t, pool.QueryRow(ctx, sql, args...).Scan(&n))
+	return n
 }
 
 func ptr[T any](v T) *T { return &v }
