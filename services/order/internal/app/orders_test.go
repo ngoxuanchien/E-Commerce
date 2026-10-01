@@ -60,10 +60,16 @@ func TestOrderService(t *testing.T) {
 		assert.Equal(t, "ok", *final.History[5].Note)
 
 		evs := e.events(t, o.ID)
-		assert.Equal(t, slices.Repeat([]event.Type{event.TypeOrderStatusChanged}, 4), types(evs))
+		assert.Equal(t, append(slices.Repeat([]event.Type{event.TypeOrderStatusChanged}, 4), event.TypeOrderCompleted), types(evs))
 		first, err := event.DecodeData[event.OrderStatusChanged](evs[0])
 		require.NoError(t, err)
 		assert.Equal(t, event.OrderStatusChanged{OrderID: o.ID, From: "PENDING_CONFIRMATION", To: "CONFIRMED", ActorID: shop.SellerUserID, ActorRole: "seller"}, first)
+		completed, err := event.DecodeData[event.OrderCompleted](evs[4])
+		require.NoError(t, err)
+		assert.Equal(t, event.OrderCompleted{
+			OrderID: o.ID, CheckoutID: o.CheckoutID, SellerUserID: shop.SellerUserID, PaymentMethod: domain.PaymentCOD,
+			Total: o.Total, CommissionAmount: 0, CompletedBy: "buyer",
+		}, completed)
 	})
 
 	t.Run("buyer cancel while pending confirmation emits OrderCancelled", func(t *testing.T) {
@@ -78,7 +84,10 @@ func TestOrderService(t *testing.T) {
 		require.Equal(t, []event.Type{event.TypeOrderStatusChanged, event.TypeOrderCancelled}, types(evs))
 		c, err := event.DecodeData[event.OrderCancelled](evs[1])
 		require.NoError(t, err)
-		assert.Equal(t, event.OrderCancelled{OrderID: o.ID, Reason: "đổi ý", CancelledBy: "buyer"}, c)
+		assert.Equal(t, event.OrderCancelled{
+			OrderID: o.ID, Reason: "đổi ý", CancelledBy: "buyer",
+			CheckoutID: o.CheckoutID, PaymentMethod: domain.PaymentCOD,
+		}, c)
 	})
 
 	t.Run("buyer cannot cancel a confirmed order but its seller can", func(t *testing.T) {

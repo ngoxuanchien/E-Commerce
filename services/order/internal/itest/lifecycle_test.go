@@ -66,9 +66,15 @@ func (h *harness) testLifecycle(t *testing.T) {
 		require.Len(t, got.History, 6)
 		assert.Equal(t, "GHN-123", *got.History[3].Note)
 	}
-	h.events.waitTypes(t, o.ID, event.TypeOrderCreated,
+	evs := h.events.waitTypes(t, o.ID, event.TypeOrderCreated,
 		event.TypeOrderStatusChanged, event.TypeOrderStatusChanged, event.TypeOrderStatusChanged,
-		event.TypeOrderStatusChanged, event.TypeOrderStatusChanged)
+		event.TypeOrderStatusChanged, event.TypeOrderStatusChanged, event.TypeOrderCompleted)
+	completed, err := event.DecodeData[event.OrderCompleted](evs[len(evs)-1])
+	require.NoError(t, err)
+	assert.Equal(t, event.OrderCompleted{
+		OrderID: o.ID, CheckoutID: o.CheckoutID, SellerUserID: shop.SellerUserID, PaymentMethod: "COD",
+		Total: o.Total, CommissionAmount: 0, CompletedBy: "buyer",
+	}, completed)
 }
 
 func (h *harness) testBuyerCannotCancelConfirmed(t *testing.T) {
@@ -88,7 +94,10 @@ func (h *harness) testBuyerCannotCancelConfirmed(t *testing.T) {
 		event.TypeOrderStatusChanged, event.TypeOrderStatusChanged, event.TypeOrderCancelled)
 	c, err := event.DecodeData[event.OrderCancelled](evs[4])
 	require.NoError(t, err)
-	assert.Equal(t, event.OrderCancelled{OrderID: o.ID, Reason: "hết hàng", CancelledBy: "seller"}, c)
+	assert.Equal(t, event.OrderCancelled{
+		OrderID: o.ID, Reason: "hết hàng", CancelledBy: "seller",
+		CheckoutID: o.CheckoutID, PaymentMethod: "COD",
+	}, c)
 }
 
 func (h *harness) testStrangers(t *testing.T) {

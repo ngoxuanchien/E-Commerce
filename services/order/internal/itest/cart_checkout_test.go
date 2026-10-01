@@ -95,15 +95,22 @@ func (h *harness) testCheckoutTwoShops(t *testing.T) {
 	require.Len(t, res.Orders, 2)
 	assert.Equal(t, reserves+2, h.fake.Calls(catalogfake.ReserveStock))
 	totals := map[string]int64{}
+	slugs := map[string]string{shopA.ID: shopA.Slug, shopB.ID: shopB.Slug}
 	for _, o := range res.Orders {
 		assert.Equal(t, "PENDING_CONFIRMATION", o.Status)
 		assert.Equal(t, res.CheckoutID, o.CheckoutID)
+		assert.Equal(t, "NONE", o.PaymentStatus, "COD collects nothing online")
+		assert.Nil(t, o.PaymentDeadline)
+		assert.Equal(t, int32(0), o.CommissionRateBps)
+		assert.Zero(t, o.CommissionAmount)
+		assert.Equal(t, slugs[o.Shop.ID], o.Shop.Slug)
 		totals[o.Shop.ID] = o.Total
 		evs := h.events.waitTypes(t, o.ID, event.TypeOrderCreated, event.TypeOrderStatusChanged)
 		created, err := event.DecodeData[event.OrderCreated](evs[0])
 		require.NoError(t, err)
 		assert.Equal(t, o.Total, created.Total)
 		assert.Equal(t, res.CheckoutID, created.CheckoutID)
+		assert.Equal(t, "COD", created.PaymentMethod)
 	}
 	assert.Equal(t, map[string]int64{shopA.ID: 270_000, shopB.ID: 75_000}, totals)
 

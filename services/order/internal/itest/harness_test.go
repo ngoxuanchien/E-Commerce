@@ -223,14 +223,20 @@ type cartResp struct {
 }
 
 type orderResp struct {
-	ID           string                    `json:"id"`
-	CheckoutID   string                    `json:"checkout_id"`
-	Status       string                    `json:"status"`
-	BuyerID      string                    `json:"buyer_id"`
-	Total        int64                     `json:"total"`
-	CancelReason *string                   `json:"cancel_reason"`
-	Shop         struct{ ID, Name string } `json:"shop"`
-	History      []struct {
+	ID                string                          `json:"id"`
+	CheckoutID        string                          `json:"checkout_id"`
+	Status            string                          `json:"status"`
+	BuyerID           string                          `json:"buyer_id"`
+	Total             int64                           `json:"total"`
+	CancelReason      *string                         `json:"cancel_reason"`
+	PaymentMethod     string                          `json:"payment_method"`
+	PaymentStatus     string                          `json:"payment_status"`
+	PaymentDeadline   *string                         `json:"payment_deadline"`
+	CommissionRateBps int32                           `json:"commission_rate_bps"`
+	CommissionAmount  int64                           `json:"commission_amount"`
+	DeliveredAt       *string                         `json:"delivered_at"`
+	Shop              struct{ ID, Name, Slug string } `json:"shop"`
+	History           []struct {
 		From      *string `json:"from"`
 		To        string  `json:"to"`
 		ActorRole string  `json:"actor_role"`
@@ -273,6 +279,7 @@ func newEventLog(t *testing.T, brokers []string) *eventLog {
 		event.TypeOrderCreated:       "order-created.schema.json",
 		event.TypeOrderStatusChanged: "order-status-changed.schema.json",
 		event.TypeOrderCancelled:     "order-cancelled.schema.json",
+		event.TypeOrderCompleted:     "order-completed.schema.json",
 	} {
 		sch, err := c.Compile(filepath.Join(eventsDir, file))
 		require.NoError(t, err)

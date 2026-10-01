@@ -73,7 +73,10 @@ func TestSweeper(t *testing.T) {
 		require.Equal(t, []event.Type{event.TypeOrderStatusChanged, event.TypeOrderCancelled}, types(evs))
 		c, err := event.DecodeData[event.OrderCancelled](evs[1])
 		require.NoError(t, err)
-		assert.Equal(t, event.OrderCancelled{OrderID: o.ID, Reason: "CHECKOUT_TIMEOUT", CancelledBy: "system"}, c)
+		assert.Equal(t, event.OrderCancelled{
+			OrderID: o.ID, Reason: "CHECKOUT_TIMEOUT", CancelledBy: "system",
+			CheckoutID: o.CheckoutID, PaymentMethod: domain.PaymentCOD,
+		}, c)
 	})
 
 	t.Run("fresh pending and non-pending orders are left alone", func(t *testing.T) {
