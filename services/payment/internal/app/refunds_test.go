@@ -698,3 +698,25 @@ func TestRefundWorkerHint(t *testing.T) {
 		assert.Equal(t, "", e.row(t, pid).Ref)
 	})
 }
+
+func TestRefundWorkerMissingAdapter(t *testing.T) {
+	t.Run("an accepted refund waits and is never an attempt", func(t *testing.T) {
+		e := newPendingEnv(t)
+		pid, _, co := e.refund(t, "re_acc", 2*time.Minute)
+		// The config now serves only "vnpay"; the refund row belongs to "fake".
+		other := &scriptedProvider{stubProvider: &stubProvider{name: "vnpay"}}
+		w := app.NewRefundWorker(e.store, app.NewProviders(other, other), 3, e.clk.now, slog.New(slog.NewTextHandler(e.log, nil)))
+		for i := 0; i < 6; i++ { // more polls than maxAttempts
+			_, err := w.RunOnce(ctx)
+			require.NoError(t, err)
+			r := e.row(t, pid)
+			assert.Equal(t, "PENDING", r.Status)
+			assert.Equal(t, 0, r.Attempts)
+			assert.True(t, r.Next.After(e.clk.now()))
+			e.clk.advance(11 * time.Minute)
+		}
+		assert.Empty(t, eventsOf(e.outbox(t, co), "RefundFailed"))
+		assert.Contains(t, e.log.String(), "level=ERROR")
+		assert.Contains(t, e.log.String(), "has no adapter configured")
+	})
+}

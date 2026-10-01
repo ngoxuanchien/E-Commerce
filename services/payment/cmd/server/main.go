@@ -108,15 +108,17 @@ func run() error {
 		return err
 	}
 
-	// Workers stop (deferred last, so run first) before the connections close.
-	workersCtx, stopWorkers := context.WithCancel(ctx)
-	workersDone := make(chan struct{})
-	go func() { defer close(workersDone); svc.RunWorkers(workersCtx) }()
-	defer func() { stopWorkers(); <-workersDone }()
+	// An unexpected worker exit cancels rootCtx, which shuts the servers down and makes run return
+	// the worker's error (exit code 1). Order: servers stop, then workers are awaited, then the
+	// deferred pool/producer closes run.
+	rootCtx, cancelRoot := context.WithCancel(ctx)
+	defer cancelRoot()
+	workersErr := make(chan error, 1)
+	go func() { workersErr <- svc.RunWorkers(rootCtx, cancelRoot) }()
 
 	grpcSrv, _ := grpcx.NewServer()
 	svc.RegisterGRPC(grpcSrv)
-	return server.Run(ctx, server.Config{
+	serveErr := server.Run(rootCtx, server.Config{
 		HTTP: &http.Server{
 			Addr:              cfg.HTTPAddr,
 			Handler:           otelx.HTTPHandler(newHandler(logger, svc.ReadinessChecks(), svc.API), cfg.ServiceName),
@@ -127,4 +129,9 @@ func run() error {
 		ShutdownTimeout: cfg.ShutdownTimeout,
 		Logger:          logger,
 	})
+	cancelRoot()
+	if err := <-workersErr; err != nil {
+		return err
+	}
+	return serveErr
 }

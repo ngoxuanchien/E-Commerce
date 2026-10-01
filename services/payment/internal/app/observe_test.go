@@ -442,3 +442,23 @@ func TestProviders(t *testing.T) {
 	_, ok = ps.ByName("stripe")
 	assert.False(t, ok)
 }
+
+func TestCaptureSkipsZeroAmountAllocations(t *testing.T) {
+	e := newEnv(t)
+	p := newPayment(id(), domain.StatusPending, 0, 100_000)
+	e.insert(t, p)
+	// Both orders were cancelled before the capture; the zero allocation has nothing to refund.
+	e.cancel(t, p.Allocations[0].OrderID, p.CheckoutID)
+	e.cancel(t, p.Allocations[1].OrderID, p.CheckoutID)
+
+	_, err := e.obs.ApplyObserved(ctx, "fake", id(), p.ID, success(p))
+	require.NoError(t, err)
+
+	got, err := e.store.GetPayment(ctx, p.ID)
+	require.NoError(t, err)
+	assert.True(t, got.Captured)
+	rs := e.refunds(t, p.ID)
+	require.Len(t, rs, 1)
+	assert.Equal(t, p.Allocations[1].OrderID, *rs[0].OrderID)
+	assert.EqualValues(t, 100_000, rs[0].Amount)
+}

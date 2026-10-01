@@ -126,7 +126,7 @@ func newHarness(t *testing.T) *harness {
 
 	wctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
-	go func() { defer close(done); a.RunWorkers(wctx) }()
+	go func() { defer close(done); _ = a.RunWorkers(wctx, cancel) }()
 	t.Cleanup(func() { cancel(); <-done })
 
 	srv.Config.Handler = authctx.Middleware(a.API)

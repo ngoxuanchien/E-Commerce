@@ -95,9 +95,18 @@ func TestStripeWebhookBodyLimit(t *testing.T) {
 	assert.Equal(t, http.StatusOK, ok.StatusCode)
 	assert.Equal(t, 1, s.calls)
 
-	big := postWebhook(t, http.DefaultClient, srv.URL, bytes.Repeat([]byte(" "), 256<<10+1), "t=1,v1=00")
-	_ = big.Body.Close()
-	assert.Equal(t, http.StatusBadRequest, big.StatusCode)
+	// MaxBytesReader may close the connection while the client is still writing, so a reset or a
+	// broken pipe is as good as the 400.
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, srv.URL+"/api/payments/stripe/webhook",
+		bytes.NewReader(bytes.Repeat([]byte(" "), 256<<10+1)))
+	require.NoError(t, err)
+	req.Header.Set("Stripe-Signature", "t=1,v1=00")
+	if big, err := http.DefaultClient.Do(req); err == nil {
+		_ = big.Body.Close()
+		assert.Equal(t, http.StatusBadRequest, big.StatusCode)
+	} else {
+		assert.True(t, isConnAbort(err), "unexpected error: %v", err)
+	}
 	assert.Equal(t, 1, s.calls) // never reached the handler
 }
 

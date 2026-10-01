@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -168,6 +169,16 @@ func New(cfg Config, d Deps) (*App, error) {
 	default:
 		return nil, fmt.Errorf("unknown STRIPE provider %q", cfg.ProviderStripe)
 	}
+	if fk != nil {
+		var methods []string
+		if cfg.ProviderVNPay == ProviderFake {
+			methods = append(methods, "VNPAY")
+		}
+		if cfg.ProviderStripe == ProviderFake {
+			methods = append(methods, "STRIPE")
+		}
+		d.Logger.Warn("FAKE payment provider is active for " + strings.Join(methods, "/") + " — never use in production")
+	}
 	providers := app.NewProviders(forVNPay, forStripe)
 
 	observer := app.NewObserver(store, d.Now, d.Logger)
@@ -222,27 +233,54 @@ func (a *App) RegisterGRPC(srv *grpc.Server) {
 	paymentv1.RegisterPaymentInternalServer(srv, grpcadapter.NewServer(a.canceller, a.logger))
 }
 
+type worker struct {
+	name string
+	run  func(context.Context) error
+}
+
 // RunWorkers runs the outbox relay, the order.events consumer, the refund worker and the
 // reconciler until ctx is cancelled, then waits for them and for in-flight FAKE webhook deliveries,
-// and closes the consumer.
-func (a *App) RunWorkers(ctx context.Context) {
-	var wg sync.WaitGroup
-	run := func(name string, f func(context.Context) error) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := f(ctx); err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil {
-				a.logger.Error("worker stopped", "worker", name, "error", err)
-			}
-		}()
-	}
-	run("outbox relay", a.Relay.Run)
-	run("order events consumer", a.Consumer.Run)
-	run("refund worker", func(ctx context.Context) error { return a.Refunds.Run(ctx, a.refundInterval) })
-	run("reconciler", a.Reconciler.Run)
-	wg.Wait()
+// and closes the consumer. A worker that exits while ctx is still live is fatal: it is logged, cancel
+// is called so the whole process shuts down, and the first such error is returned.
+func (a *App) RunWorkers(ctx context.Context, cancel context.CancelFunc) error {
+	err := superviseWorkers(ctx, cancel, a.logger, []worker{
+		{"outbox relay", a.Relay.Run},
+		{"order events consumer", a.Consumer.Run},
+		{"refund worker", func(ctx context.Context) error { return a.Refunds.Run(ctx, a.refundInterval) }},
+		{"reconciler", a.Reconciler.Run},
+	})
 	a.Consumer.Close()
 	if a.fake != nil {
 		a.fake.Wait()
 	}
+	return err
+}
+
+// superviseWorkers runs every worker and waits for all of them. A worker returning while ctx is
+// live (an error, or nil, since workers only end with their context) cancels the shared context
+// and is reported; the first one wins.
+func superviseWorkers(ctx context.Context, cancel context.CancelFunc, logger *slog.Logger, workers []worker) error {
+	var (
+		wg    sync.WaitGroup
+		once  sync.Once
+		first error
+	)
+	for _, w := range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := w.run(ctx)
+			if ctx.Err() != nil {
+				return // shutting down
+			}
+			if err == nil {
+				err = errors.New("exited unexpectedly")
+			}
+			logger.Error("worker stopped, shutting down", "worker", w.name, "error", err)
+			once.Do(func() { first = fmt.Errorf("worker %q: %w", w.name, err) })
+			cancel()
+		}()
+	}
+	wg.Wait()
+	return first
 }

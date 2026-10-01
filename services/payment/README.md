@@ -88,6 +88,7 @@ Gaps and refinements found while building, resolved without any contract change.
 - **VNPay refund RC 00 is final.** The refund API has no per-request status to poll, so a refund answered RC 00 is `Succeeded` without a follow-up poll (the same optimism applies in `QueryRefund` for statuses 05 and 06). A refund that VNPay accepts and rejects later needs a manual check in the merchant portal.
 - **VNPay RC 00 with transaction status 05 or 06** on a refund is also final (see above).
 - **No 24 h upper clamp on Stripe `expires_at`.** Stripe rejects a session longer than 24 h, so a `payment_deadline` beyond that would fail the create (503). Order-svc's `PAYMENT_TIMEOUT` is 30 min by default, so this does not occur in practice.
+- **Switching `PROVIDER_*` with PENDING payments or refunds in flight** leaves them waiting until the old provider is configured again (accepted refunds keep polling with the age backoff and never fail).
 - **FAKE is not a security boundary.** Its webhook is signed with a shared dev secret and its hooks are open; never expose a FAKE-enabled instance to real users.
 
 ## Local development (FAKE)

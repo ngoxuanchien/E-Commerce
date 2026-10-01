@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -125,6 +127,32 @@ func (h *harness) do(c *http.Client, method, path string, headers map[string]str
 	b, err := io.ReadAll(resp.Body)
 	require.NoError(h.t, err)
 	return reply{Status: resp.StatusCode, Header: resp.Header, Body: b}
+}
+
+// tryDo is do without failing on a transport error, which the caller inspects.
+func (h *harness) tryDo(c *http.Client, method, path string, headers map[string]string, body []byte) (reply, error) {
+	h.t.Helper()
+	req, err := http.NewRequest(method, h.srv.URL+path, bytes.NewReader(body))
+	require.NoError(h.t, err)
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return reply{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return reply{}, err
+	}
+	return reply{Status: resp.StatusCode, Header: resp.Header, Body: b}, nil
+}
+
+// isConnAbort reports a connection the server closed while the client was still sending.
+func isConnAbort(err error) bool {
+	return errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF)
 }
 
 func (h *harness) as(user, key string) map[string]string {
@@ -453,6 +481,19 @@ func TestFakeWebhookSucceedsOnceAndIsIdempotent(t *testing.T) {
 	assert.Equal(t, 1, h.outbox(checkout), "a new event for a captured payment publishes nothing either")
 }
 
+func TestFakeWebhookNeverAppliesToAnotherProvidersPayment(t *testing.T) {
+	h := newHarness(t)
+	p := h.mustCreate("VNPAY", 100_000)
+	id, checkout := p["id"].(string), p["checkout_id"].(string)
+	_, err := h.pool.Exec(ctx, `UPDATE payments SET provider = 'vnpay' WHERE id = $1`, id)
+	require.NoError(t, err)
+
+	r := h.signedWebhook(newID(), id, "succeed")
+	assert.Equal(t, 200, r.Status, "acknowledged so the sender does not retry")
+	assert.Equal(t, "PENDING", h.status(id), "a FAKE event must not capture a real provider's payment")
+	assert.Zero(t, h.outbox(checkout))
+}
+
 func TestFakeWebhookEdgeCases(t *testing.T) {
 	h := newHarness(t)
 	id := h.mustCreate("VNPAY", 100_000)["id"].(string)
@@ -465,7 +506,14 @@ func TestFakeWebhookEdgeCases(t *testing.T) {
 	assert.Equal(t, 400, signed(`{"event_id":"","payment_id":"`+id+`","outcome":"succeed"}`).Status)
 
 	big := `{"event_id":"e","payment_id":"` + id + `","outcome":"succeed","pad":"` + strings.Repeat("a", 70<<10) + `"}`
-	assert.Equal(t, 400, signed(big).Status, "bodies over 64 KiB are refused")
+	// MaxBytesReader may close the connection while the client is still writing, so a reset or a
+	// broken pipe is as good as the 400.
+	if r, err := h.tryDo(h.raw, "POST", "/api/payments/fake/webhook",
+		map[string]string{"Content-Type": "application/json", "X-Fake-Signature": fake.Sign(secret, []byte(big), time.Now())}, []byte(big)); err == nil {
+		assert.Equal(t, 400, r.Status, "bodies over 64 KiB are refused")
+	} else {
+		assert.True(t, isConnAbort(err), "unexpected error: %v", err)
+	}
 	assert.Equal(t, "PENDING", h.status(id))
 
 	assert.Equal(t, 200, h.signedWebhook(newID(), id, "pending").Status)
@@ -479,7 +527,11 @@ func TestFakePaymentCompletesThroughTheSignedWebhook(t *testing.T) {
 
 	r := h.do(h.strict, "POST", "/api/payments/fake/checkout/"+id, formHeader, form("outcome", "succeed"))
 	require.Equal(t, 302, r.Status)
-	require.Eventually(t, func() bool { return h.status(id) == string(domain.StatusSucceeded) }, 5*time.Second, 20*time.Millisecond)
+	// The condition runs on another goroutine, so it must not call require (FailNow).
+	require.Eventually(t, func() bool {
+		p, err := h.store.GetPayment(ctx, id)
+		return err == nil && p.Status == domain.StatusSucceeded
+	}, 15*time.Second, 20*time.Millisecond)
 	h.fake.Wait()
 	assert.Equal(t, 1, h.outbox(checkout))
 }

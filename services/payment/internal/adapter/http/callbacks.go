@@ -230,6 +230,14 @@ func (c *FakeCallbacks) webhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	if p.Provider != fakeProviderName {
+		// ev.Observed(p.Amount) trusts the payment's own amount, so a FAKE event must never touch a
+		// payment another provider owns. Acknowledge it so the sender does not retry.
+		c.Logger.WarnContext(r.Context(), "fake webhook for a payment of another provider ignored",
+			"payment_id", paymentID, "provider", p.Provider)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	if _, err := c.Observer.ApplyObserved(r.Context(), fakeProviderName, ev.EventID, paymentID, ev.Observed(p.Amount)); err != nil {
 		writeError(w, r, err)
 		return

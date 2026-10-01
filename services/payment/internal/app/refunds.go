@@ -50,7 +50,7 @@ func (r *Refunds) OrderCancelled(ctx context.Context, eventID string, e event.Or
 		if err != nil {
 			return err
 		}
-		if !ok || !domain.RefundDue(p.Captured, true) {
+		if !ok || a.Amount == 0 || !domain.RefundDue(p.Captured, true) {
 			return nil
 		}
 		orderID := a.OrderID
@@ -199,10 +199,13 @@ func (w *RefundWorker) process(ctx context.Context, tx Tx, rf Refund, adopt stri
 		rf.ProviderRefundRef = adopt
 	}
 	prov, ok := w.providers.ByName(rf.Provider)
-	if !ok {
-		return w.settle(ctx, tx, rf, false, RefundObserved{}, fmt.Errorf("no adapter for provider %q", rf.Provider), now)
-	}
 	accepted := rf.ProviderRefundRef != ""
+	if !ok {
+		// A provider switched off by config (for example fake <-> real). For a refund the provider
+		// already holds this is only a delayed poll, never an attempt.
+		w.logger.ErrorContext(ctx, "refund provider has no adapter configured", "refund_id", rf.ID, "provider", rf.Provider)
+		return w.settle(ctx, tx, rf, accepted, RefundObserved{}, fmt.Errorf("no adapter for provider %q: %w", rf.Provider, ErrProviderUnavailable), now)
+	}
 	callCtx, cancel := context.WithTimeout(ctx, providerTimeout)
 	defer cancel()
 	var (

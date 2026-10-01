@@ -141,6 +141,9 @@ func (o *Observer) capture(ctx context.Context, tx Tx, rows []domain.Payment, p 
 		return p, err
 	}
 	for _, a := range allocs {
+		if a.Amount == 0 {
+			continue // nothing to refund, and refunds.amount must be > 0
+		}
 		cancelled, err := tx.IsCancelled(ctx, a.OrderID)
 		if err != nil {
 			return p, err
