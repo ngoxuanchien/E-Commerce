@@ -129,6 +129,18 @@ Final-review fixes:
 35. **`delivered_at` is backfilled for pre-P2 orders** (migration `000007_backfill_delivered_at`): `DELIVERED` and `COMPLETED` orders with a NULL `delivered_at` take the time of their latest `DELIVERED` history row, so orders delivered before the upgrade still auto-complete. Its down migration is a no-op.
 36. **Rows of one checkout are locked in ascending order ID everywhere** (buyer cancel fan-out, payment-event handler, sweeper), so a capture and a buyer cancel cannot deadlock. The handler also skips, with a warning, an allocation whose order belongs to another checkout than the event's.
 
+Deferred review minors:
+
+37. **`SavePaymentStatus` writes only `payment_status`, `updated_at` and `version`** (its own `UpdatePaymentStatus` query, `version = version + 1 WHERE id AND version = prev`). A stale or partly built order can no longer overwrite `status`, `cancel_reason`, `payment_deadline` or `delivered_at` through a money-only change.
+38. **`GetCheckout` canonicalizes `checkout_id`** (`uuid.Parse`, then `u.String()`): an upper-case id finds the checkout, and the response and the logs carry the lower-case id.
+39. **A payment-timeout step that stops early logs one step-level warn per tick** (`payment-timeout step stopped early`, with `unasked` = the checkouts of the current page never asked, and `more_pages`), next to the per-call warns. It stays not-an-error: `RunOnce` still returns no error for a stop.
+40. **Each scoped itest App has its own payment fake and no `payment.events` consumer.** The payment-timeout scenarios script outcomes on, and count calls to, the scoped fake; the main App's sweeper, which also sees the scoped checkouts, asks the main fake (default `OUTCOME_PAID`) and leaves them alone.
+
+### Operational notes
+
+- **First deploy of migration 000007.** The backfill gives every P1 order that was `DELIVERED` before the upgrade a `delivered_at`, so the first sweeper ticks after the deploy auto-complete, in batches of 50 until none is left, every such order delivered longer than `AUTO_COMPLETE_AFTER` ago, and publish an `OrderCompleted` for each (COD; ledger-svc ignores them). This is expected, not a bug.
+- **Two concurrent buyer cancels of different orders of one `AWAITING_PAYMENT` checkout.** One wins and cancels both orders (decision 33). The other loses the optimistic race, retries once, finds its own order already `CANCELLED` and answers 409 `INVALID_STATE_TRANSITION`. That is the P1 rule for cancelling a cancelled order, kept on purpose.
+
 ## Testing
 
 ```bash

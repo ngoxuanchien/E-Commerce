@@ -4,10 +4,14 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5" // registers the pgx5:// driver
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -202,4 +206,35 @@ func TestDeliveredAtIsBackfilledFromHistory(t *testing.T) {
 	assert.True(t, first.Equal(*deliveredAt(completed)), "COMPLETED orders keep an honest delivered_at")
 	assert.Nil(t, deliveredAt(shipping), "never delivered")
 	assert.True(t, set.Equal(*deliveredAt(alreadySet)))
+}
+
+// The P2 down migrations (000007 → 000005) undo cleanly on a fresh database,
+// and the schema migrates back up to the latest version afterwards.
+// pgxx.Migrate only goes up, so this drives golang-migrate directly, as pgxx
+// does, with an iofs source over migrations.FS.
+func TestP2MigrationsGoDownToV4AndBackUp(t *testing.T) {
+	dsn := testutil.Postgres(t)
+	src, err := iofs.New(migrations.FS, ".")
+	require.NoError(t, err)
+	m, err := migrate.NewWithSourceInstance("iofs", src, "pgx5://"+strings.TrimPrefix(strings.TrimPrefix(dsn, "postgres://"), "postgresql://"))
+	require.NoError(t, err)
+	defer func() { _, _ = m.Close() }()
+
+	require.NoError(t, m.Up(), "up to latest on a fresh database")
+	latest, dirty, err := m.Version()
+	require.NoError(t, err)
+	require.False(t, dirty)
+	require.GreaterOrEqual(t, latest, uint(7))
+
+	require.NoError(t, m.Migrate(4), "down to version 4")
+	v, dirty, err := m.Version()
+	require.NoError(t, err)
+	assert.Equal(t, uint(4), v)
+	assert.False(t, dirty)
+
+	require.NoError(t, m.Up(), "back up to latest")
+	v, dirty, err = m.Version()
+	require.NoError(t, err)
+	assert.Equal(t, latest, v)
+	assert.False(t, dirty)
 }

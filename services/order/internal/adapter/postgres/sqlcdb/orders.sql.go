@@ -673,3 +673,29 @@ func (q *Queries) UpdateOrder(ctx context.Context, arg UpdateOrderParams) (int64
 	}
 	return result.RowsAffected(), nil
 }
+
+const updatePaymentStatus = `-- name: UpdatePaymentStatus :execrows
+UPDATE orders
+SET payment_status = $1, version = version + 1, updated_at = $2
+WHERE id = $3 AND version = $4
+`
+
+type UpdatePaymentStatusParams struct {
+	PaymentStatus string
+	UpdatedAt     time.Time
+	ID            uuid.UUID
+	Version       int32
+}
+
+func (q *Queries) UpdatePaymentStatus(ctx context.Context, arg UpdatePaymentStatusParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updatePaymentStatus,
+		arg.PaymentStatus,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.Version,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}

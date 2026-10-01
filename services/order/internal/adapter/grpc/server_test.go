@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -114,6 +115,15 @@ func TestGetCheckout(t *testing.T) {
 		assert.Nil(t, resp.GetPaymentDeadline(), "an unset deadline stays unset")
 		require.Len(t, resp.GetOrders(), 1)
 		assert.Zero(t, resp.GetOrders()[0].GetCommissionAmount(), "COD orders carry no commission")
+	})
+
+	t.Run("an upper-case checkout id is canonicalized before the query", func(t *testing.T) {
+		store := &stubStore{orders: onlineOrders}
+		resp, err := serve(t, store).GetCheckout(ctx, &orderv1.GetCheckoutRequest{CheckoutId: strings.ToUpper(checkoutID)})
+		require.NoError(t, err)
+		assert.Equal(t, checkoutID, store.gotID, "the query gets the lower-case canonical id")
+		assert.Equal(t, checkoutID, resp.GetCheckoutId(), "checkout_id is echoed in lower case")
+		assert.Len(t, resp.GetOrders(), 2)
 	})
 
 	t.Run("an unknown checkout is NotFound", func(t *testing.T) {

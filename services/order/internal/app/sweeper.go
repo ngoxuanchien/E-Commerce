@@ -160,9 +160,17 @@ func (s *Sweeper) timeoutPayments(ctx context.Context) (int, error) {
 		if err != nil {
 			return n, err
 		}
-		cancelled, stopped, err := s.timeoutBatch(ctx, batch, now)
+		cancelled, unasked, err := s.timeoutBatch(ctx, batch, now)
 		n += cancelled
-		if err != nil || stopped || len(batch) < s.cfg.BatchSize {
+		if unasked >= 0 {
+			// One step-level warn per tick: the per-call warns alone do not
+			// show that the rest of the step was skipped. A stop is not an
+			// error; the next tick asks again.
+			s.cfg.Logger.WarnContext(ctx, "payment-timeout step stopped early: payment-svc timed out; remaining checkouts retried next tick",
+				"unasked", unasked, "more_pages", len(batch) == s.cfg.BatchSize)
+			return n, err
+		}
+		if err != nil || len(batch) < s.cfg.BatchSize {
 			return n, err
 		}
 		after = &batch[len(batch)-1]
@@ -171,16 +179,18 @@ func (s *Sweeper) timeoutPayments(ctx context.Context) (int, error) {
 
 // timeoutBatch runs timeoutCheckout for every checkout of batch, at most
 // paymentConcurrency at a time. Once a call reports errStopPayments no further
-// checkout is started (calls already in flight finish) and stopped is true.
-// The other errors are joined. The stock of the whole batch is returned to
+// checkout is started (calls already in flight finish) and unasked is the
+// number of the batch's checkouts that were never asked; otherwise unasked is
+// -1. The other errors are joined. The stock of the whole batch is returned to
 // catalog in one releaseAll, after every transaction has committed.
-func (s *Sweeper) timeoutBatch(ctx context.Context, batch []CheckoutCursor, now time.Time) (n int, stopped bool, err error) {
+func (s *Sweeper) timeoutBatch(ctx context.Context, batch []CheckoutCursor, now time.Time) (n, unasked int, err error) {
 	var (
 		mu        sync.Mutex
 		errs      []error
 		cancelled []domain.Order
 		stop      atomic.Bool
 		wg        sync.WaitGroup
+		asked     int
 	)
 	sem := make(chan struct{}, paymentConcurrency)
 	for _, c := range batch {
@@ -189,6 +199,7 @@ func (s *Sweeper) timeoutBatch(ctx context.Context, batch []CheckoutCursor, now 
 			<-sem
 			break
 		}
+		asked++
 		wg.Add(1)
 		go func() {
 			defer func() { <-sem; wg.Done() }()
@@ -208,7 +219,11 @@ func (s *Sweeper) timeoutBatch(ctx context.Context, batch []CheckoutCursor, now 
 	}
 	wg.Wait()
 	s.releaseAll(ctx, cancelled)
-	return n, stop.Load(), errors.Join(errs...)
+	unasked = -1
+	if stop.Load() {
+		unasked = len(batch) - asked
+	}
+	return n, unasked, errors.Join(errs...)
 }
 
 // timeoutCheckout cancels the expired orders of c's checkout and returns them,

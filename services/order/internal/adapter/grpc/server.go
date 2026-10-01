@@ -35,13 +35,16 @@ func NewServer(q *app.CheckoutQuery, logger *slog.Logger) orderv1.OrderInternalS
 }
 
 // GetCheckout returns a checkout's orders for payment-svc. A checkout_id that is
-// not a canonical UUID is answered as NOT_FOUND without a query: no such
-// checkout exists, and the database is never asked to parse it.
+// not a UUID is answered as NOT_FOUND without a query: no such checkout
+// exists, and the database is never asked to parse it. A valid one is
+// canonicalized (lower case) before the query, so the response and the logs
+// always carry the canonical id.
 func (s *Server) GetCheckout(ctx context.Context, req *orderv1.GetCheckoutRequest) (*orderv1.GetCheckoutResponse, error) {
-	id := req.GetCheckoutId()
-	if _, err := uuid.Parse(id); err != nil {
+	u, err := uuid.Parse(req.GetCheckoutId())
+	if err != nil {
 		return nil, status.Error(codes.NotFound, "checkout not found")
 	}
+	id := u.String()
 	view, err := s.query.GetCheckout(ctx, id)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {

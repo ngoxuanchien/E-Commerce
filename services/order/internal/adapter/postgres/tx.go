@@ -132,7 +132,18 @@ func (t *txStore) SavePaymentStatus(ctx context.Context, o domain.Order, prevVer
 	if err != nil {
 		return err
 	}
-	return t.update(ctx, id, o, prevVersion)
+	// Only the payment columns: a stale or partly built o must not overwrite
+	// status, cancel_reason, payment_deadline or delivered_at.
+	n, err := t.q.UpdatePaymentStatus(ctx, sqlcdb.UpdatePaymentStatusParams{
+		PaymentStatus: string(o.PaymentStatus), UpdatedAt: o.UpdatedAt, ID: id, Version: int32(prevVersion),
+	})
+	if err != nil {
+		return fmt.Errorf("update payment status: %w", err)
+	}
+	if n == 0 {
+		return app.ErrConcurrentUpdate
+	}
+	return nil
 }
 
 // GetOrder reads an order with its items and history inside the transaction, so

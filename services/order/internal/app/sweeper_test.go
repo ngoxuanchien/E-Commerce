@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -580,6 +583,12 @@ func TestSweeperSlowPaymentDoesNotStallTheSweep(t *testing.T) {
 	}
 	assert.LessOrEqual(t, calls, 10, "the step stops asking after the first timeout")
 	assert.Positive(t, calls)
+	assert.Equal(t, 1, strings.Count(p.log.String(), stepStoppedMsg), "one step-level warn per tick:\n%s", p.log.String())
+	m := regexp.MustCompile(`unasked=(\d+)`).FindStringSubmatch(p.log.String())
+	require.Len(t, m, 2, "the warn names the checkouts left unasked this tick")
+	unasked, err := strconv.Atoi(m[1])
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, unasked, expired-10, "at most 10 checkouts were asked")
 	got, err := p.store.GetOrder(ctx, stale.ID)
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusCancelled, got.Status)
@@ -591,7 +600,12 @@ func TestSweeperSlowPaymentDoesNotStallTheSweep(t *testing.T) {
 	n, err = sw.RunOnce(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, expired, n, "the next tick asks again")
+	assert.Equal(t, 1, strings.Count(p.log.String(), stepStoppedMsg), "a tick that is not stopped logs no step-level warn")
 }
+
+// stepStoppedMsg is the step-level warn of a payment-timeout step that stopped
+// early because payment-svc timed out.
+const stepStoppedMsg = "payment-timeout step stopped early"
 
 // A plain UNAVAILABLE answer is per checkout (payment-svc also returns it for a
 // checkout that is still payable), so it must not stop the rest of the tick.

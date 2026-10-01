@@ -93,9 +93,10 @@ type Tx interface {
 	// still prevVersion (and bumps it), then appends o's last history entry.
 	// ErrConcurrentUpdate when the version moved on.
 	SaveTransition(ctx context.Context, o domain.Order, prevVersion int) error
-	// SavePaymentStatus persists o's payment status, payment deadline, cancel
-	// reason, status, delivered_at and updated_at if the stored version is
-	// still prevVersion (and bumps it). It adds no history row.
+	// SavePaymentStatus persists only o's payment status and updated_at if the
+	// stored version is still prevVersion (and bumps it). Status, cancel
+	// reason, payment deadline and delivered_at are never written, so a stale
+	// or partly built o cannot overwrite them. It adds no history row.
 	// ErrConcurrentUpdate when the version moved on.
 	SavePaymentStatus(ctx context.Context, o domain.Order, prevVersion int) error
 	// GetOrder returns an order with items and history, read inside the

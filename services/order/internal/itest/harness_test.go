@@ -122,7 +122,7 @@ type harness struct {
 	fake     *catalogfake.Fake
 	pay      *paymentfake.Fake
 	producer bootstrap.Producer
-	brokers  []string    // bootstrap brokers of the payment.events consumer group
+	brokers  []string    // Kafka bootstrap brokers
 	kafka    *kgo.Client // publishes the payment.events the App consumes
 	events   *eventLog
 	orderRPC orderv1.OrderInternalClient // OrderInternal, as payment-svc calls it
@@ -198,16 +198,6 @@ func orderInternalRPC(t *testing.T, a *bootstrap.App) orderv1.OrderInternalClien
 	return orderv1.NewOrderInternalClient(conn)
 }
 
-// deps wires a second App to the same containers and fakes, including the
-// payment.events consumer group.
-func (h *harness) deps(t *testing.T) bootstrap.Deps {
-	t.Helper()
-	return bootstrap.Deps{
-		Pool: h.pool, Redis: h.rdb, CatalogConn: h.fake.Dial(t), PaymentConn: h.pay.Dial(t),
-		Producer: h.producer, KafkaBrokers: h.brokers,
-	}
-}
-
 // publishPayment produces a payment.events envelope keyed by checkoutID; tests
 // reuse eventID to simulate redelivery.
 func (h *harness) publishPayment(t *testing.T, eventID, checkoutID string, p event.Payload) {
@@ -220,21 +210,29 @@ func (h *harness) publishPayment(t *testing.T, eventID, checkoutID string, p eve
 	require.NoError(t, h.kafka.ProduceSync(ctx, &kgo.Record{Topic: event.TopicPaymentEvents, Key: []byte(checkoutID), Value: b}).FirstErr())
 }
 
-// scoped starts a second App on the same containers and fakes with the base
-// config adjusted by mutate, serving HTTP and running its workers until the
-// subtest ends; it shares h.events. The main App keeps running with long
-// payment and auto-complete timers, so only the scoped App acts on scoped
-// orders — except that the main sweeper may also time out an expired
-// checkout, which is harmless: both ask the same payment fake.
+// scoped starts a second App on the same containers and catalog fake with the
+// base config adjusted by mutate, serving HTTP and running its workers until
+// the subtest ends; it shares h.events.
 //
-// The scoped App joins the same payment.events group as the main one; Kafka
-// gives each record to one member of the group, and the scenarios that publish
-// payment events run on the main App, whose group therefore picks them up.
+// The scoped App has its own payment fake (s.pay), so a scenario scripts
+// outcomes on, and counts calls to, a fake no other App or scenario touches.
+// It runs no payment.events consumer (KafkaBrokers nil): the scenarios that
+// publish payment events run on the main App, and a second member of the
+// order-svc group would steal some of their records.
+//
+// The main App keeps running with long payment and auto-complete timers. Its
+// sweeper still sees an expired scoped checkout and asks the main fake, whose
+// default OUTCOME_PAID leaves it alone, so only the scoped App acts on scoped
+// orders.
 func (h *harness) scoped(t *testing.T, mutate func(*bootstrap.Config)) *harness {
 	t.Helper()
 	cfg := baseConfig()
 	mutate(&cfg)
-	a, err := bootstrap.New(cfg, h.deps(t))
+	pay := paymentfake.New()
+	a, err := bootstrap.New(cfg, bootstrap.Deps{
+		Pool: h.pool, Redis: h.rdb, CatalogConn: h.fake.Dial(t), PaymentConn: pay.Dial(t),
+		Producer: h.producer,
+	})
 	require.NoError(t, err)
 
 	wctx, cancel := context.WithCancel(ctx)
@@ -246,7 +244,7 @@ func (h *harness) scoped(t *testing.T, mutate func(*bootstrap.Config)) *harness 
 	t.Cleanup(srv.Close)
 
 	scoped := *h
-	scoped.app, scoped.baseURL = a, srv.URL
+	scoped.app, scoped.baseURL, scoped.pay = a, srv.URL, pay
 	scoped.orderRPC = orderInternalRPC(t, a)
 	return &scoped
 }

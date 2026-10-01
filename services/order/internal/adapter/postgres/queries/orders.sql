@@ -53,6 +53,11 @@ SET status = @status, cancel_reason = sqlc.narg(cancel_reason), payment_status =
     version = version + 1, updated_at = @updated_at
 WHERE id = @id AND version = @version;
 
+-- name: UpdatePaymentStatus :execrows
+UPDATE orders
+SET payment_status = @payment_status, version = version + 1, updated_at = @updated_at
+WHERE id = @id AND version = @version;
+
 -- name: ClaimStalePending :many
 SELECT * FROM orders
 WHERE status = 'PENDING' AND created_at < @created_before

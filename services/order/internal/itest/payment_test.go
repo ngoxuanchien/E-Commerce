@@ -214,7 +214,7 @@ func (h *harness) testPaymentTimeout(t *testing.T) {
 	s := h.scoped(t, func(c *bootstrap.Config) { c.PaymentTimeout = time.Second })
 	b, checkoutID, orders := h.onlineCheckout(t, s, "ck-timeout",
 		catalogfake.NewShop("Timeout A"), catalogfake.NewShop("Timeout B"))
-	h.pay.SetOutcome(checkoutID, paymentv1.Outcome_OUTCOME_NOT_PAID)
+	s.pay.SetOutcome(checkoutID, paymentv1.Outcome_OUTCOME_NOT_PAID)
 
 	require.Eventually(t, func() bool {
 		for _, o := range orders {
@@ -250,9 +250,9 @@ func (h *harness) testPaymentTimeout(t *testing.T) {
 func (h *harness) testPaymentTimeoutPaidUntouched(t *testing.T) {
 	s := h.scoped(t, func(c *bootstrap.Config) { c.PaymentTimeout = time.Second })
 	b, checkoutID, orders := h.onlineCheckout(t, s, "ck-paid", catalogfake.NewShop("Paid"))
-	h.pay.SetOutcome(checkoutID, paymentv1.Outcome_OUTCOME_PAID)
+	s.pay.SetOutcome(checkoutID, paymentv1.Outcome_OUTCOME_PAID)
 
-	require.Eventually(t, func() bool { return h.pay.Calls(checkoutID) >= 2 },
+	require.Eventually(t, func() bool { return s.pay.Calls(checkoutID) >= 2 },
 		10*time.Second, 100*time.Millisecond, "the sweeper keeps asking about the paid checkout")
 
 	for _, o := range orders {
@@ -267,9 +267,9 @@ func (h *harness) testPaymentTimeoutPaidUntouched(t *testing.T) {
 func (h *harness) testPaymentTimeoutUnavailableThenNotPaid(t *testing.T) {
 	s := h.scoped(t, func(c *bootstrap.Config) { c.PaymentTimeout = time.Second })
 	b, checkoutID, orders := h.onlineCheckout(t, s, "ck-unavailable", catalogfake.NewShop("Unavailable"))
-	h.pay.SetError(checkoutID, codes.Unavailable)
+	s.pay.SetError(checkoutID, codes.Unavailable)
 
-	require.Eventually(t, func() bool { return h.pay.Calls(checkoutID) >= 2 },
+	require.Eventually(t, func() bool { return s.pay.Calls(checkoutID) >= 2 },
 		10*time.Second, 100*time.Millisecond, "the sweeper retries the unavailable service")
 	for _, o := range orders {
 		status, body := h.do(t, b, http.MethodGet, "/api/orders/"+o.ID, nil)
@@ -277,7 +277,7 @@ func (h *harness) testPaymentTimeoutUnavailableThenNotPaid(t *testing.T) {
 		assert.Equal(t, "AWAITING_PAYMENT", decode[orderResp](t, body).Status, "untouched while payment-svc is down")
 	}
 
-	h.pay.SetOutcome(checkoutID, paymentv1.Outcome_OUTCOME_NOT_PAID)
+	s.pay.SetOutcome(checkoutID, paymentv1.Outcome_OUTCOME_NOT_PAID)
 	require.Eventually(t, func() bool {
 		status, body, err := h.try(h.contract, b, http.MethodGet, "/api/orders/"+orders[0].ID, nil)
 		return err == nil && status == http.StatusOK && decode[orderResp](t, body).Status == "CANCELLED"
@@ -295,6 +295,7 @@ func (h *harness) testAutoComplete(t *testing.T) {
 	o := decode[checkoutResp](t, body).Orders[0]
 
 	seller := sellerOf(shop)
+	var delivered orderResp
 	for _, step := range []struct {
 		path string
 		body any
@@ -303,17 +304,21 @@ func (h *harness) testAutoComplete(t *testing.T) {
 		{"/api/seller/orders/" + o.ID + "/ship", map[string]string{"reason": "GHN-9"}},
 		{"/api/seller/orders/" + o.ID + "/deliver", nil},
 	} {
-		status, _ := s.act(t, seller, step.path, step.body)
+		var status int
+		status, delivered = s.act(t, seller, step.path, step.body)
 		require.Equal(t, http.StatusOK, status, step.path)
 	}
-	status, body = s.do(t, b, http.MethodGet, "/api/orders/"+o.ID, nil)
-	require.Equal(t, http.StatusOK, status)
-	require.Equal(t, "DELIVERED", decode[orderResp](t, body).Status)
+	// The deliver response itself proves DELIVERED: a separate GET could
+	// already see COMPLETED, because the sweeper may complete the order any
+	// time after one second (a tight window under -race).
+	require.Equal(t, "DELIVERED", delivered.Status)
+	require.NotNil(t, delivered.DeliveredAt, "deliver stamps delivered_at")
 
 	require.Eventually(t, func() bool {
 		status, body, err := h.try(h.contract, b, http.MethodGet, "/api/orders/"+o.ID, nil)
 		return err == nil && status == http.StatusOK && decode[orderResp](t, body).Status == "COMPLETED"
-	}, 10*time.Second, 100*time.Millisecond)
+	}, 20*time.Second, 100*time.Millisecond,
+		"order %s was not auto-completed within 20 s of its delivery (AUTO_COMPLETE_AFTER = 1 s, sweeper every %v)", o.ID, sweeperInterval)
 
 	status, body = h.do(t, b, http.MethodGet, "/api/orders/"+o.ID, nil)
 	require.Equal(t, http.StatusOK, status)

@@ -253,13 +253,16 @@ func (s *CheckoutService) selectLines(ctx context.Context, in CheckoutInput) ([]
 }
 
 // reject ends a checkout that failed before any order existed.
-func (s *CheckoutService) reject(ctx context.Context, in CheckoutInput, enc Encoder, cause error) (Response, error) {
+func (s *CheckoutService) reject(base context.Context, in CheckoutInput, enc Encoder, cause error) (Response, error) {
 	if !storable(cause) {
 		return Response{}, cause
 	}
 	resp := enc(CheckoutResult{}, cause)
-	err := s.store.InTx(ctx, func(tx Tx) error {
-		return tx.CompleteIdempotencyKey(ctx, in.BuyerID, in.IdempotencyKey, in.claimedAt, resp)
+	// The cleanup budget, like abort and recoverCommit: base alone is unbounded.
+	cctx, stop := s.cleanupCtx(base)
+	defer stop()
+	err := s.store.InTx(cctx, func(tx Tx) error {
+		return tx.CompleteIdempotencyKey(cctx, in.BuyerID, in.IdempotencyKey, in.claimedAt, resp)
 	})
 	if err != nil {
 		return Response{}, err

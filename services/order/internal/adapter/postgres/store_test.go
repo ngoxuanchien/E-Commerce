@@ -195,6 +195,41 @@ func TestStore(t *testing.T) {
 		assert.ErrorIs(t, err, app.ErrConcurrentUpdate)
 	})
 
+	t.Run("save payment status writes only the payment status", func(t *testing.T) {
+		o := newOrder(id(), id(), base)
+		o.PaymentMethod = "VNPAY"
+		o.PaymentStatus = domain.PaymentUnpaid
+		deadline := base.Add(30 * time.Minute)
+		o.PaymentDeadline = &deadline
+		reason := "PAYMENT_TIMEOUT"
+		o.Status = domain.StatusCancelled
+		o.CancelReason = &reason
+		insert(t, s, o)
+
+		// A stale or partly built struct: only its payment status may land.
+		stale := o
+		stale.Status = domain.StatusDelivered
+		stale.CancelReason = nil
+		delivered := base.Add(time.Hour)
+		stale.DeliveredAt = &delivered
+		stale.PaymentDeadline = nil
+		stale.PaymentStatus = domain.PaymentRefundPending
+		stale.UpdatedAt = base.Add(2 * time.Hour)
+		require.NoError(t, s.InTx(ctx, func(tx app.Tx) error { return tx.SavePaymentStatus(ctx, stale, o.Version) }))
+
+		got, err := s.GetOrder(ctx, o.ID)
+		require.NoError(t, err)
+		assert.Equal(t, domain.PaymentRefundPending, got.PaymentStatus)
+		assert.Equal(t, o.Version+1, got.Version)
+		assert.True(t, stale.UpdatedAt.Equal(got.UpdatedAt), "updated_at is written")
+		assert.Equal(t, domain.StatusCancelled, got.Status, "status is left alone")
+		require.NotNil(t, got.CancelReason, "cancel_reason is left alone")
+		assert.Equal(t, reason, *got.CancelReason)
+		assert.Nil(t, got.DeliveredAt, "delivered_at is left alone")
+		require.NotNil(t, got.PaymentDeadline, "payment_deadline is left alone")
+		assert.True(t, deadline.Equal(*got.PaymentDeadline))
+	})
+
 	t.Run("unknown or malformed id is not found", func(t *testing.T) {
 		_, err := s.GetOrder(ctx, id())
 		assert.ErrorIs(t, err, app.ErrNotFound)

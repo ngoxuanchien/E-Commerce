@@ -70,7 +70,7 @@ export function buildSeed(): DbState {
       shop: { id: S.gom, name: 'Gốm Bát Tràng Cô Bình', slug: 'gom-bat-trang' },
       items: [{ sku_id: K.bowl11, product_id: P.bowl, product_name: 'Bát ăn cơm men lam Bát Tràng', variant_name: 'Đường kính 11 cm', image_url: '/mock-images/bat-com.svg', unit_price: 45_000, quantity: 2, line_total: 90_000 }],
       subtotal: 90_000, shipping_fee: 30_000, total: 120_000, shipping_address: address, payment_method: 'COD', cancel_reason: null,
-      payment_status: 'NONE', payment_deadline: null, commission_rate_bps: 0, commission_amount: 0, delivered_at: null,
+      payment_status: 'NONE', payment_deadline: null, commission_rate_bps: 0, commission_amount: 0, delivered_at: at(26),
       history: [
         { from: null, to: 'PENDING', actor_role: 'system', note: null, created_at: at(20) },
         { from: 'PENDING', to: 'PENDING_CONFIRMATION', actor_role: 'system', note: null, created_at: at(20) },
