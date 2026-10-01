@@ -1,10 +1,9 @@
-// Command server runs ledger-svc (WS0' skeleton: health, readiness, migrations).
+// Command server runs ledger-svc: the posting consumers, the seller wallet API, payouts and the trial-balance check.
 package main
 
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -21,6 +20,7 @@ import (
 	"github.com/ngoxuanchien/e-commerce/pkg/otelx"
 	"github.com/ngoxuanchien/e-commerce/pkg/pgxx"
 	"github.com/ngoxuanchien/e-commerce/pkg/server"
+	"github.com/ngoxuanchien/e-commerce/services/ledger/internal/bootstrap"
 	"github.com/ngoxuanchien/e-commerce/services/ledger/migrations"
 )
 
@@ -29,19 +29,12 @@ func main() {
 		os.Exit(server.HealthcheckCommand(os.Getenv("HTTP_ADDR")))
 	}
 	if len(os.Args) > 1 && os.Args[1] == "trial-balance" {
-		os.Exit(trialBalance(os.Stdout))
+		os.Exit(trialBalance(context.Background(), os.Getenv("DATABASE_URL"), os.Stdout, os.Stderr))
 	}
 	if err := run(); err != nil {
 		slog.Error("server exited", "error", err)
 		os.Exit(1)
 	}
-}
-
-// trialBalance is reserved for WS2' (ledger spec §6): it will verify that the
-// ledger balances and exit 1 if not. Until then it exits 2.
-func trialBalance(w io.Writer) int {
-	_, _ = fmt.Fprintln(w, "trial-balance: not implemented yet (WS2')")
-	return 2
 }
 
 // readinessChecks are /readyz's dependencies: Postgres and Kafka.
@@ -56,6 +49,9 @@ func run() error {
 	cfg, err := config.Load[Config]()
 	if err != nil {
 		return err
+	}
+	if err := cfg.validate(); err != nil {
+		return fmt.Errorf("config: %w", err)
 	}
 	logger := logx.New(os.Stdout, cfg.LogLevel).With("service", cfg.ServiceName)
 	slog.SetDefault(logger)
@@ -81,11 +77,26 @@ func run() error {
 	}
 	defer producer.Close()
 
-	grpcSrv, _ := grpcx.NewServer() // standard gRPC health service; WS2' registers its services
+	svc, err := bootstrap.New(bootstrap.Config{
+		Brokers: cfg.KafkaBrokers, PayoutMinAmount: cfg.PayoutMinAmount,
+		SettleInterval: cfg.PayoutSettleInterval, SettleDelay: cfg.PayoutSettleDelay,
+		PendingInterval: cfg.PendingPostingInterval,
+	}, bootstrap.Deps{Pool: pool, Producer: producer, Logger: logger})
+	if err != nil {
+		return err
+	}
+
+	// Workers stop (deferred last, so run first) before the connections close.
+	workersCtx, stopWorkers := context.WithCancel(ctx)
+	workersDone := make(chan struct{})
+	go func() { defer close(workersDone); svc.RunWorkers(workersCtx) }()
+	defer func() { stopWorkers(); <-workersDone }()
+
+	grpcSrv, _ := grpcx.NewServer() // standard gRPC health service only (WS0' §4)
 	return server.Run(ctx, server.Config{
 		HTTP: &http.Server{
 			Addr:              cfg.HTTPAddr,
-			Handler:           otelx.HTTPHandler(newHandler(logger, readinessChecks(pool, producer), nil), cfg.ServiceName),
+			Handler:           otelx.HTTPHandler(newHandler(logger, readinessChecks(pool, producer), svc.API), cfg.ServiceName),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 		GRPC:            grpcSrv,
