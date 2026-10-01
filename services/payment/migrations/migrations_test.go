@@ -17,6 +17,10 @@ import (
 	"github.com/ngoxuanchien/e-commerce/services/payment/migrations"
 )
 
+// reviewFixIndexes are the lookup indexes 000004 adds: the provider-hint refund lookup and the
+// age scan over provider_events.
+var reviewFixIndexes = []string{"refunds_provider_ref_idx", "provider_events_received_idx"}
+
 func TestSharedSchemasCopiedVerbatim(t *testing.T) {
 	b, err := fs.ReadFile(migrations.FS, "000002_payment_schema.up.sql")
 	require.NoError(t, err)
@@ -40,6 +44,11 @@ func TestMigrationsApplyCleanly(t *testing.T) {
 		require.NoError(t, pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists))
 		assert.True(t, exists, table)
 	}
+	for _, index := range reviewFixIndexes {
+		var exists bool
+		require.NoError(t, pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, index).Scan(&exists))
+		assert.True(t, exists, index)
+	}
 	_, err = pool.Exec(ctx, `INSERT INTO payments (id, checkout_id, buyer_id, method, provider, status, amount, expires_at, created_at, updated_at)
 		VALUES (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'VNPAY', 'vnpay', 'LOST', 1, now(), now(), now())`)
 	assert.Error(t, err, "status is constrained")
@@ -55,6 +64,19 @@ func TestDownRemovesEveryTable(t *testing.T) {
 	pool, err := pgxx.NewPool(ctx, dsn)
 	require.NoError(t, err)
 	defer pool.Close()
+	down, err := fs.ReadFile(migrations.FS, "000004_review_fixes.down.sql")
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(down))
+	require.NoError(t, err)
+	for _, index := range reviewFixIndexes {
+		var exists bool
+		require.NoError(t, pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, index).Scan(&exists))
+		assert.False(t, exists, "000004 down drops %s", index)
+	}
+	var hasLease bool
+	require.NoError(t, pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns
+		WHERE table_name = 'payments' AND column_name = 'reconcile_after')`).Scan(&hasLease))
+	assert.False(t, hasLease, "000004 down drops payments.reconcile_after")
 	for _, name := range []string{"000003_fake_refunds.down.sql", "000002_payment_schema.down.sql"} {
 		down, err := fs.ReadFile(migrations.FS, name)
 		require.NoError(t, err)
