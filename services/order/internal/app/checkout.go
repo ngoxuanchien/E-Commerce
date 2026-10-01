@@ -34,6 +34,15 @@ type CheckoutConfig struct {
 	// PaymentTimeout is how long an online order may stay AWAITING_PAYMENT
 	// before the sweeper cancels it (PAYMENT_TIMEOUT).
 	PaymentTimeout time.Duration
+	// Deadline bounds the whole forward path — from claiming the idempotency
+	// key to Tx C (0 = unbounded). bootstrap sets it to PENDING_TIMEOUT, so a
+	// checkout gives up before the sweeper would cancel its orders.
+	Deadline time.Duration
+	// CleanupTimeout bounds the compensation of a failed checkout — stock
+	// release, Tx B, Tx C recovery and releasing the idempotency key
+	// (0 = defaultCleanupTimeout). It gets a fresh context, so compensation
+	// still works after Deadline fired.
+	CleanupTimeout time.Duration
 	Now            func() time.Time // nil = UTC wall clock
 	Logger         *slog.Logger     // nil = slog.Default()
 }
@@ -77,6 +86,30 @@ func NewCheckoutService(store Store, carts CartStore, catalog Catalog, cfg Check
 	return &CheckoutService{store: store, carts: carts, catalog: catalog, cfg: cfg}
 }
 
+// defaultCleanupTimeout bounds a checkout's compensation when the config leaves
+// CleanupTimeout unset.
+const defaultCleanupTimeout = 30 * time.Second
+
+// forwardCtx bounds the forward path — the key claim, the cart read, GetSkus,
+// Tx A, the reservations and Tx C. A zero Deadline leaves it unbounded.
+// Cancellation of the caller's ctx is still ignored (README decision 10).
+func (s *CheckoutService) forwardCtx(base context.Context) (context.Context, context.CancelFunc) {
+	if s.cfg.Deadline <= 0 {
+		return context.WithCancel(base)
+	}
+	return context.WithTimeout(base, s.cfg.Deadline)
+}
+
+// cleanupCtx gives the compensation of a failed checkout its own budget, so it
+// still runs when the forward deadline already fired, but never forever.
+func (s *CheckoutService) cleanupCtx(base context.Context) (context.Context, context.CancelFunc) {
+	d := s.cfg.CleanupTimeout
+	if d <= 0 {
+		d = defaultCleanupTimeout
+	}
+	return context.WithTimeout(base, d)
+}
+
 // RequestHash fingerprints a checkout request for idempotency. Equivalent
 // requests (same SKUs in any order, duplicates ignored) hash the same.
 func RequestHash(in CheckoutInput) []byte {
@@ -99,9 +132,12 @@ func RequestHash(in CheckoutInput) []byte {
 // Successes and deterministic rejections are rendered by enc, stored and
 // returned as a Response. Transient failures are returned as errors and free
 // the key so the client can retry with it. Cancellation of ctx is ignored:
-// once orders exist the checkout must finish or compensate.
+// once orders exist the checkout must finish or compensate — cfg.Deadline is
+// what bounds the run.
 func (s *CheckoutService) Checkout(ctx context.Context, in CheckoutInput, enc Encoder) (Response, error) {
-	ctx = context.WithoutCancel(ctx)
+	base := context.WithoutCancel(ctx)
+	fwd, stopForward := s.forwardCtx(base)
+	defer stopForward()
 	if domain.IsOnline(in.PaymentMethod) && !slices.Contains(s.cfg.OnlineMethods, in.PaymentMethod) {
 		// Before BeginIdempotency: a method this deployment does not accept is a
 		// bad request, so it must not consume the caller's idempotency key.
@@ -114,7 +150,7 @@ func (s *CheckoutService) Checkout(ctx context.Context, in CheckoutInput, enc En
 	if s.cfg.ClaimTimeout > 0 {
 		staleBefore = now.Add(-s.cfg.ClaimTimeout)
 	}
-	rec, created, err := s.store.BeginIdempotency(ctx, in.BuyerID, in.IdempotencyKey, hash, now, staleBefore)
+	rec, created, err := s.store.BeginIdempotency(fwd, in.BuyerID, in.IdempotencyKey, hash, now, staleBefore)
 	if err != nil {
 		return Response{}, err
 	}
@@ -129,14 +165,16 @@ func (s *CheckoutService) Checkout(ctx context.Context, in CheckoutInput, enc En
 		}
 	}
 	in.claimedAt = rec.ClaimedAt
-	resp, err := s.run(ctx, in, enc)
+	resp, err := s.run(base, fwd, in, enc)
 	if err != nil {
 		var keep *keepKeyError
 		if errors.As(err, &keep) {
 			s.cfg.Logger.ErrorContext(ctx, "checkout failed before compensation; key stays claimed", "buyer_id", in.BuyerID, "error", err)
 			return Response{}, err
 		}
-		if derr := s.store.DeleteIdempotencyKey(ctx, in.BuyerID, in.IdempotencyKey, in.claimedAt); derr != nil {
+		cctx, stopCleanup := s.cleanupCtx(base)
+		defer stopCleanup()
+		if derr := s.store.DeleteIdempotencyKey(cctx, in.BuyerID, in.IdempotencyKey, in.claimedAt); derr != nil {
 			s.cfg.Logger.ErrorContext(ctx, "release idempotency key failed", "buyer_id", in.BuyerID, "error", derr)
 		}
 		return Response{}, err
@@ -144,12 +182,14 @@ func (s *CheckoutService) Checkout(ctx context.Context, in CheckoutInput, enc En
 	return resp, nil
 }
 
-func (s *CheckoutService) run(ctx context.Context, in CheckoutInput, enc Encoder) (Response, error) {
-	lines, err := s.selectLines(ctx, in)
+// run drives the forward path under fwd — the key claim through Tx C — and
+// hands base to the compensation, which gets its own budget.
+func (s *CheckoutService) run(base, fwd context.Context, in CheckoutInput, enc Encoder) (Response, error) {
+	lines, err := s.selectLines(fwd, in)
 	if err != nil {
-		return s.reject(ctx, in, enc, err)
+		return s.reject(base, in, enc, err)
 	}
-	skus, err := s.catalog.GetSkus(ctx, skuIDsOf(lines))
+	skus, err := s.catalog.GetSkus(fwd, skuIDsOf(lines))
 	if err != nil {
 		return Response{}, err
 	}
@@ -161,13 +201,13 @@ func (s *CheckoutService) run(ctx context.Context, in CheckoutInput, enc Encoder
 		Now:               s.cfg.Now(), NewID: newID,
 	})
 	if err != nil {
-		return s.reject(ctx, in, enc, err)
+		return s.reject(base, in, enc, err)
 	}
 	// Tx A: the orders exist (PENDING) before any stock is reserved, so the
 	// sweeper can always find and compensate a checkout that dies midway.
-	err = s.store.InTx(ctx, func(tx Tx) error {
+	err = s.store.InTx(fwd, func(tx Tx) error {
 		for _, o := range orders {
-			if err := tx.InsertOrder(ctx, o); err != nil {
+			if err := tx.InsertOrder(fwd, o); err != nil {
 				return err
 			}
 		}
@@ -176,10 +216,10 @@ func (s *CheckoutService) run(ctx context.Context, in CheckoutInput, enc Encoder
 	if err != nil {
 		return Response{}, err
 	}
-	if err := s.reserveAll(ctx, orders); err != nil {
-		return s.abort(ctx, in, enc, orders, err)
+	if err := s.reserveAll(fwd, orders); err != nil {
+		return s.abort(base, in, enc, orders, err)
 	}
-	return s.commit(ctx, in, enc, CheckoutResult{CheckoutID: checkoutID, Orders: orders}, lines)
+	return s.commit(base, fwd, in, enc, CheckoutResult{CheckoutID: checkoutID, Orders: orders}, lines)
 }
 
 // selectLines returns the cart lines to buy, sorted by SKU ID.
@@ -247,8 +287,15 @@ func (s *CheckoutService) reserveAll(ctx context.Context, orders []domain.Order)
 // of the checkout, then Tx B cancels them all (system, OUT_OF_STOCK or
 // RESERVE_FAILED). Release failures are only logged: the OrderCancelled events
 // written in Tx B make catalog release the stock asynchronously.
-func (s *CheckoutService) abort(ctx context.Context, in CheckoutInput, enc Encoder, orders []domain.Order, cause error) (Response, error) {
-	s.releaseAll(ctx, orders)
+//
+// Tx B can lose the optimistic lock when the sweeper cancelled an order of the
+// checkout first — a checkout that outlived PENDING_TIMEOUT. That is not the
+// buyer's fault, so it must not be answered as a conflict: the orders are
+// re-read and those still PENDING cancelled, and the real cause is stored.
+func (s *CheckoutService) abort(base context.Context, in CheckoutInput, enc Encoder, orders []domain.Order, cause error) (Response, error) {
+	cctx, stop := s.cleanupCtx(base)
+	defer stop()
+	s.releaseAll(cctx, orders)
 	reason := domain.CancelReserveFailed
 	var oos *OutOfStockError
 	if errors.As(cause, &oos) {
@@ -256,35 +303,64 @@ func (s *CheckoutService) abort(ctx context.Context, in CheckoutInput, enc Encod
 	}
 	store := storable(cause)
 	now := s.cfg.Now()
-	var resp Response
-	claimLost := false
-	err := s.store.InTx(ctx, func(tx Tx) error {
-		for i := range orders {
-			if err := applyTransition(ctx, tx, &orders[i], domain.ActionCancel, domain.SystemActor(), reason, now); err != nil {
-				return err
+	// The second pass cancels only what the re-read shows still PENDING, so it
+	// never tries to cancel an order the sweeper already cancelled. A re-read
+	// that fails leaves the orders to the sweeper and frees the key.
+	for attempt := range 2 {
+		fresh := orders
+		if attempt > 0 {
+			fresh = make([]domain.Order, 0, len(orders))
+			for _, o := range orders {
+				stored, err := s.store.GetOrder(cctx, o.ID)
+				if err != nil {
+					return Response{}, fmt.Errorf("re-read orders after losing the reservation race: %w", err)
+				}
+				if stored.Status == domain.StatusPending {
+					fresh = append(fresh, stored)
+				}
 			}
 		}
-		if !store {
-			return nil
+		var resp Response
+		claimLost := false
+		err := s.store.InTx(cctx, func(tx Tx) error {
+			for i := range fresh {
+				if err := applyTransition(cctx, tx, &fresh[i], domain.ActionCancel, domain.SystemActor(), reason, now); err != nil {
+					return err
+				}
+			}
+			if !store {
+				return nil
+			}
+			resp = enc(CheckoutResult{}, cause)
+			err := tx.CompleteIdempotencyKey(cctx, in.BuyerID, in.IdempotencyKey, in.claimedAt, resp)
+			if errors.Is(err, ErrIdempotencyClaimLost) {
+				// A retry owns the key now: keep the cancellations, store nothing.
+				claimLost = true
+				return nil
+			}
+			return err
+		})
+		switch {
+		case err == nil:
+			if claimLost {
+				return Response{}, ErrIdempotencyClaimLost
+			}
+			if !store {
+				return Response{}, cause
+			}
+			return resp, nil
+		case errors.Is(err, ErrConcurrentUpdate):
+			if attempt == 0 {
+				continue // the sweeper won Tx B; re-read and try once more
+			}
+			// It won twice: answer the real cause without storing it, so the
+			// client may retry the same request.
+			return Response{}, cause
+		default:
+			return Response{}, fmt.Errorf("cancel orders after failed reservation: %w", err)
 		}
-		resp = enc(CheckoutResult{}, cause)
-		err := tx.CompleteIdempotencyKey(ctx, in.BuyerID, in.IdempotencyKey, in.claimedAt, resp)
-		if errors.Is(err, ErrIdempotencyClaimLost) {
-			// A retry owns the key now: keep the cancellations, store nothing.
-			claimLost = true
-			return nil
-		}
-		return err
-	})
-	switch {
-	case err != nil:
-		return Response{}, fmt.Errorf("cancel orders after failed reservation: %w", err)
-	case claimLost:
-		return Response{}, ErrIdempotencyClaimLost
-	case !store:
-		return Response{}, cause
 	}
-	return resp, nil
+	return Response{}, cause
 }
 
 // mergeReserveErrors prefers OUT_OF_STOCK (with every shop's shortages) over
@@ -314,11 +390,13 @@ func mergeReserveErrors(errs []error) error {
 
 // commit is Tx C: every order moves to PENDING_CONFIRMATION — or, for an
 // online method, AWAITING_PAYMENT with a payment deadline — with its events
-// and the response is stored, atomically.
-func (s *CheckoutService) commit(ctx context.Context, in CheckoutInput, enc Encoder, res CheckoutResult, lines []domain.Line) (Response, error) {
+// and the response is stored, atomically. Tx C runs on fwd; its compensation
+// (releasing stock, recovering the commit) runs on a fresh context derived from
+// base, so it still works when the deadline fired mid-transaction.
+func (s *CheckoutService) commit(base, fwd context.Context, in CheckoutInput, enc Encoder, res CheckoutResult, lines []domain.Line) (Response, error) {
 	now := s.cfg.Now()
 	var resp Response
-	err := s.store.InTx(ctx, func(tx Tx) error {
+	err := s.store.InTx(fwd, func(tx Tx) error {
 		for i := range res.Orders {
 			o := &res.Orders[i]
 			action := domain.ActionSubmit
@@ -329,26 +407,28 @@ func (s *CheckoutService) commit(ctx context.Context, in CheckoutInput, enc Enco
 				o.PaymentDeadline = &deadline
 				action = domain.ActionAwaitPayment
 			}
-			if err := tx.Publish(ctx, o.ID, orderCreated(*o), now); err != nil {
+			if err := tx.Publish(fwd, o.ID, orderCreated(*o), now); err != nil {
 				return err
 			}
-			if err := applyTransition(ctx, tx, o, action, domain.SystemActor(), "", now); err != nil {
+			if err := applyTransition(fwd, tx, o, action, domain.SystemActor(), "", now); err != nil {
 				return err
 			}
 		}
 		resp = enc(res, nil)
-		return tx.CompleteIdempotencyKey(ctx, in.BuyerID, in.IdempotencyKey, in.claimedAt, resp)
+		return tx.CompleteIdempotencyKey(fwd, in.BuyerID, in.IdempotencyKey, in.claimedAt, resp)
 	})
 	if errors.Is(err, ErrConcurrentUpdate) {
 		// The sweeper cancelled these orders first (the checkout outlived
 		// PENDING_TIMEOUT): give back whatever we reserved after it released.
-		s.releaseAll(ctx, res.Orders)
+		cctx, stop := s.cleanupCtx(base)
+		defer stop()
+		s.releaseAll(cctx, res.Orders)
 		return Response{}, ErrCheckoutExpired
 	}
 	if err != nil {
-		return s.recoverCommit(ctx, in, res.Orders, lines, err)
+		return s.recoverCommit(base, in, res.Orders, lines, err)
 	}
-	s.clearCart(ctx, in.BuyerID, lines)
+	s.clearCart(fwd, in.BuyerID, lines)
 	return resp, nil
 }
 
@@ -360,21 +440,23 @@ func (s *CheckoutService) commit(ctx context.Context, in CheckoutInput, enc Enco
 // to the sweeper, so the client's retry does not run into its own held stock.
 // If the cancellation cannot be written, the key stays claimed until the
 // sweeper has cleaned up.
-func (s *CheckoutService) recoverCommit(ctx context.Context, in CheckoutInput, orders []domain.Order, lines []domain.Line, cause error) (Response, error) {
+func (s *CheckoutService) recoverCommit(base context.Context, in CheckoutInput, orders []domain.Order, lines []domain.Line, cause error) (Response, error) {
+	cctx, stop := s.cleanupCtx(base)
+	defer stop()
 	reason := domain.CancelReserveFailed
 	if errors.Is(cause, ErrIdempotencyClaimLost) {
 		reason = domain.CancelCheckoutTimeout
 	} else {
-		rec, found, err := s.store.IdempotencyKey(ctx, in.BuyerID, in.IdempotencyKey) // a read: never claims
+		rec, found, err := s.store.IdempotencyKey(cctx, in.BuyerID, in.IdempotencyKey) // a read: never claims
 		if err == nil && found && rec.ClaimedAt.Equal(in.claimedAt) && rec.Response != nil {
-			s.clearCart(ctx, in.BuyerID, lines)
+			s.clearCart(cctx, in.BuyerID, lines)
 			return *rec.Response, nil
 		}
 	}
-	s.releaseAll(ctx, orders)
+	s.releaseAll(cctx, orders)
 	fresh := make([]domain.Order, 0, len(orders))
 	for _, o := range orders {
-		stored, err := s.store.GetOrder(ctx, o.ID) // the in-memory copy reflects the rolled-back Tx C
+		stored, err := s.store.GetOrder(cctx, o.ID) // the in-memory copy reflects the rolled-back Tx C
 		if err != nil {
 			return Response{}, &keepKeyError{err: errors.Join(cause, err)}
 		}
@@ -383,9 +465,9 @@ func (s *CheckoutService) recoverCommit(ctx context.Context, in CheckoutInput, o
 		}
 	}
 	now := s.cfg.Now()
-	err := s.store.InTx(ctx, func(tx Tx) error {
+	err := s.store.InTx(cctx, func(tx Tx) error {
 		for i := range fresh {
-			if err := applyTransition(ctx, tx, &fresh[i], domain.ActionCancel, domain.SystemActor(), reason, now); err != nil {
+			if err := applyTransition(cctx, tx, &fresh[i], domain.ActionCancel, domain.SystemActor(), reason, now); err != nil {
 				return err
 			}
 		}

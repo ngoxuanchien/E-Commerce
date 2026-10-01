@@ -3,6 +3,7 @@ package app_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/ngoxuanchien/e-commerce/pkg/event"
+	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/catalog"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/catalog/catalogfake"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/app"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/domain"
@@ -30,7 +32,9 @@ func (r *recorder) encode(res app.CheckoutResult, err error) app.Response {
 	defer r.mu.Unlock()
 	r.err = err
 	if err != nil {
-		b, _ := json.Marshal(map[string]string{"error": err.Error()})
+		// The type distinguishes two business rejections that both render 409
+		// here (only the real encoder maps OUT_OF_STOCK).
+		b, _ := json.Marshal(map[string]string{"error": fmt.Sprintf("%T", err)})
 		return app.Response{Status: http.StatusConflict, Body: b}
 	}
 	ids := make([]string, len(res.Orders))
@@ -351,6 +355,64 @@ func TestCheckout(t *testing.T) {
 		o, err := e.store.GetOrder(ctx, ids[0])
 		require.NoError(t, err)
 		assert.Equal(t, domain.StatusPendingConfirmation, o.Status)
+	})
+}
+
+// TestCheckoutDeadline covers CheckoutConfig.Deadline: a checkout that would
+// outlive it gives up, cancels its own orders and frees the key instead of
+// waiting to be swept. Cancellation of the request is still ignored (README
+// decision 10) — only the deadline bounds the run.
+func TestCheckoutDeadline(t *testing.T) {
+	e := newEnv(t, envOpts{postgres: true, redis: true})
+	// A catalog whose per-attempt timeout is longer than the deadline, so only
+	// the checkout's own deadline can stop it.
+	slow := catalog.New(e.fake.Dial(t), catalog.Config{Timeout: time.Second, Retries: 0})
+	bounded := app.NewCheckoutService(e.store, e.carts, slow, app.CheckoutConfig{
+		ShippingFee: 30_000, Deadline: 200 * time.Millisecond, Now: e.clock.Now,
+	})
+
+	t.Run("a checkout exceeding its deadline cancels its orders and frees the key", func(t *testing.T) {
+		buyer, s := uid(), e.fake.AddSku(catalogfake.NewShop("Deadline"), 10_000, 10)
+		e.cartSet(t, buyer, s.GetSkuId(), 1)
+		e.fake.SetDelay(catalogfake.ReserveStock, 500*time.Millisecond)
+		t.Cleanup(func() { e.fake.SetDelay(catalogfake.ReserveStock, 0) })
+		in := checkoutInput(buyer, "deadline")
+
+		start := time.Now()
+		_, err := bounded.Checkout(ctx, in, (&recorder{}).encode)
+		require.Error(t, err)
+		assert.Less(t, time.Since(start), 1500*time.Millisecond, "the deadline ends the run, not the catalog timeout")
+
+		orders := buyerOrders(t, e, buyer)
+		require.Len(t, orders, 1)
+		assert.Equal(t, domain.StatusCancelled, orders[0].Status)
+		assert.Equal(t, domain.CancelReserveFailed, *orders[0].CancelReason)
+		assert.False(t, e.fake.Reserved(orders[0].ID), "its reservation is released")
+		_, found, err := e.store.IdempotencyKey(ctx, buyer, "deadline")
+		require.NoError(t, err)
+		assert.False(t, found, "the key is free for a retry")
+
+		// The retry with the same key succeeds: nothing was left PENDING for the
+		// sweeper and no false rejection was stored.
+		e.fake.SetDelay(catalogfake.ReserveStock, 0)
+		e.cartSet(t, buyer, s.GetSkuId(), 1)
+		resp, err := bounded.Checkout(ctx, in, (&recorder{}).encode)
+		require.NoError(t, err)
+		assert.Len(t, createdOrderIDs(t, resp), 1)
+	})
+
+	t.Run("a deadline during GetSkus creates nothing", func(t *testing.T) {
+		buyer, s := uid(), e.fake.AddSku(catalogfake.NewShop("Deadline Skus"), 10_000, 10)
+		e.cartSet(t, buyer, s.GetSkuId(), 1)
+		e.fake.SetDelay(catalogfake.GetSkus, 500*time.Millisecond)
+		t.Cleanup(func() { e.fake.SetDelay(catalogfake.GetSkus, 0) })
+
+		_, err := bounded.Checkout(ctx, checkoutInput(buyer, "deadline-skus"), (&recorder{}).encode)
+		require.Error(t, err)
+		assert.Empty(t, buyerOrders(t, e, buyer), "no order was ever inserted")
+		_, found, err := e.store.IdempotencyKey(ctx, buyer, "deadline-skus")
+		require.NoError(t, err)
+		assert.False(t, found, "the key is free for a retry")
 	})
 }
 

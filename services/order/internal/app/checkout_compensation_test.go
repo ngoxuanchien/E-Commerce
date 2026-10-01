@@ -1,6 +1,9 @@
 package app_test
 
 import (
+	"context"
+	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +16,35 @@ import (
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/app"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/domain"
 )
+
+// sweepBeforeTxB runs `run` after the reservation of the order holding shortSKU
+// failed and once every other order's reservation is done, so the sweeper has
+// cancelled all PENDING orders of the checkout before Tx B starts.
+type sweepBeforeTxB struct {
+	app.Catalog
+	shortSKU     string
+	reserved     chan struct{} // closed once the other orders reserved
+	reservedOnce sync.Once
+	run          func()
+}
+
+func (c *sweepBeforeTxB) ReserveStock(ctx context.Context, orderID string, lines []domain.Line) error {
+	err := c.Catalog.ReserveStock(ctx, orderID, lines)
+	for _, l := range lines {
+		if l.SkuID != c.shortSKU {
+			continue
+		}
+		select {
+		case <-c.reserved: // the sweeper releases the stock of every cancelled order
+		case <-ctx.Done():
+			return err
+		}
+		c.run()
+		return err
+	}
+	c.reservedOnce.Do(func() { close(c.reserved) })
+	return err
+}
 
 func TestCheckoutCompensation(t *testing.T) {
 	e := newEnv(t, envOpts{postgres: true, redis: true})
@@ -114,5 +146,42 @@ func TestCheckoutCompensation(t *testing.T) {
 		resp, err := svc.Checkout(ctx, checkoutInput(buyer, "blip"), (&recorder{}).encode)
 		require.NoError(t, err)
 		assert.Len(t, createdOrderIDs(t, resp), 1)
+	})
+
+	// The sweeper cancels the checkout's PENDING orders between the failed
+	// reservation and Tx B, so Tx B loses the optimistic lock. The buyer must
+	// still get the real cause — OUT_OF_STOCK with its shortages — not a
+	// conflict on an internal race.
+	t.Run("sweeper racing Tx B still answers OUT_OF_STOCK", func(t *testing.T) {
+		buyer, rec := uid(), &recorder{}
+		a := e.fake.AddSku(catalogfake.NewShop("A4"), 100_000, 10)
+		b := e.fake.AddSku(catalogfake.NewShop("B4"), 40_000, 1)
+		e.cartSet(t, buyer, a.GetSkuId(), 2)
+		e.cartSet(t, buyer, b.GetSkuId(), 3)
+		sw := app.NewSweeper(e.store, e.catalog, nil, app.SweeperConfig{
+			Interval: time.Minute, PendingTimeout: 2 * time.Minute, Now: e.clock.Now,
+		})
+		hook := &sweepBeforeTxB{Catalog: e.catalog, shortSKU: b.GetSkuId(), reserved: make(chan struct{}), run: func() {
+			e.clock.Advance(3 * time.Minute) // past PENDING_TIMEOUT
+			_, err := sw.RunOnce(ctx)
+			assert.NoError(t, err)
+		}}
+		racing := app.NewCheckoutService(e.store, e.carts, hook, app.CheckoutConfig{ShippingFee: 30_000, Now: e.clock.Now})
+
+		resp, err := racing.Checkout(ctx, checkoutInput(buyer, "race"), rec.encode)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusConflict, resp.Status)
+		assert.Contains(t, string(resp.Body), "*app.OutOfStockError", "the real cause, not the lost race")
+		var oos *app.OutOfStockError
+		require.ErrorAs(t, rec.lastErr(), &oos)
+		assert.Equal(t, []domain.Shortage{{SkuID: b.GetSkuId(), Requested: 3, Available: 1}}, oos.Shortages)
+
+		for _, o := range buyerOrders(t, e, buyer) {
+			assert.Equal(t, domain.StatusCancelled, o.Status, "the sweeper cancelled them, Tx B must not leave any PENDING")
+			assert.False(t, e.fake.Reserved(o.ID), "its reservation is released")
+		}
+		replay, err := racing.Checkout(ctx, checkoutInput(buyer, "race"), rec.encode)
+		require.NoError(t, err)
+		assert.JSONEq(t, string(resp.Body), string(replay.Body), "the OUT_OF_STOCK answer is stored under the claim")
 	})
 }
