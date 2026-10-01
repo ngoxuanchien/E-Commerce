@@ -34,6 +34,12 @@ var transitions = map[move]Status{
 	{ActionCancel, StatusConfirmed, RoleSeller}:            StatusCancelled,
 	{ActionDeliver, StatusShipping, RoleSeller}:            StatusDelivered,
 	{ActionComplete, StatusDelivered, RoleBuyer}:           StatusCompleted,
+
+	{ActionAwaitPayment, StatusPending, RoleSystem}:     StatusAwaitingPayment,
+	{ActionMarkPaid, StatusAwaitingPayment, RoleSystem}: StatusPendingConfirmation,
+	{ActionCancel, StatusAwaitingPayment, RoleBuyer}:    StatusCancelled,
+	{ActionCancel, StatusAwaitingPayment, RoleSystem}:   StatusCancelled,
+	{ActionComplete, StatusDelivered, RoleSystem}:       StatusCompleted,
 }
 
 // Transition decides whether actor may perform action on o. It is pure: o is

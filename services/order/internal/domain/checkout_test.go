@@ -116,3 +116,34 @@ func TestStockLines(t *testing.T) {
 	o := domain.Order{Items: []domain.Item{{SkuID: "a", Quantity: 2}, {SkuID: "b", Quantity: 5}}}
 	assert.Equal(t, []domain.Line{{SkuID: "a", Quantity: 2}, {SkuID: "b", Quantity: 5}}, o.StockLines())
 }
+
+func TestBuildOrdersOnlineSnapshotsCommissionAndSlug(t *testing.T) {
+	skus := map[string]domain.Sku{"s1": sku("s1", "shopA", "sellerA", 100_000), "s2": sku("s2", "shopB", "sellerB", 45_000)}
+	lines := []domain.Line{{SkuID: "s1", Quantity: 1}, {SkuID: "s2", Quantity: 1}}
+
+	p := params(lines, skus)
+	p.PaymentMethod = "VNPAY"
+	p.CommissionRateBps = 500
+	orders, err := domain.BuildOrders(p)
+	require.NoError(t, err)
+	require.Len(t, orders, 2)
+	for _, o := range orders {
+		assert.Equal(t, int32(500), o.CommissionRateBps)
+		assert.Equal(t, domain.Commission(o.Subtotal, 500), o.CommissionAmount)
+		assert.Equal(t, domain.PaymentUnpaid, o.PaymentStatus)
+		assert.Equal(t, "shop-"+o.ShopID, o.ShopSlug)
+	}
+	assert.Equal(t, int64(5_000), orders[0].CommissionAmount)
+	assert.Equal(t, int64(2_250), orders[1].CommissionAmount)
+
+	p = params(lines, skus)
+	p.CommissionRateBps = 500 // ignored for COD
+	orders, err = domain.BuildOrders(p)
+	require.NoError(t, err)
+	for _, o := range orders {
+		assert.Zero(t, o.CommissionRateBps)
+		assert.Zero(t, o.CommissionAmount)
+		assert.Equal(t, domain.PaymentNone, o.PaymentStatus)
+		assert.Equal(t, "shop-"+o.ShopID, o.ShopSlug)
+	}
+}

@@ -13,7 +13,7 @@ import (
 var roles = []domain.Role{domain.RoleBuyer, domain.RoleSeller, domain.RoleSystem}
 
 // TestTransitionTable checks every (status, action, role) combination: the
-// nine legal moves of WS3 §5 succeed, everything else is rejected.
+// legal moves of WS3 §5 and WS3' §2 succeed, everything else is rejected.
 func TestTransitionTable(t *testing.T) {
 	type key struct {
 		from   domain.Status
@@ -30,9 +30,15 @@ func TestTransitionTable(t *testing.T) {
 		{domain.StatusConfirmed, domain.ActionCancel, domain.RoleSeller}:            domain.StatusCancelled,
 		{domain.StatusShipping, domain.ActionDeliver, domain.RoleSeller}:            domain.StatusDelivered,
 		{domain.StatusDelivered, domain.ActionComplete, domain.RoleBuyer}:           domain.StatusCompleted,
+
+		{domain.StatusPending, domain.ActionAwaitPayment, domain.RoleSystem}:     domain.StatusAwaitingPayment,
+		{domain.StatusAwaitingPayment, domain.ActionMarkPaid, domain.RoleSystem}: domain.StatusPendingConfirmation,
+		{domain.StatusAwaitingPayment, domain.ActionCancel, domain.RoleBuyer}:    domain.StatusCancelled,
+		{domain.StatusAwaitingPayment, domain.ActionCancel, domain.RoleSystem}:   domain.StatusCancelled,
+		{domain.StatusDelivered, domain.ActionComplete, domain.RoleSystem}:       domain.StatusCompleted,
 	}
 	require.Len(t, domain.Statuses, 8, "table must cover every status")
-	require.Len(t, domain.Actions, 6, "table must cover every action")
+	require.Len(t, domain.Actions, 8, "table must cover every action")
 
 	seen := 0
 	for _, from := range domain.Statuses {
@@ -54,7 +60,14 @@ func TestTransitionTable(t *testing.T) {
 			}
 		}
 	}
-	assert.Equal(t, 8*6*3, seen)
+	assert.Equal(t, 8*8*3, seen)
+}
+
+func TestSellerCannotActOnAwaitingPayment(t *testing.T) {
+	for _, a := range []domain.Action{domain.ActionConfirm, domain.ActionCancel, domain.ActionShip} {
+		_, err := domain.Transition(domain.Order{Status: domain.StatusAwaitingPayment}, a, domain.Actor{ID: "s", Role: domain.RoleSeller})
+		assert.ErrorIs(t, err, domain.ErrInvalidTransition, a)
+	}
 }
 
 func TestTransitionRejectsUnknownRole(t *testing.T) {

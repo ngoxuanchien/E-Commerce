@@ -64,13 +64,15 @@ func SystemActor() Actor { return Actor{Role: RoleSystem} }
 type Action string
 
 const (
-	ActionSubmit   Action = "submit" // checkout reserved all stock: PENDING → PENDING_CONFIRMATION
-	ActionConfirm  Action = "confirm"
-	ActionShip     Action = "ship"
-	ActionDeliver  Action = "deliver"
-	ActionComplete Action = "complete"
-	ActionCancel   Action = "cancel"
+	ActionSubmit       Action = "submit" // COD checkout reserved all stock: PENDING → PENDING_CONFIRMATION
+	ActionConfirm      Action = "confirm"
+	ActionShip         Action = "ship"
+	ActionDeliver      Action = "deliver"
+	ActionComplete     Action = "complete"
+	ActionCancel       Action = "cancel"
+	ActionAwaitPayment Action = "await_payment" // online checkout reserved all stock: PENDING → AWAITING_PAYMENT
+	ActionMarkPaid     Action = "mark_paid"     // payment captured: AWAITING_PAYMENT → PENDING_CONFIRMATION
 )
 
 // Actions lists every action.
-var Actions = []Action{ActionSubmit, ActionConfirm, ActionShip, ActionDeliver, ActionComplete, ActionCancel}
+var Actions = []Action{ActionSubmit, ActionConfirm, ActionShip, ActionDeliver, ActionComplete, ActionCancel, ActionAwaitPayment, ActionMarkPaid}
