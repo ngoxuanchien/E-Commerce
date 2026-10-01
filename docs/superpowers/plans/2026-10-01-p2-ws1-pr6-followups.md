@@ -66,4 +66,4 @@ Catalog has no periodic worker, so it is not wired here. It can call `inbox.Purg
 
 ## Final
 
-- [ ] README: add one line under decision 22 (per-call timeouts now also cover Cancel and Query inside `cancelAndObserve`) and one under the dedupe/retention notes (`processed_events` is purged after 30 days). Make sure `make gen` leaves no diff, the full test suite passes, and lint is clean. Commit: `docs(payment): follow-ups F1–F2`.
+- [x] README: add one line under decision 22 (per-call timeouts now also cover Cancel and Query inside `cancelAndObserve`) and one under the dedupe/retention notes (`processed_events` is purged after 30 days). Make sure `make gen` leaves no diff, the full test suite passes, and lint is clean. Commit: `docs(payment): follow-ups F1–F2`.
