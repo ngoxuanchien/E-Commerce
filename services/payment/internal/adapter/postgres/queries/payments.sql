@@ -23,8 +23,17 @@ SELECT * FROM payments WHERE checkout_id = $1 ORDER BY id;
 -- name: LockCheckoutPayments :many
 SELECT * FROM payments WHERE checkout_id = $1 ORDER BY id FOR UPDATE;
 
--- name: ListPendingOlderThan :many
-SELECT * FROM payments WHERE status = 'PENDING' AND created_at < @before ORDER BY created_at, id LIMIT @page_limit;
+-- name: ClaimPendingForReconcile :many
+-- Leases PENDING payments older than @before for @lease_until; a row stays hidden until the lease
+-- expires. Ordering by reconcile_after first keeps the least-recently-tried rows moving.
+UPDATE payments SET reconcile_after = @lease_until
+WHERE id IN (
+  SELECT p.id FROM payments p
+  WHERE p.status = 'PENDING' AND p.created_at < @before AND p.reconcile_after <= @now
+  ORDER BY p.reconcile_after, p.created_at, p.id
+  LIMIT @page_limit
+  FOR UPDATE SKIP LOCKED)
+RETURNING *;
 
 -- name: UpdatePayment :execrows
 UPDATE payments

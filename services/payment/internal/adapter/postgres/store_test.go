@@ -129,7 +129,7 @@ func TestStore(t *testing.T) {
 		assert.ErrorIs(t, err, app.ErrConcurrentUpdate)
 	})
 
-	t.Run("list checkout payments and stale pending", func(t *testing.T) {
+	t.Run("list checkout payments", func(t *testing.T) {
 		co := id()
 		old := newPayment(co)
 		old.Status = domain.StatusFailed
@@ -139,19 +139,65 @@ func TestStore(t *testing.T) {
 		got, err := s.ListCheckoutPayments(ctx, co)
 		require.NoError(t, err)
 		assert.Len(t, got, 2)
+	})
 
-		stalePending := newPayment(id())
-		stalePending.CreatedAt = base.Add(-2 * time.Hour)
-		insert(t, s, stalePending)
-		pend, err := s.ListPendingOlderThan(ctx, base.Add(-time.Hour), 100)
-		require.NoError(t, err)
-		var ids []string
-		for _, p := range pend {
-			ids = append(ids, p.ID)
+	t.Run("ClaimPendingForReconcile leases rows and never hands one to two claimers", func(t *testing.T) {
+		p := newPayment(id())
+		p.CreatedAt = base.Add(-2 * time.Hour) // older than any before in this test
+		insert(t, s, p)
+
+		now := base
+		claim := func(limit int) []domain.Payment {
+			var got []domain.Payment
+			require.NoError(t, s.InTx(ctx, func(tx app.Tx) error {
+				var err error
+				got, err = tx.ClaimPendingForReconcile(ctx, now, now.Add(-time.Hour), now.Add(30*time.Minute), limit)
+				return err
+			}))
+			return got
 		}
-		assert.Contains(t, ids, stalePending.ID)
-		assert.NotContains(t, ids, fresh.ID, "too young")
-		assert.NotContains(t, ids, old.ID, "not PENDING")
+		ids := func(rows []domain.Payment) []string {
+			var out []string
+			for _, r := range rows {
+				out = append(out, r.ID)
+			}
+			return out
+		}
+
+		// A claimed row is not handed out again before its lease ends.
+		first := claim(100)
+		require.Contains(t, ids(first), p.ID)
+		assert.Empty(t, claim(100), "the lease hides the row until it expires")
+
+		// Once the lease has passed, the row comes back.
+		now = base.Add(31 * time.Minute)
+		assert.Contains(t, ids(claim(100)), p.ID, "an expired lease releases the row")
+
+		// Two concurrent claimers never receive the same id.
+		seed := newPayment(id())
+		seed.CreatedAt = base.Add(-2 * time.Hour)
+		insert(t, s, seed)
+		now = base.Add(time.Hour)
+		results := make(chan []string, 2)
+		for range 2 {
+			go func() {
+				var got []string
+				require.NoError(t, s.InTx(ctx, func(tx app.Tx) error {
+					rows, err := tx.ClaimPendingForReconcile(ctx, now, now.Add(-time.Hour), now.Add(30*time.Minute), 100)
+					got = ids(rows)
+					return err
+				}))
+				results <- got
+			}()
+		}
+		seen := map[string]bool{}
+		for range 2 {
+			for _, id := range <-results {
+				assert.False(t, seen[id], "id %s claimed twice", id)
+				seen[id] = true
+			}
+		}
+		assert.True(t, seen[seed.ID], "the new row is claimable")
 	})
 
 	t.Run("provider event is recorded once and purged", func(t *testing.T) {

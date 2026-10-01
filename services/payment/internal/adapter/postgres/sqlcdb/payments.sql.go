@@ -74,8 +74,71 @@ func (q *Queries) CapturedAllocationFor(ctx context.Context, orderID uuid.UUID) 
 	return i, err
 }
 
+const claimPendingForReconcile = `-- name: ClaimPendingForReconcile :many
+UPDATE payments SET reconcile_after = $1
+WHERE id IN (
+  SELECT p.id FROM payments p
+  WHERE p.status = 'PENDING' AND p.created_at < $2 AND p.reconcile_after <= $3
+  ORDER BY p.reconcile_after, p.created_at, p.id
+  LIMIT $4
+  FOR UPDATE SKIP LOCKED)
+RETURNING id, checkout_id, buyer_id, method, provider, status, amount, captured, provider_ref, provider_txn_id, redirect_url, expires_at, failure_reason, version, created_at, updated_at, reconcile_after
+`
+
+type ClaimPendingForReconcileParams struct {
+	LeaseUntil time.Time
+	Before     time.Time
+	Now        time.Time
+	PageLimit  int32
+}
+
+// Leases PENDING payments older than @before for @lease_until; a row stays hidden until the lease
+// expires. Ordering by reconcile_after first keeps the least-recently-tried rows moving.
+func (q *Queries) ClaimPendingForReconcile(ctx context.Context, arg ClaimPendingForReconcileParams) ([]Payment, error) {
+	rows, err := q.db.Query(ctx, claimPendingForReconcile,
+		arg.LeaseUntil,
+		arg.Before,
+		arg.Now,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Payment
+	for rows.Next() {
+		var i Payment
+		if err := rows.Scan(
+			&i.ID,
+			&i.CheckoutID,
+			&i.BuyerID,
+			&i.Method,
+			&i.Provider,
+			&i.Status,
+			&i.Amount,
+			&i.Captured,
+			&i.ProviderRef,
+			&i.ProviderTxnID,
+			&i.RedirectUrl,
+			&i.ExpiresAt,
+			&i.FailureReason,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ReconcileAfter,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPayment = `-- name: GetPayment :one
-SELECT id, checkout_id, buyer_id, method, provider, status, amount, captured, provider_ref, provider_txn_id, redirect_url, expires_at, failure_reason, version, created_at, updated_at FROM payments WHERE id = $1
+SELECT id, checkout_id, buyer_id, method, provider, status, amount, captured, provider_ref, provider_txn_id, redirect_url, expires_at, failure_reason, version, created_at, updated_at, reconcile_after FROM payments WHERE id = $1
 `
 
 func (q *Queries) GetPayment(ctx context.Context, id uuid.UUID) (Payment, error) {
@@ -98,12 +161,13 @@ func (q *Queries) GetPayment(ctx context.Context, id uuid.UUID) (Payment, error)
 		&i.Version,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ReconcileAfter,
 	)
 	return i, err
 }
 
 const getPaymentByProviderRef = `-- name: GetPaymentByProviderRef :one
-SELECT id, checkout_id, buyer_id, method, provider, status, amount, captured, provider_ref, provider_txn_id, redirect_url, expires_at, failure_reason, version, created_at, updated_at FROM payments WHERE provider = $1 AND provider_ref = $2
+SELECT id, checkout_id, buyer_id, method, provider, status, amount, captured, provider_ref, provider_txn_id, redirect_url, expires_at, failure_reason, version, created_at, updated_at, reconcile_after FROM payments WHERE provider = $1 AND provider_ref = $2
 `
 
 type GetPaymentByProviderRefParams struct {
@@ -131,6 +195,7 @@ func (q *Queries) GetPaymentByProviderRef(ctx context.Context, arg GetPaymentByP
 		&i.Version,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ReconcileAfter,
 	)
 	return i, err
 }
@@ -238,7 +303,7 @@ func (q *Queries) ListAllocations(ctx context.Context, paymentID uuid.UUID) ([]P
 }
 
 const listCheckoutPayments = `-- name: ListCheckoutPayments :many
-SELECT id, checkout_id, buyer_id, method, provider, status, amount, captured, provider_ref, provider_txn_id, redirect_url, expires_at, failure_reason, version, created_at, updated_at FROM payments WHERE checkout_id = $1 ORDER BY id
+SELECT id, checkout_id, buyer_id, method, provider, status, amount, captured, provider_ref, provider_txn_id, redirect_url, expires_at, failure_reason, version, created_at, updated_at, reconcile_after FROM payments WHERE checkout_id = $1 ORDER BY id
 `
 
 func (q *Queries) ListCheckoutPayments(ctx context.Context, checkoutID uuid.UUID) ([]Payment, error) {
@@ -267,52 +332,7 @@ func (q *Queries) ListCheckoutPayments(ctx context.Context, checkoutID uuid.UUID
 			&i.Version,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listPendingOlderThan = `-- name: ListPendingOlderThan :many
-SELECT id, checkout_id, buyer_id, method, provider, status, amount, captured, provider_ref, provider_txn_id, redirect_url, expires_at, failure_reason, version, created_at, updated_at FROM payments WHERE status = 'PENDING' AND created_at < $1 ORDER BY created_at, id LIMIT $2
-`
-
-type ListPendingOlderThanParams struct {
-	Before    time.Time
-	PageLimit int32
-}
-
-func (q *Queries) ListPendingOlderThan(ctx context.Context, arg ListPendingOlderThanParams) ([]Payment, error) {
-	rows, err := q.db.Query(ctx, listPendingOlderThan, arg.Before, arg.PageLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Payment
-	for rows.Next() {
-		var i Payment
-		if err := rows.Scan(
-			&i.ID,
-			&i.CheckoutID,
-			&i.BuyerID,
-			&i.Method,
-			&i.Provider,
-			&i.Status,
-			&i.Amount,
-			&i.Captured,
-			&i.ProviderRef,
-			&i.ProviderTxnID,
-			&i.RedirectUrl,
-			&i.ExpiresAt,
-			&i.FailureReason,
-			&i.Version,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.ReconcileAfter,
 		); err != nil {
 			return nil, err
 		}
@@ -325,7 +345,7 @@ func (q *Queries) ListPendingOlderThan(ctx context.Context, arg ListPendingOlder
 }
 
 const lockCheckoutPayments = `-- name: LockCheckoutPayments :many
-SELECT id, checkout_id, buyer_id, method, provider, status, amount, captured, provider_ref, provider_txn_id, redirect_url, expires_at, failure_reason, version, created_at, updated_at FROM payments WHERE checkout_id = $1 ORDER BY id FOR UPDATE
+SELECT id, checkout_id, buyer_id, method, provider, status, amount, captured, provider_ref, provider_txn_id, redirect_url, expires_at, failure_reason, version, created_at, updated_at, reconcile_after FROM payments WHERE checkout_id = $1 ORDER BY id FOR UPDATE
 `
 
 func (q *Queries) LockCheckoutPayments(ctx context.Context, checkoutID uuid.UUID) ([]Payment, error) {
@@ -354,6 +374,7 @@ func (q *Queries) LockCheckoutPayments(ctx context.Context, checkoutID uuid.UUID
 			&i.Version,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ReconcileAfter,
 		); err != nil {
 			return nil, err
 		}

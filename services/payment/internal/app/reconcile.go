@@ -40,13 +40,21 @@ func NewReconciler(store Store, providers Providers, obs *Observer, cfg Reconcil
 	return &Reconciler{store: store, providers: providers, obs: obs, cfg: cfg, now: now, logger: logger}
 }
 
-// RunOnce polls PENDING payments older than MinAge and expires those stuck past expires_at plus a
+// RunOnce leases PENDING payments older than MinAge and expires those stuck past expires_at plus a
 // 5 minute grace, then purges idempotency keys (24 h) and provider events (30 days). A provider error
-// for one payment is logged and skipped; the next run retries it.
+// for one payment is logged and skipped; the next run retries it once the lease expires.
+//
+// The lease is what keeps two replicas off the same row without holding a row lock across a provider
+// call, which would block the webhooks that ApplyObserved runs in their own transaction. A replica
+// that crashes mid-run therefore delays its rows by one interval, never longer.
 func (r *Reconciler) RunOnce(ctx context.Context) error {
 	now := r.now()
-	pending, err := r.store.ListPendingOlderThan(ctx, now.Add(-r.cfg.MinAge), reconcileBatch)
-	if err != nil {
+	var pending []domain.Payment
+	if err := r.store.InTx(ctx, func(tx Tx) error {
+		var err error
+		pending, err = tx.ClaimPendingForReconcile(ctx, now, now.Add(-r.cfg.MinAge), now.Add(r.cfg.Interval), reconcileBatch)
+		return err
+	}); err != nil {
 		return err
 	}
 	for _, p := range pending {
@@ -63,8 +71,10 @@ func (r *Reconciler) RunOnce(ctx context.Context) error {
 	if _, err := r.store.PurgeIdempotencyKeysBefore(ctx, now.Add(-idempotencyKeyTTL)); err != nil {
 		return err
 	}
-	_, err = r.store.PurgeProviderEventsBefore(ctx, now.Add(-providerEventTTL))
-	return err
+	if _, err := r.store.PurgeProviderEventsBefore(ctx, now.Add(-providerEventTTL)); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *Reconciler) reconcile(ctx context.Context, p domain.Payment, now time.Time) error {

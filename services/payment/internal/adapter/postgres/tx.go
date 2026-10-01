@@ -75,6 +75,16 @@ func (t *txStore) LockCheckoutPayments(ctx context.Context, checkoutID string) (
 	return toDomainPayments(rows), nil
 }
 
+func (t *txStore) ClaimPendingForReconcile(ctx context.Context, now, before, leaseUntil time.Time, limit int) ([]domain.Payment, error) {
+	rows, err := t.q.ClaimPendingForReconcile(ctx, sqlcdb.ClaimPendingForReconcileParams{
+		LeaseUntil: leaseUntil, Before: before, Now: now, PageLimit: int32(limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("claim pending for reconcile: %w", err)
+	}
+	return toDomainPayments(rows), nil
+}
+
 func (t *txStore) UpdatePayment(ctx context.Context, p domain.Payment) error {
 	uid, err := mustParseUUID(p.ID)
 	if err != nil {

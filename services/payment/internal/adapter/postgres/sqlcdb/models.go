@@ -51,22 +51,23 @@ type Outbox struct {
 }
 
 type Payment struct {
-	ID            uuid.UUID
-	CheckoutID    uuid.UUID
-	BuyerID       uuid.UUID
-	Method        string
-	Provider      string
-	Status        string
-	Amount        int64
-	Captured      bool
-	ProviderRef   *string
-	ProviderTxnID *string
-	RedirectUrl   *string
-	ExpiresAt     time.Time
-	FailureReason *string
-	Version       int32
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID             uuid.UUID
+	CheckoutID     uuid.UUID
+	BuyerID        uuid.UUID
+	Method         string
+	Provider       string
+	Status         string
+	Amount         int64
+	Captured       bool
+	ProviderRef    *string
+	ProviderTxnID  *string
+	RedirectUrl    *string
+	ExpiresAt      time.Time
+	FailureReason  *string
+	Version        int32
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	ReconcileAfter time.Time
 }
 
 type PaymentAllocation struct {

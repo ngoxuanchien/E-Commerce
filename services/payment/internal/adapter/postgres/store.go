@@ -75,14 +75,6 @@ func (s *Store) ListCheckoutPayments(ctx context.Context, checkoutID string) ([]
 	return toDomainPayments(rows), nil
 }
 
-func (s *Store) ListPendingOlderThan(ctx context.Context, before time.Time, limit int) ([]domain.Payment, error) {
-	rows, err := s.q.ListPendingOlderThan(ctx, sqlcdb.ListPendingOlderThanParams{Before: before, PageLimit: int32(limit)})
-	if err != nil {
-		return nil, fmt.Errorf("list pending payments: %w", err)
-	}
-	return toDomainPayments(rows), nil
-}
-
 func (s *Store) GetRefundByProviderRef(ctx context.Context, provider, ref string) (app.Refund, error) {
 	r, err := s.q.GetRefundByProviderRef(ctx, sqlcdb.GetRefundByProviderRefParams{Provider: provider, ProviderRefundRef: &ref})
 	if errors.Is(err, pgx.ErrNoRows) {

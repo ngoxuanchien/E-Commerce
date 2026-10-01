@@ -42,7 +42,6 @@ type Store interface {
 	GetPayment(ctx context.Context, id string) (domain.Payment, error)                         // ErrNotFound
 	GetPaymentByProviderRef(ctx context.Context, provider, ref string) (domain.Payment, error) // ErrNotFound
 	ListCheckoutPayments(ctx context.Context, checkoutID string) ([]domain.Payment, error)
-	ListPendingOlderThan(ctx context.Context, before time.Time, limit int) ([]domain.Payment, error)
 	GetRefundByProviderRef(ctx context.Context, provider, ref string) (Refund, error) // ErrNotFound
 	PurgeProviderEventsBefore(ctx context.Context, t time.Time) (int64, error)
 	PurgeIdempotencyKeysBefore(ctx context.Context, t time.Time) (int64, error)
@@ -52,7 +51,11 @@ type Store interface {
 type Tx interface {
 	InsertPayment(ctx context.Context, p NewPayment) error
 	LockCheckoutPayments(ctx context.Context, checkoutID string) ([]domain.Payment, error) // SELECT … FOR UPDATE ORDER BY id
-	UpdatePayment(ctx context.Context, p domain.Payment) error                             // version check → ErrConcurrentUpdate; bumps version, updated_at
+	// ClaimPendingForReconcile leases PENDING payments created before `before` until leaseUntil, so two
+	// replicas never poll one payment and a crashed one's rows return once the lease expires. It takes
+	// the row lock only for its own update, never across a provider call.
+	ClaimPendingForReconcile(ctx context.Context, now, before, leaseUntil time.Time, limit int) ([]domain.Payment, error)
+	UpdatePayment(ctx context.Context, p domain.Payment) error // version check → ErrConcurrentUpdate; bumps version, updated_at
 	SetSession(ctx context.Context, paymentID, providerRef, redirectURL string) error
 	Allocations(ctx context.Context, paymentID string) ([]Allocation, error)
 	InsertProviderEvent(ctx context.Context, provider, key string, at time.Time) (first bool, err error)

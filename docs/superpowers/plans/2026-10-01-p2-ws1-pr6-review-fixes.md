@@ -9,9 +9,9 @@ Each task: write the failing test first, make it pass, run `go test -race -count
   `internal/adapter/fake/provider.go`: when `store.get` returns `app.ErrNotFound`, `Query` returns `domain.Observed{State: domain.ObservedExpired}` and `Cancel` returns `(false, nil)`. `Refund`/`QueryRefund`/`Submit` keep returning the error. Add a doc comment citing the port contract ("a session that cannot exist is unpayable").
   Tests: unit tests for Query/Cancel on an unknown payment id; an app- or itest-level test where a PENDING FAKE payment has no `fake_sessions` row and a new `CreatePayment` for that checkout succeeds (old row → EXPIRED, new attempt created) instead of returning `ErrProviderUnavailable`.
 
-- [ ] **T2 — Reconciler claims rows with a lease (review #2, spec §6 `FOR UPDATE SKIP LOCKED`).**
+- [x] **T2 — Reconciler claims rows with a lease (review #2, spec §6 `FOR UPDATE SKIP LOCKED`).**
   Do NOT hold row locks across provider calls: `ApplyObserved` locks the checkout's rows in its own transaction and webhooks would block. Instead:
-  - New migration `000004_review_fixes.up.sql` (+ down): `ALTER TABLE payments ADD COLUMN IF NOT EXISTS reconcile_after timestamptz NOT NULL DEFAULT '-infinity'`.
+  - New migration `000004_review_fixes.up.sql` (+ down): `ALTER TABLE payments ADD COLUMN IF NOT EXISTS reconcile_after timestamptz NOT NULL DEFAULT '1970-01-01 00:00:00+00'` (done — the plan's `'-infinity'` is not scannable into Go's `time.Time` and broke every `SELECT *` over `payments`; the epoch is the same sentinel for the `reconcile_after <= @now` comparison).
   - Replace `ListPendingOlderThan` with `ClaimPendingForReconcile :many`:
     ```sql
     UPDATE payments SET reconcile_after = @lease_until
