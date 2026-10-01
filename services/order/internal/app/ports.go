@@ -48,7 +48,10 @@ type Store interface {
 	// IdempotencyKey reads (userID, key) without claiming it; found is false
 	// if there is no row.
 	IdempotencyKey(ctx context.Context, userID, key string) (rec IdempotencyRecord, found bool, err error)
-	// DeleteIdempotencyKey releases the key if claimedAt is still its claim.
+	// DeleteIdempotencyKey releases the key if claimedAt is still its claim and
+	// the key is still in progress. A completed key is kept: a run that saw an
+	// error although its COMMIT landed must leave the stored response for the
+	// retry to replay, so a release that matches no row is a no-op, not an error.
 	DeleteIdempotencyKey(ctx context.Context, userID, key string, claimedAt time.Time) error
 	DeleteIdempotencyKeysBefore(ctx context.Context, before time.Time) (int64, error)
 }
