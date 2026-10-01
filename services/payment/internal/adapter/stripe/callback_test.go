@@ -123,6 +123,35 @@ func TestWebhookAppliesTheQueriedSession(t *testing.T) {
 	assert.Equal(t, "/v1/checkout/sessions/"+session, calls[0].path)
 }
 
+// A correctly signed checkout.session.completed whose paid session totals a different amount must not
+// capture: the observer flags the mismatch and leaves the payment PENDING with no outbox event. The
+// handler answers 200 as it does today (the mismatch is logged, not retried: a retry would re-query
+// the same session).
+func TestWebhookWrongAmountAnswers200AndDoesNotCapture(t *testing.T) {
+	e := newCBEnv(t)
+	p, session := e.payment(350_000)
+	const wrong = 349_999
+	e.api.set(opRetrieveSession, reply{fixture: "session_complete_paid", override: sessionFor(session, p.ID, p.CheckoutID, wrong)})
+
+	var ev map[string]any
+	require.NoError(t, json.Unmarshal(event(t, "event_checkout_session_completed", "evt_"+uid(), session, p.ID), &ev))
+	obj := ev["data"].(map[string]any)["object"].(map[string]any)
+	require.Equal(t, "paid", obj["payment_status"])
+	obj["amount_total"], obj["amount_subtotal"] = wrong, wrong
+	body, err := json.Marshal(ev)
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusOK, e.deliver(body))
+
+	got := e.get(p.ID)
+	assert.Equal(t, domain.StatusPending, got.Status)
+	assert.False(t, got.Captured)
+	assert.Empty(t, got.ProviderTxnID)
+	assert.Equal(t, p.Version, got.Version)
+	assert.Empty(t, e.outboxTypes(p), "neither PaymentSucceeded nor PaymentFailed is published")
+	assert.Len(t, e.api.calls(opRetrieveSession), 1)
+}
+
 // Review Focus 4: the signature is checked over the raw bytes before anything is parsed or queried.
 func TestWebhookRejectsBadSignatures(t *testing.T) {
 	e := newCBEnv(t)
