@@ -1,10 +1,13 @@
 import { screen, within } from '@testing-library/react';
 import { HttpResponse, delay, http } from 'msw';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { SEED } from '@/mocks/seed';
 import { getDb } from '@/mocks/state';
 import { server } from '@/test/server';
 import { currentPath, renderApp } from '@/test/render';
+import { redirectTo } from '@/lib/redirect';
+
+vi.mock('@/lib/redirect', () => ({ redirectTo: vi.fn() }));
 
 type User = ReturnType<typeof renderApp>['user'];
 
@@ -163,4 +166,134 @@ test('server VALIDATION_ERROR details land on the address fields', async () => {
 test('nothing selected shows a way back to the cart', async () => {
   renderApp('/checkout', { as: 'an@example.com' });
   expect(await screen.findByText('Không có sản phẩm nào để thanh toán')).toBeInTheDocument();
+});
+
+test('payment method radios default to COD', async () => {
+  getDb().state.carts[SEED.users.an] = { [SEED.skus.bowl11]: 1 };
+  renderApp(`/checkout?sku=${SEED.skus.bowl11}`, { as: 'an@example.com' });
+
+  const fieldset = await screen.findByRole('group', { name: 'Phương thức thanh toán' });
+  const radios = within(fieldset).getAllByRole('radio');
+  expect(radios).toHaveLength(3);
+
+  const cod = within(fieldset).getByDisplayValue('COD');
+  const vnpay = within(fieldset).getByDisplayValue('VNPAY');
+  const stripe = within(fieldset).getByDisplayValue('STRIPE');
+
+  expect(cod).toBeChecked();
+  expect(vnpay).not.toBeChecked();
+  expect(stripe).not.toBeChecked();
+
+  expect(within(fieldset).getByTestId('payment-method-COD')).toBeInTheDocument();
+  expect(within(fieldset).getByTestId('payment-method-VNPAY')).toBeInTheDocument();
+  expect(within(fieldset).getByTestId('payment-method-STRIPE')).toBeInTheDocument();
+});
+
+test('choosing VNPAY and submitting calls startPayment with correct idempotency key', async () => {
+  getDb().state.carts[SEED.users.an] = { [SEED.skus.bowl11]: 1 };
+  let checkoutPaymentMethod: string | undefined;
+  let paymentIdempotencyKey: string | undefined;
+  
+  server.use(
+    http.post('*/api/checkout', async ({ request }) => {
+      const idemKey = request.headers.get('Idempotency-Key') ?? '';
+      const body = await request.json() as { payment_method?: string };
+      checkoutPaymentMethod = body.payment_method;
+      const response = getDb().checkout(SEED.users.an, idemKey, body as any);
+      return HttpResponse.json(response, { status: 201 });
+    }),
+    http.post('*/api/payments', async ({ request }) => {
+      paymentIdempotencyKey = request.headers.get('Idempotency-Key') ?? undefined;
+      const body = await request.json() as { checkout_id: string };
+      const response = getDb().createPayment(SEED.users.an, paymentIdempotencyKey ?? '', body);
+      return HttpResponse.json(response, { status: 201 });
+    }),
+  );
+  
+  const { user } = renderApp(`/checkout?sku=${SEED.skus.bowl11}`, { as: 'an@example.com' });
+  await fillAddress(user);
+  
+  const fieldset = await screen.findByRole('group', { name: 'Phương thức thanh toán' });
+  const vnpayRadio = within(fieldset).getByDisplayValue('VNPAY');
+  await user.click(vnpayRadio);
+  
+  expect(screen.getByRole('button', { name: 'Đặt hàng và thanh toán' })).toBeInTheDocument();
+  
+  await user.click(screen.getByRole('button', { name: 'Đặt hàng và thanh toán' }));
+
+  expect(checkoutPaymentMethod).toBe('VNPAY');
+  expect(paymentIdempotencyKey).toBeDefined();
+  expect(typeof paymentIdempotencyKey).toBe('string');
+  expect(redirectTo).toHaveBeenCalledWith(expect.stringMatching(/\/__mock\/pay\//));
+});
+
+test('payment method selection persists and sends correct payment method', async () => {
+  getDb().state.carts[SEED.users.an] = { [SEED.skus.bowl11]: 1 };
+  let paymentMethods: (string | undefined)[] = [];
+
+  server.use(
+    http.post('*/api/checkout', async ({ request }) => {
+      const body = await request.json() as { payment_method?: string };
+      paymentMethods.push(body.payment_method);
+      return undefined;
+    }),
+  );
+
+  const { user } = renderApp(`/checkout?sku=${SEED.skus.bowl11}`, { as: 'an@example.com' });
+  await fillAddress(user);
+
+  const fieldset = await screen.findByRole('group', { name: 'Phương thức thanh toán' });
+  const stripeRadio = within(fieldset).getByDisplayValue('STRIPE');
+  await user.click(stripeRadio);
+
+  expect(screen.getByRole('button', { name: 'Đặt hàng và thanh toán' })).toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: 'Đặt hàng và thanh toán' }));
+
+  expect(paymentMethods).toContain('STRIPE');
+});
+
+test('payment 503 error shows retryable toast and navigates to AWAITING_PAYMENT', async () => {
+  getDb().state.carts[SEED.users.an] = { [SEED.skus.bowl11]: 1 };
+
+  server.use(
+    http.post('*/api/payments', () => HttpResponse.json({ error: { code: 'UPSTREAM_UNAVAILABLE', message: 'service down' } }, { status: 503 })),
+  );
+
+  const { user } = renderApp(`/checkout?sku=${SEED.skus.bowl11}`, { as: 'an@example.com' });
+  await fillAddress(user);
+
+  const fieldset = await screen.findByRole('group', { name: 'Phương thức thanh toán' });
+  const vnpayRadio = within(fieldset).getByDisplayValue('VNPAY');
+  await user.click(vnpayRadio);
+
+  await user.click(screen.getByRole('button', { name: 'Đặt hàng và thanh toán' }));
+
+  expect(await screen.findByText(/Đơn đã được tạo, vui lòng thanh toán trước/)).toBeInTheDocument();
+  expect(currentPath()).toBe('/orders?status=AWAITING_PAYMENT');
+});
+
+test('payment 409 BELOW_PROVIDER_MINIMUM shows reason and navigates', async () => {
+  getDb().state.carts[SEED.users.an] = { [SEED.skus.bowl11]: 1 };
+
+  server.use(
+    http.post('*/api/payments', () =>
+      HttpResponse.json(
+        { error: { code: 'INVALID_STATE_TRANSITION', message: 'below minimum', details: { reason: 'BELOW_PROVIDER_MINIMUM' } } },
+        { status: 409 },
+      ),
+    ),
+  );
+
+  const { user } = renderApp(`/checkout?sku=${SEED.skus.bowl11}`, { as: 'an@example.com' });
+  await fillAddress(user);
+
+  const fieldset = await screen.findByRole('group', { name: 'Phương thức thanh toán' });
+  const vnpayRadio = within(fieldset).getByDisplayValue('VNPAY');
+  await user.click(vnpayRadio);
+
+  await user.click(screen.getByRole('button', { name: 'Đặt hàng và thanh toán' }));
+
+  expect(await screen.findByText('Số tiền thấp hơn mức tối thiểu của cổng thanh toán. Vui lòng chọn phương thức khác.')).toBeInTheDocument();
+  expect(currentPath()).toBe('/orders?status=AWAITING_PAYMENT');
 });
