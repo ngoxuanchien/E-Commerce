@@ -74,3 +74,79 @@ test and then fixed. The tests now run as ordinary regression tests:
 | 4 | Confirm → ship → deliver → complete; cancelling returns stock | `api/flow_test.go`, `happy-path.spec.ts`, `api/cancel_test.go`, `cancel-restock.spec.ts` |
 | 5 | Stock never oversells under concurrent orders | `api/oversell_test.go`, `oversell.spec.ts`, `api/idempotency_test.go`, `idempotency.spec.ts` |
 | 6 | Automated tests pass in every service; a checkout is traceable gateway → order → catalog | CI `go` matrix and `web` job; `api/trace_test.go` |
+
+## P2 timers (e2e mode; defaults in brackets)
+
+When `make e2e` runs, it restarts order, payment and ledger services with fast
+timers to keep tests quick. A later `make up-app` restores the defaults.
+
+| Timer | e2e value | Default | Purpose |
+|---|---|---|---|
+| `PAYMENT_TIMEOUT` | 40 s | 30 m | Payment attempt expiry |
+| `SWEEPER_INTERVAL` | 2 s | 60 s | Order state cleanup period |
+| `AUTO_COMPLETE_AFTER` | 5 s | 72 h | Escrow release after delivery |
+| `RECONCILE_INTERVAL` | 2 s | 60 s | Payment reconciliation period |
+| `RECONCILE_MIN_AGE` | 3 s | 2 m | Age before a PENDING payment is queried |
+| `FAKE_WEBHOOK_DELAY` | 300 ms | 500 ms | Delay before FAKE webhook is sent |
+| `PAYOUT_SETTLE_INTERVAL` | 1 s | 30 s | Payout settlement checker period |
+| `PAYOUT_SETTLE_DELAY` | 2 s | 1 m | Delay before a payout is settled |
+
+## P2 success criteria → tests
+
+| # | Criterion | Automated by |
+|---|---|---|
+| 1 | Checkout with online payment (VNPay, Stripe, FAKE); escrow captures and auto-completes | `api/online_test.go::TestOnlineCheckoutEscrowAndAutoComplete`, `api/stripe_test.go::TestStripeMethodUsesItsAdapter`, `playwright/tests/payment.spec.ts` |
+| 2 | Failed payment can be retried; payment timeout cancels and restocks | `api/payment_failure_test.go::TestFailedPaymentCanBeRetried`, `api/payment_failure_test.go::TestPaymentTimeoutCancelsAndRestocks` |
+| 3 | Seller cancel after payment refunds that order; COD never touches ledger | `api/refund_test.go::TestSellerCancelAfterPaymentRefundsThatOrder`, `api/refund_test.go::TestCODCheckoutNeverTouchesTheLedger` |
+| 4 | Payment method routing (VNPay vs Stripe) uses the correct adapter | `api/online_test.go::TestStripeMethodUsesItsAdapter` |
+| 5 | Payout settles and cannot overdraw | `api/payout_test.go::TestPayoutSettlesAndCannotOverdraw` |
+| 6 | Duplicate and stale webhooks apply once; dropped webhooks are recovered by reconciler; trial balance always zero | `api/callbacks_test.go::TestDuplicateAndStaleWebhooksApplyOnce`, `api/callbacks_test.go::TestDroppedWebhookIsRecovered`, `api/ledger_test.go` (trial balance check) |
+| 7 | Real VNPay sandbox / Stripe test mode (manual): checkout paid, refund on cancel | `docs/payments-sandbox.md` (manual runbook) |
+
+## P2 decisions
+
+These refinements and design choices emerged during development and are documented
+here for future maintainers and changes.
+
+1. **FAKE webhook trace.** The FAKE provider posts its webhook from a detached background
+   context, so its trace ID cannot be known from outside. The webhook trace test arms
+   `hook_webhook=drop` and posts a correctly signed FAKE webhook itself before the
+   reconciler is eligible (`RECONCILE_MIN_AGE`), with its own `traceparent`.
+
+2. **Payout over balance.** The test requests a payout of 50,000 ₫ (the minimum) on an
+   empty wallet to verify a 409 `INSUFFICIENT_FUNDS` response. Amounts below the minimum
+   answer 400 first.
+
+3. **Refund visibility.** The trial balance has no per-order view. A refund's ledger effect
+   is checked through the seller wallet's `in_escrow` field (drops back by the order total)
+   and the zero trial balance.
+
+4. **e2e stack recreation.** `make e2e` re-runs `make up-app` with fast timers
+   (`E2E_TIMERS=1`), so the compose stack recreates order, payment and ledger services.
+   A later `make up-app` (without `E2E_TIMERS`) restores the default timers.
+
+5. **Sequential test execution.** API tests run in sequence (`t.Sequential`) because the
+   10/min login rate limiter is shared per IP, and wallet baselines assume no other money
+   is moving. Only one `go test` process may use the stack at a time.
+
+6. **Client HTTP timeout.** The test client's HTTP timeout is 4 minutes, covering the
+   `RetryRateLimited` 3-minute 429 backoff budget. The old 30 s cap made rate-limited
+   logins fail.
+
+7. **FAKE HTML validation bypass.** `GET /api/payments/fake/checkout/{id}` returns `text/html`,
+   which `pkg/testutil.ContractTransport` (kin-openapi v0.149) cannot validate. The bypass
+   is in `api/harness_test.go`; every other call is contract-checked. The POST to the same
+   path (form submit) is validated.
+
+8. **Late success and double charge.** Payment-svc reports a still-payable attempt as
+   `UNAVAILABLE` to the order sweeper, so with `hook_cancel=unsupported` the orders are
+   cancelled only after `expires_at`. The test bounds the wait by `expires_at`.
+
+## P2 findings
+
+| Id | Finding | Owner | Status |
+|---|---|---|---|
+| F-P2-1 | `pkg/testutil.ContractTransport` cannot validate `text/html` responses (kin-openapi v0.149) | WS0' (`pkg/`) | Bypassed in e2e (`api/harness_test.go`) |
+
+No service bugs were found by the API test scenarios. Playwright results will be added
+as those tests are completed.

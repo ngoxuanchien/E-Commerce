@@ -234,7 +234,11 @@ func (s *seeder) summary(ctx context.Context, shops []sellerState, bs []*client.
 				wallet, _ = c.Wallet(ctx)
 			}
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%d ₫\t%d ₫\t%d ₫\n", sd.Account.FullName, wallet.Available, wallet.InEscrow, wallet.PendingPayout)
+		if err != nil {
+			_, _ = fmt.Fprintf(w, "%s\tn/a\tn/a\tn/a\n", sd.Account.FullName)
+		} else {
+			_, _ = fmt.Fprintf(w, "%s\t%d ₫\t%d ₫\t%d ₫\n", sd.Account.FullName, wallet.Available, wallet.InEscrow, wallet.PendingPayout)
+		}
 	}
 	_ = w.Flush()
 
