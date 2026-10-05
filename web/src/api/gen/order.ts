@@ -270,8 +270,8 @@ export interface components {
         OrderShop: {
             id: components["schemas"]["Id"];
             name: string;
-            /** @description Shop slug for links (P2; optional until WS3' marks it required) */
-            slug?: string;
+            /** @description Shop slug for links */
+            slug: string;
         };
         OrderItem: {
             sku_id: components["schemas"]["Id"];
@@ -305,24 +305,21 @@ export interface components {
             /** @enum {string} */
             payment_method: "COD" | "VNPAY" | "STRIPE";
             /**
-             * @description NONE for COD (P2; optional until WS3' marks it required)
+             * @description NONE for COD
              * @enum {string}
              */
-            payment_status?: "NONE" | "UNPAID" | "PAID" | "REFUND_PENDING" | "REFUNDED";
+            payment_status: "NONE" | "UNPAID" | "PAID" | "REFUND_PENDING" | "REFUNDED";
             /**
              * Format: date-time
-             * @description null for COD (P2; optional until WS3' marks it required)
+             * @description null for COD
              */
-            payment_deadline?: string | null;
-            /** @description 0 for COD (P2; optional until WS3' marks it required) */
-            commission_rate_bps?: number;
-            /** @description 0 for COD (P2; optional until WS3' marks it required) */
-            commission_amount?: components["schemas"]["Money"];
-            /**
-             * Format: date-time
-             * @description (P2; optional until WS3' marks it required)
-             */
-            delivered_at?: string | null;
+            payment_deadline: string | null;
+            /** @description 0 for COD */
+            commission_rate_bps: number;
+            /** @description 0 for COD */
+            commission_amount: components["schemas"]["Money"];
+            /** Format: date-time */
+            delivered_at: string | null;
             cancel_reason: string | null;
             history: components["schemas"]["OrderHistoryEntry"][];
             created_at: components["schemas"]["Timestamp"];

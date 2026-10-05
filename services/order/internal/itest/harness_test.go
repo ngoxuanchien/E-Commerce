@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -23,7 +24,11 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
 
+	orderv1 "github.com/ngoxuanchien/e-commerce/gen/order/v1"
 	"github.com/ngoxuanchien/e-commerce/pkg/authctx"
 	"github.com/ngoxuanchien/e-commerce/pkg/event"
 	"github.com/ngoxuanchien/e-commerce/pkg/kafkax"
@@ -31,6 +36,7 @@ import (
 	"github.com/ngoxuanchien/e-commerce/pkg/testutil"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/catalog"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/catalog/catalogfake"
+	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/payment/paymentfake"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/bootstrap"
 	"github.com/ngoxuanchien/e-commerce/services/order/migrations"
 )
@@ -40,7 +46,24 @@ const (
 	eventsDir       = "../../../../api/events"
 	pendingTimeout  = 2 * time.Second
 	sweeperInterval = 500 * time.Millisecond
+	paymentTimeout  = time.Hour
+	autoComplete    = time.Hour
+	commissionRate  = 500
 )
+
+// baseConfig is the wiring every scenario shares: VNPAY is the only online
+// method, the commission is 5 % and a checkout waits an hour for its payment.
+func baseConfig() bootstrap.Config {
+	return bootstrap.Config{
+		ShippingFeeFlat: 30_000, SweeperInterval: sweeperInterval, PendingTimeout: pendingTimeout,
+		Catalog:           catalog.Config{Timeout: 300 * time.Millisecond, Retries: 2, Backoff: 10 * time.Millisecond},
+		RelayInterval:     50 * time.Millisecond,
+		OnlineMethods:     []string{"VNPAY"},
+		CommissionRateBps: commissionRate,
+		PaymentTimeout:    paymentTimeout,
+		AutoCompleteAfter: autoComplete,
+	}
+}
 
 var ctx = context.Background()
 
@@ -59,17 +82,29 @@ func TestOrderAPI(t *testing.T) {
 	t.Run("cart flags a SKU that became unavailable", h.testCartFlagsUnavailable)
 	t.Run("cart answers 503 while catalog is down", h.testCartCatalogDown)
 	t.Run("checkout from two shops", h.testCheckoutTwoShops)
+	t.Run("checkout with VNPAY awaits payment", h.testCheckoutOnline)
+	t.Run("checkout rejects a method that is not enabled", h.testCheckoutMethodNotEnabled)
 	t.Run("checkout is all-or-nothing on shortage", h.testCheckoutOutOfStock)
 	t.Run("checkout 503 frees the idempotency key", h.testCheckoutCatalogDownThenRetry)
 	t.Run("checkout with an empty cart", h.testCheckoutEmptyCart)
 	t.Run("lifecycle to COMPLETED", h.testLifecycle)
 	t.Run("buyer cannot cancel a confirmed order", h.testBuyerCannotCancelConfirmed)
+	t.Run("buyer cancels an unpaid checkout", h.testBuyerCancelsAwaitingCheckout)
+	t.Run("seller cannot act on an unpaid order", h.testSellerCannotActOnAwaitingPayment)
 	t.Run("strangers get 404 and non-sellers 403", h.testStrangers)
 	t.Run("concurrent confirm and cancel: exactly one wins", h.testConcurrentConfirmCancel)
 	t.Run("upper-case ids are canonicalized", h.testUppercaseIDs)
 	t.Run("order lists paginate", h.testPagination)
 	t.Run("sweeper cancels a crashed checkout in time", h.testSweeperCancelsCrashedCheckout)
 	t.Run("readiness covers postgres, redis and kafka", h.testReadiness)
+	t.Run("sweeper cancels a checkout whose payment never arrives", h.testPaymentTimeout)
+	t.Run("a paid checkout survives the sweeper", h.testPaymentTimeoutPaidUntouched)
+	t.Run("an unavailable payment-svc is retried, then cancels", h.testPaymentTimeoutUnavailableThenNotPaid)
+	t.Run("sweeper completes a delivered order on time", h.testAutoComplete)
+	t.Run("a captured payment confirms its orders", h.testPaymentSucceeded)
+	t.Run("a late capture is refunded, not lost", h.testLateSuccessThenRefund)
+	t.Run("a seller cancelling a paid order asks for a refund", h.testPaidOrderCancelledBySeller)
+	t.Run("payment-svc reads a checkout over OrderInternal", h.testGetCheckout)
 	t.Run("every published event matches its schema", h.testEventsValid)
 }
 
@@ -83,8 +118,14 @@ func sellerOf(shop catalogfake.Shop) caller {
 type harness struct {
 	app      *bootstrap.App
 	pool     *pgxpool.Pool
+	rdb      *redis.Client
 	fake     *catalogfake.Fake
+	pay      *paymentfake.Fake
+	producer bootstrap.Producer
+	brokers  []string    // Kafka bootstrap brokers
+	kafka    *kgo.Client // publishes the payment.events the App consumes
 	events   *eventLog
+	orderRPC orderv1.OrderInternalClient // OrderInternal, as payment-svc calls it
 	baseURL  string
 	contract *http.Client // validates against order.yaml
 	raw      *http.Client // for deliberately invalid requests
@@ -104,16 +145,21 @@ func newHarness(t *testing.T) *harness {
 
 	brokers := testutil.Kafka(t)
 	testutil.CreateTopic(t, brokers, event.TopicOrderEvents, 3)
+	testutil.CreateTopic(t, brokers, event.TopicPaymentEvents, 3)
 	producer, err := kafkax.NewProducer(brokers)
 	require.NoError(t, err)
 	t.Cleanup(producer.Close)
+	kafka, err := kgo.NewClient(kgo.SeedBrokers(brokers...))
+	require.NoError(t, err)
+	t.Cleanup(kafka.Close)
 
 	fake := catalogfake.New()
-	a := bootstrap.New(bootstrap.Config{
-		ShippingFeeFlat: 30_000, SweeperInterval: sweeperInterval, PendingTimeout: pendingTimeout,
-		Catalog:       catalog.Config{Timeout: 300 * time.Millisecond, Retries: 2, Backoff: 10 * time.Millisecond},
-		RelayInterval: 50 * time.Millisecond,
-	}, bootstrap.Deps{Pool: pool, Redis: rdb, CatalogConn: fake.Dial(t), Producer: producer})
+	pay := paymentfake.New()
+	a, err := bootstrap.New(baseConfig(), bootstrap.Deps{
+		Pool: pool, Redis: rdb, CatalogConn: fake.Dial(t), PaymentConn: pay.Dial(t),
+		Producer: producer, KafkaBrokers: brokers,
+	})
+	require.NoError(t, err)
 
 	wctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
@@ -124,10 +170,83 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(srv.Close)
 
 	return &harness{
-		app: a, pool: pool, fake: fake, events: newEventLog(t, brokers), baseURL: srv.URL,
+		app: a, pool: pool, rdb: rdb, fake: fake, pay: pay, producer: producer,
+		brokers: brokers, kafka: kafka, orderRPC: orderInternalRPC(t, a),
+		events: newEventLog(t, brokers), baseURL: srv.URL,
 		contract: &http.Client{Transport: testutil.ContractTransport(t, orderSpec, nil)},
 		raw:      &http.Client{},
 	}
+}
+
+// orderInternalRPC serves a's OrderInternal on an in-memory listener and
+// returns a client to it, so the scenarios talk to the same gRPC server the
+// binary serves. It is closed when t ends.
+func orderInternalRPC(t *testing.T, a *bootstrap.App) orderv1.OrderInternalClient {
+	t.Helper()
+	grpcSrv := grpc.NewServer()
+	a.RegisterGRPC(grpcSrv)
+	lis := bufconn.Listen(1 << 20)
+	go func() { _ = grpcSrv.Serve(lis) }()
+	conn, err := grpc.NewClient("passthrough:///order-internal",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = conn.Close()
+		grpcSrv.Stop()
+	})
+	return orderv1.NewOrderInternalClient(conn)
+}
+
+// publishPayment produces a payment.events envelope keyed by checkoutID; tests
+// reuse eventID to simulate redelivery.
+func (h *harness) publishPayment(t *testing.T, eventID, checkoutID string, p event.Payload) {
+	t.Helper()
+	env, err := event.New(p, time.Now())
+	require.NoError(t, err)
+	env.EventID = eventID
+	b, err := json.Marshal(env)
+	require.NoError(t, err)
+	require.NoError(t, h.kafka.ProduceSync(ctx, &kgo.Record{Topic: event.TopicPaymentEvents, Key: []byte(checkoutID), Value: b}).FirstErr())
+}
+
+// scoped starts a second App on the same containers and catalog fake with the
+// base config adjusted by mutate, serving HTTP and running its workers until
+// the subtest ends; it shares h.events.
+//
+// The scoped App has its own payment fake (s.pay), so a scenario scripts
+// outcomes on, and counts calls to, a fake no other App or scenario touches.
+// It runs no payment.events consumer (KafkaBrokers nil): the scenarios that
+// publish payment events run on the main App, and a second member of the
+// order-svc group would steal some of their records.
+//
+// The main App keeps running with long payment and auto-complete timers. Its
+// sweeper still sees an expired scoped checkout and asks the main fake, whose
+// default OUTCOME_PAID leaves it alone, so only the scoped App acts on scoped
+// orders.
+func (h *harness) scoped(t *testing.T, mutate func(*bootstrap.Config)) *harness {
+	t.Helper()
+	cfg := baseConfig()
+	mutate(&cfg)
+	pay := paymentfake.New()
+	a, err := bootstrap.New(cfg, bootstrap.Deps{
+		Pool: h.pool, Redis: h.rdb, CatalogConn: h.fake.Dial(t), PaymentConn: pay.Dial(t),
+		Producer: h.producer,
+	})
+	require.NoError(t, err)
+
+	wctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() { defer close(done); a.RunWorkers(wctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	srv := httptest.NewServer(authctx.Middleware(a.API))
+	t.Cleanup(srv.Close)
+
+	scoped := *h
+	scoped.app, scoped.baseURL, scoped.pay = a, srv.URL, pay
+	scoped.orderRPC = orderInternalRPC(t, a)
+	return &scoped
 }
 
 // try sends a request and returns status and body; safe off the test goroutine.
@@ -195,7 +314,12 @@ func (h *harness) addToCart(t *testing.T, c caller, skuID string, q int) {
 }
 
 func checkoutBody(skuIDs ...string) map[string]any {
-	b := map[string]any{"shipping_address": address, "payment_method": "COD"}
+	return checkoutBodyWith("COD", skuIDs...)
+}
+
+// checkoutBodyWith is a checkout body paying with method (COD, VNPAY, STRIPE).
+func checkoutBodyWith(method string, skuIDs ...string) map[string]any {
+	b := map[string]any{"shipping_address": address, "payment_method": method}
 	if len(skuIDs) > 0 {
 		b["sku_ids"] = skuIDs
 	}
@@ -223,14 +347,21 @@ type cartResp struct {
 }
 
 type orderResp struct {
-	ID           string                    `json:"id"`
-	CheckoutID   string                    `json:"checkout_id"`
-	Status       string                    `json:"status"`
-	BuyerID      string                    `json:"buyer_id"`
-	Total        int64                     `json:"total"`
-	CancelReason *string                   `json:"cancel_reason"`
-	Shop         struct{ ID, Name string } `json:"shop"`
-	History      []struct {
+	ID                string                          `json:"id"`
+	CheckoutID        string                          `json:"checkout_id"`
+	Status            string                          `json:"status"`
+	BuyerID           string                          `json:"buyer_id"`
+	Subtotal          int64                           `json:"subtotal"`
+	Total             int64                           `json:"total"`
+	CancelReason      *string                         `json:"cancel_reason"`
+	PaymentMethod     string                          `json:"payment_method"`
+	PaymentStatus     string                          `json:"payment_status"`
+	PaymentDeadline   *string                         `json:"payment_deadline"`
+	CommissionRateBps int32                           `json:"commission_rate_bps"`
+	CommissionAmount  int64                           `json:"commission_amount"`
+	DeliveredAt       *string                         `json:"delivered_at"`
+	Shop              struct{ ID, Name, Slug string } `json:"shop"`
+	History           []struct {
 		From      *string `json:"from"`
 		To        string  `json:"to"`
 		ActorRole string  `json:"actor_role"`
@@ -273,6 +404,7 @@ func newEventLog(t *testing.T, brokers []string) *eventLog {
 		event.TypeOrderCreated:       "order-created.schema.json",
 		event.TypeOrderStatusChanged: "order-status-changed.schema.json",
 		event.TypeOrderCancelled:     "order-cancelled.schema.json",
+		event.TypeOrderCompleted:     "order-completed.schema.json",
 	} {
 		sch, err := c.Compile(filepath.Join(eventsDir, file))
 		require.NoError(t, err)

@@ -22,7 +22,7 @@ type addressRequest struct {
 type checkoutRequest struct {
 	SkuIDs          *[]string       `json:"sku_ids" validate:"omitnil,min=1,dive,uuid"`
 	ShippingAddress *addressRequest `json:"shipping_address" validate:"required"`
-	PaymentMethod   string          `json:"payment_method" validate:"required,oneof=COD"`
+	PaymentMethod   string          `json:"payment_method" validate:"required,oneof=COD VNPAY STRIPE"`
 }
 
 func (h *handler) checkout(w http.ResponseWriter, r *http.Request) {

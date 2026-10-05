@@ -35,7 +35,7 @@ func TestOrderDTONullsAndShape(t *testing.T) {
 	at := time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC)
 	pending := domain.StatusPending
 	o := domain.Order{
-		ID: "o1", CheckoutID: "c1", Status: domain.StatusPendingConfirmation, BuyerID: "b1", ShopID: "s1", ShopName: "Shop",
+		ID: "o1", CheckoutID: "c1", Status: domain.StatusPendingConfirmation, BuyerID: "b1", ShopID: "s1", ShopName: "Shop", ShopSlug: "shop",
 		Items:    []domain.Item{{SkuID: "k1", ProductID: "p1", ProductName: "Áo", VariantName: "M", UnitPrice: 10, Quantity: 2, LineTotal: 20}},
 		Subtotal: 20, ShippingFee: 30_000, Total: 30_020, ShippingAddress: domain.Address{FullName: "A"}, PaymentMethod: "COD",
 		History: []domain.HistoryEntry{
@@ -48,7 +48,7 @@ func TestOrderDTONullsAndShape(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(marshal(t, toOrderDTO(o))), &got))
 	assert.Nil(t, got["cancel_reason"])
 	assert.Contains(t, got, "cancel_reason")
-	assert.Equal(t, map[string]any{"id": "s1", "name": "Shop"}, got["shop"])
+	assert.Equal(t, map[string]any{"id": "s1", "name": "Shop", "slug": "shop"}, got["shop"])
 	item := got["items"].([]any)[0].(map[string]any)
 	assert.Contains(t, item, "image_url")
 	assert.Nil(t, item["image_url"])

@@ -42,6 +42,7 @@ type cartDTO struct {
 type orderShopDTO struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	Slug string `json:"slug"`
 }
 
 type orderItemDTO struct {
@@ -64,21 +65,26 @@ type historyDTO struct {
 }
 
 type orderDTO struct {
-	ID              string         `json:"id"`
-	CheckoutID      string         `json:"checkout_id"`
-	Status          domain.Status  `json:"status"`
-	BuyerID         string         `json:"buyer_id"`
-	Shop            orderShopDTO   `json:"shop"`
-	Items           []orderItemDTO `json:"items"`
-	Subtotal        int64          `json:"subtotal"`
-	ShippingFee     int64          `json:"shipping_fee"`
-	Total           int64          `json:"total"`
-	ShippingAddress domain.Address `json:"shipping_address"`
-	PaymentMethod   string         `json:"payment_method"`
-	CancelReason    *string        `json:"cancel_reason"`
-	History         []historyDTO   `json:"history"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	ID                string               `json:"id"`
+	CheckoutID        string               `json:"checkout_id"`
+	Status            domain.Status        `json:"status"`
+	BuyerID           string               `json:"buyer_id"`
+	Shop              orderShopDTO         `json:"shop"`
+	Items             []orderItemDTO       `json:"items"`
+	Subtotal          int64                `json:"subtotal"`
+	ShippingFee       int64                `json:"shipping_fee"`
+	Total             int64                `json:"total"`
+	ShippingAddress   domain.Address       `json:"shipping_address"`
+	PaymentMethod     string               `json:"payment_method"`
+	PaymentStatus     domain.PaymentStatus `json:"payment_status"`
+	PaymentDeadline   *time.Time           `json:"payment_deadline"`
+	CommissionRateBps int32                `json:"commission_rate_bps"`
+	CommissionAmount  int64                `json:"commission_amount"`
+	DeliveredAt       *time.Time           `json:"delivered_at"`
+	CancelReason      *string              `json:"cancel_reason"`
+	History           []historyDTO         `json:"history"`
+	CreatedAt         time.Time            `json:"created_at"`
+	UpdatedAt         time.Time            `json:"updated_at"`
 }
 
 type pageDTO struct {
@@ -109,9 +115,11 @@ func toCartDTO(c domain.Cart) cartDTO {
 func toOrderDTO(o domain.Order) orderDTO {
 	out := orderDTO{
 		ID: o.ID, CheckoutID: o.CheckoutID, Status: o.Status, BuyerID: o.BuyerID,
-		Shop: orderShopDTO{ID: o.ShopID, Name: o.ShopName}, Items: make([]orderItemDTO, 0, len(o.Items)),
+		Shop: orderShopDTO{ID: o.ShopID, Name: o.ShopName, Slug: o.ShopSlug}, Items: make([]orderItemDTO, 0, len(o.Items)),
 		Subtotal: o.Subtotal, ShippingFee: o.ShippingFee, Total: o.Total, ShippingAddress: o.ShippingAddress,
-		PaymentMethod: o.PaymentMethod, CancelReason: o.CancelReason, History: make([]historyDTO, 0, len(o.History)),
+		PaymentMethod: o.PaymentMethod, PaymentStatus: o.PaymentStatus, PaymentDeadline: o.PaymentDeadline,
+		CommissionRateBps: o.CommissionRateBps, CommissionAmount: o.CommissionAmount, DeliveredAt: o.DeliveredAt,
+		CancelReason: o.CancelReason, History: make([]historyDTO, 0, len(o.History)),
 		CreatedAt: o.CreatedAt, UpdatedAt: o.UpdatedAt,
 	}
 	for _, it := range o.Items {
