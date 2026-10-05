@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
-import { ApiError, ERROR_MESSAGES, applyFieldErrors, errorMessage, fieldErrorsOf, isRetryable, shortagesOf, unwrap } from './errors';
+import { formatVnd } from '@/lib/format';
+import { ApiError, ERROR_MESSAGES, applyFieldErrors, errorMessage, fieldErrorsOf, isRetryable, paymentErrorMessage, paymentReasonOf, shortagesOf, unwrap } from './errors';
 
 const body = (code: string, details?: object) => ({ error: { code, message: 'server text', ...(details ? { details } : {}) } });
 
@@ -72,5 +73,33 @@ describe('details helpers', () => {
     expect(applyFieldErrors(err, setError, { stripPrefix: 'shipping_address.' })).toBe(true);
     expect(setError).toHaveBeenCalledWith('phone', { type: 'server', message: 'Giá trị không hợp lệ' });
     expect(applyFieldErrors(ApiError.from(409, body('CONFLICT')), setError)).toBe(false);
+  });
+});
+
+describe('paymentReasonOf and paymentErrorMessage', () => {
+  test.each([
+    ['COD_CHECKOUT', 'Đơn này thanh toán khi nhận hàng, không cần thanh toán trực tuyến.'],
+    ['NOT_AWAITING_PAYMENT', 'Đơn hàng không còn chờ thanh toán.'],
+    ['DEADLINE_PASSED', 'Đã quá hạn thanh toán, đơn hàng sẽ bị huỷ.'],
+    ['ALREADY_PAID', 'Đơn hàng đã được thanh toán.'],
+    ['BELOW_PROVIDER_MINIMUM', 'Số tiền thấp hơn mức tối thiểu của cổng thanh toán. Vui lòng chọn phương thức khác.'],
+  ])('maps payment 409 reason %s', (reason, message) => {
+    const err = new ApiError(409, 'INVALID_STATE_TRANSITION', 'x', { reason });
+    expect(paymentReasonOf(err)).toBe(reason);
+    expect(paymentErrorMessage(err)).toBe(message);
+  });
+
+  test('an unknown reason falls back to the generic code message', () => {
+    const err = new ApiError(409, 'INVALID_STATE_TRANSITION', 'x', { reason: 'NEW_THING' });
+    expect(paymentErrorMessage(err)).toBe(ERROR_MESSAGES.INVALID_STATE_TRANSITION);
+  });
+
+  test('INSUFFICIENT_FUNDS shows details.available', () => {
+    const err = new ApiError(409, 'INSUFFICIENT_FUNDS', 'x', { available: 120_000 });
+    expect(paymentErrorMessage(err)).toBe(`Số dư không đủ. Số dư khả dụng: ${formatVnd(120_000)}.`);
+  });
+
+  test('other errors use errorMessage', () => {
+    expect(paymentErrorMessage(new ApiError(503, 'UPSTREAM_UNAVAILABLE', 'x'))).toBe(ERROR_MESSAGES.UPSTREAM_UNAVAILABLE);
   });
 });
