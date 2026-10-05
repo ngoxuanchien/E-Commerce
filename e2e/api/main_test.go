@@ -23,9 +23,11 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	code := m.Run()
-	out, err := trialBalance(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := trialBalance(ctx)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "trial balance after suite:", out)
+		fmt.Fprintf(os.Stderr, "trial balance after suite: %s\n", string(out))
 		os.Exit(1)
 	}
 	os.Exit(code)

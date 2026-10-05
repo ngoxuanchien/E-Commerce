@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"fmt"
 	"net/url"
 	"testing"
 	"time"
@@ -63,6 +64,7 @@ func waitOrder(t *testing.T, a actor, orderID string, within time.Duration, ok f
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 	var order client.Order
+	var lastErr error
 	for {
 		o, err := a.Order(ctx(t), orderID)
 		if err == nil {
@@ -70,11 +72,18 @@ func waitOrder(t *testing.T, a actor, orderID string, within time.Duration, ok f
 			if ok(order) {
 				return order
 			}
+			lastErr = nil
+		} else {
+			lastErr = err
 		}
 		select {
 		case <-ticker.C:
 			if time.Now().After(deadline) {
-				require.Failf(t, msg, "order %s: %v", orderID, order)
+				var errMsg string
+				if lastErr != nil {
+					errMsg = fmt.Sprintf(" (last fetch error: %v)", lastErr)
+				}
+				require.Failf(t, msg, "order %s: %v%s", orderID, order, errMsg)
 				return order
 			}
 		}
@@ -89,6 +98,7 @@ func waitPayment(t *testing.T, buyer actor, paymentID, status string, within tim
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 	var payment client.Payment
+	var lastErr error
 	for {
 		p, err := buyer.Payment(ctx(t), paymentID)
 		if err == nil {
@@ -96,11 +106,18 @@ func waitPayment(t *testing.T, buyer actor, paymentID, status string, within tim
 			if payment.Status == status {
 				return payment
 			}
+			lastErr = nil
+		} else {
+			lastErr = err
 		}
 		select {
 		case <-ticker.C:
 			if time.Now().After(deadline) {
-				require.Failf(t, "waitPayment", "payment %s: expected status %s, got %s", paymentID, status, payment.Status)
+				var errMsg string
+				if lastErr != nil {
+					errMsg = fmt.Sprintf(" (last fetch error: %v)", lastErr)
+				}
+				require.Failf(t, "waitPayment", "payment %s: expected status %s, got %s%s", paymentID, status, payment.Status, errMsg)
 				return payment
 			}
 		}
@@ -123,6 +140,7 @@ func waitWallet(t *testing.T, seller actor, within time.Duration, ok func(client
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 	var wallet client.Wallet
+	var lastErr error
 	for {
 		w, err := seller.Wallet(ctx(t))
 		if err == nil {
@@ -130,11 +148,18 @@ func waitWallet(t *testing.T, seller actor, within time.Duration, ok func(client
 			if ok(wallet) {
 				return wallet
 			}
+			lastErr = nil
+		} else {
+			lastErr = err
 		}
 		select {
 		case <-ticker.C:
 			if time.Now().After(deadline) {
-				require.Failf(t, msg, "wallet: %+v", wallet)
+				var errMsg string
+				if lastErr != nil {
+					errMsg = fmt.Sprintf(" (last fetch error: %v)", lastErr)
+				}
+				require.Failf(t, msg, "wallet: %+v%s", wallet, errMsg)
 				return wallet
 			}
 		}
