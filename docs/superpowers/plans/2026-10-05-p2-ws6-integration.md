@@ -325,7 +325,7 @@ Helper `earn(t *testing.T, w *world) int64`: payer buys one new shopC product (p
 4. `CreatePayout(newKey(), 1)` → 400 `VALIDATION_ERROR` (minimum 50,000 ₫ is checked first); `CreatePayout(newKey(), 50_000)` → 409 `INSUFFICIENT_FUNDS`.
 5. `earn` again (`Available == 125,000`). Two goroutines call `CreatePayout(newKey(), 70_000)` at once → exactly one 201 and one 409 `INSUFFICIENT_FUNDS`; then wait until the winner is `SETTLED`.
 
-- [ ] **Step 1** write; **Step 2** run `-run TestPayout` → PASS; **Step 3** commit `test(e2e): payout settle, overdraw and concurrent requests`.
+- [x] **Step 1** write; **Step 2** run `-run TestPayout` → PASS; **Step 3** commit `test(e2e): payout settle, overdraw and concurrent requests`.
 
 ---
 
@@ -341,7 +341,7 @@ Generalize `fetchTrace(t, traceID) (services map[string]bool, ops map[string][]s
 
 If the order/ledger consumer spans are missing, follow the Findings protocol (owner: whoever writes/consumes the outbox headers) rather than changing services.
 
-- [ ] **Step 1** write; **Step 2** run `-run Trace` → PASS; **Step 3** commit `test(e2e): traces through payment, order and ledger`.
+- [x] **Step 1** write; **Step 2** run `-run Trace` → PASS; **Step 3** commit `test(e2e): traces through payment, order and ledger`.
 
 ---
 
@@ -371,10 +371,10 @@ Use products that P1 `orderPlans` don't use. `data_test.go` adds: every plan ref
 - `payout(ctx, seller1)`: skipped (prints `payout: exists, skipped`) when `Payouts(ctx, "")` is non-empty. Poll the wallet until `Available > 0` (60 s); request `Available/2` rounded down to a multiple of 1,000 ₫ (at least 50,000); poll until `SETTLED` (deadline 3 min, since the default `PAYOUT_SETTLE_DELAY` is 1 min), printing `payout: waiting to settle…` once.
 - `summary` adds a `WALLET` table: per seller `available / in_escrow / pending_payout` from `Wallet` (log in again if needed; reuse the clients from `run`).
 
-- [ ] **Step 1:** Write the `data_test.go` cases → `GOWORK=off go test ./cmd/seed/` FAIL.
-- [ ] **Step 2:** Implement data + phases.
-- [ ] **Step 3:** Against the stack: `make seed` succeeds; run it **again**: the output shows `online orders: exist, skipped` and `payout: exists, skipped`, and seller 1's wallet figures are identical in both summaries.
-- [ ] **Step 4: Commit** `feat(seed): online orders, a settled payout and wallet figures`.
+- [x] **Step 1:** Write the `data_test.go` cases → `GOWORK=off go test ./cmd/seed/` FAIL.
+- [x] **Step 2:** Implement data + phases.
+- [x] **Step 3:** Against the stack: `make seed` succeeds; run it **again**: the output shows `online orders: exist, skipped` and `payout: exists, skipped`, and seller 1's wallet figures are identical in both summaries.
+- [x] **Step 4: Commit** `feat(seed): online orders, a settled payout and wallet figures`.
 
 ---
 
@@ -390,7 +390,7 @@ Tests:
 1. `online checkout pays on the FAKE page and the orders show as paid`: seller + product via API; buyer `signIn`, add to cart, `openCheckout`, click `payment-method-VNPAY`, place the order → URL matches `/api/payments/fake/checkout/` → click `fake-pay-succeed` → URL contains `/checkout/result` and `payment-result` reaches `data-status="SUCCEEDED"` (expect.poll / toHaveAttribute with timeout) → on `/orders`, `order-payment-status` shows `Đã thanh toán`.
 2. `a failed payment can be paid again`: same start, click `fake-pay-fail` → `payment-result` `data-status="FAILED"` → click `pay-again` (text `Thanh toán lại`) → FAKE page → `fake-pay-succeed` → `SUCCEEDED`.
 
-- [ ] **Step 1** write; **Step 2** `cd e2e/playwright && npx tsc --noEmit && npx playwright test tests/payment.spec.ts` → PASS; **Step 3** commit `test(e2e): Playwright online payment and pay-again`.
+- [x] **Step 1** write; **Step 2** `cd e2e/playwright && npx tsc --noEmit && npx playwright test tests/payment.spec.ts` → PASS; **Step 3** commit `test(e2e): Playwright online payment and pay-again`.
 
 ---
 
@@ -401,7 +401,7 @@ Tests:
 Setup via API: seller + product (price 120,000); buyer `checkout('VNPAY')`, `startPayment`, `fakeSubmit('succeed')`, poll the order until `payment_status === 'PAID'`; seller confirm/ship/deliver; buyer complete; poll `seller.wallet()` until `available > 0`.
 UI: seller `signIn` → wallet page (find the route in `web/src`) → `wallet-available` shows the amount → payouts page: fill `payout-amount` with the full available amount, click `payout-submit` → a `payout-row` appears; reload until its `data-status="SETTLED"` (expect.poll, 30 s) → `wallet-available` shows `0 ₫`.
 
-- [ ] **Step 1** write; **Step 2** run the spec → PASS, then the full `npx playwright test` stays green; **Step 3** commit `test(e2e): Playwright seller wallet payout`.
+- [x] **Step 1** write; **Step 2** run the spec → PASS, then the full `npx playwright test` stays green; **Step 3** commit `test(e2e): Playwright seller wallet payout`.
 
 ---
 
@@ -415,7 +415,7 @@ Add to `docs/architecture.md`:
 - a "Money" section: the chart of accounts (exact names from `services/ledger/internal/domain`), balances derived from entries, the trial-balance invariant and how e2e checks it, links to ADR-0006/0007/0008;
 - known limitations: the P2 items from the service READMEs (FAKE is not a security boundary, VNPay refund RC 00 treated as final, trial balance is a full scan).
 
-- [ ] **Step 1** write; **Step 2** check every account name, env var and file path named in the doc exists (`grep -r`), and each Mermaid block is a `sequenceDiagram` whose participants are declared; **Step 3** commit `docs: architecture for payments, escrow and the ledger`.
+- [x] **Step 1** write; **Step 2** check every account name, env var and file path named in the doc exists (`grep -r`), and each Mermaid block is a `sequenceDiagram` whose participants are declared; **Step 3** commit `docs: architecture for payments, escrow and the ledger`.
 
 ---
 
@@ -427,7 +427,7 @@ Add to `docs/architecture.md`:
 - `docs/payments-sandbox.md`: Stripe (`make stripe-listen`, the `whsec_` value into `STRIPE_WEBHOOK_SECRET`, test card `4242 4242 4242 4242`, expected events `checkout.session.completed` and `charge.refunded`); VNPay (sandbox registration, `VNPAY_*` variables as named in `deploy/secrets/payment.env.example`, the return URL + `querydr` path without a tunnel, optional `cloudflared tunnel --url http://localhost:8080` for the IPN, NCB test card); a checklist table `| Date | Provider | Checkout paid | Refund on cancel | Notes |` with empty rows for the user to fill in.
 - `e2e/README.md`: P2 timers table; P2 success criteria 1–7 → tests table; "P2 decisions" (webhook-trace approach, payout over-balance case uses 50,000 ₫, refund visibility via wallet `in_escrow` + trial balance, `make e2e` re-up, sequential tests); "P2 findings" (whatever Tasks 4–13 reported, with owners).
 
-- [ ] **Step 1** write; **Step 2** check every command and env var named exists (`grep` the Makefile and `deploy/secrets/payment.env.example`); **Step 3** commit `docs: P2 README, payments sandbox runbook and e2e guide`.
+- [x] **Step 1** write; **Step 2** check every command and env var named exists (`grep` the Makefile and `deploy/secrets/payment.env.example`); **Step 3** commit `docs: P2 README, payments sandbox runbook and e2e guide`.
 
 ---
 
