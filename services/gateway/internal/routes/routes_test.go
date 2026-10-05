@@ -176,26 +176,34 @@ func TestParamSegmentNeedsAValue(t *testing.T) {
 	assert.False(t, ok)
 }
 
-// TestPaymentAndSellerPrefixesDoNotOverlap checks that payment and seller
-// prefixes are correctly distinguished even when path segments overlap.
+// TestPaymentAndSellerPrefixesDoNotOverlap checks that payment provider and
+// seller wallet prefixes match on whole segments, not string prefixes, so
+// GET /api/payments/{uuid} stays User, and /api/seller/walletx doesn't match
+// the /api/seller/wallet route.
 func TestPaymentAndSellerPrefixesDoNotOverlap(t *testing.T) {
 	cases := []struct {
-		method   string
-		path     string
-		upstream string
-		level    Level
+		method      string
+		path        string
+		expectMatch bool
+		upstream    string
+		level       Level
 	}{
-		{"GET", "/api/payments/0b6c7a8e-1f2d-4c3b-9a5e-6d7f8a9b0c1d", Payment, User},
-		{"GET", "/api/payments/vnpayx", Payment, User},
-		{"GET", "/api/seller/products", Catalog, Seller},
-		{"GET", "/api/seller/orders", Order, Seller},
-		{"GET", "/api/seller/wallet", Ledger, Seller},
+		{"GET", "/api/payments/0b6c7a8e-1f2d-4c3b-9a5e-6d7f8a9b0c1d", true, Payment, User},
+		{"GET", "/api/payments/vnpayx", true, Payment, User},
+		{"GET", "/api/seller/products", true, Catalog, Seller},
+		{"GET", "/api/seller/orders", true, Order, Seller},
+		{"GET", "/api/seller/wallet", true, Ledger, Seller},
+		{"GET", "/api/seller/walletx", false, "", Level(0)},
 	}
 
 	table := Default()
 	for _, tc := range cases {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
 			idx, ok := table.Match(tc.method, tc.path)
+			if !tc.expectMatch {
+				assert.False(t, ok, "expected no match")
+				return
+			}
 			require.True(t, ok, "expected a match")
 			assert.Equal(t, tc.upstream, table[idx].Upstream)
 			assert.Equal(t, tc.level, table[idx].Auth)
