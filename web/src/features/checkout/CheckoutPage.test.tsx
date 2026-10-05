@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { HttpResponse, delay, http } from 'msw';
-import { expect, test, vi } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 import { SEED } from '@/mocks/seed';
 import { getDb } from '@/mocks/state';
 import { server } from '@/test/server';
@@ -10,6 +10,10 @@ import { redirectTo } from '@/lib/redirect';
 vi.mock('@/lib/redirect', () => ({ redirectTo: vi.fn() }));
 
 type User = ReturnType<typeof renderApp>['user'];
+
+beforeEach(() => {
+  vi.mocked(redirectTo).mockClear();
+});
 
 async function fillAddress(user: User) {
   await user.type(await screen.findByLabelText('Số điện thoại'), '0901234567');
@@ -193,13 +197,12 @@ test('choosing VNPAY and submitting calls startPayment with correct idempotency 
   getDb().state.carts[SEED.users.an] = { [SEED.skus.bowl11]: 1 };
   let capturedPaymentRequest: { checkout_id?: string } & Record<string, unknown> = {};
   let capturedIdempotencyKey: string | undefined;
-  let capturedCheckoutId: string | undefined;
-
+  let capturedPaymentId: string | undefined;
+  
   server.use(
     http.post('*/api/checkout', async ({ request }) => {
       const idemKey = request.headers.get('Idempotency-Key') ?? '';
       const body = (await request.json()) as Record<string, unknown>;
-      capturedCheckoutId = getDb().checkout(SEED.users.an, idemKey, body as never).checkout_id;
       const response = getDb().checkout(SEED.users.an, idemKey, body as never);
       return HttpResponse.json(response, { status: 201 });
     }),
@@ -207,26 +210,29 @@ test('choosing VNPAY and submitting calls startPayment with correct idempotency 
       capturedIdempotencyKey = request.headers.get('Idempotency-Key') ?? undefined;
       capturedPaymentRequest = (await request.json()) as Record<string, unknown>;
       const response = getDb().createPayment(SEED.users.an, capturedIdempotencyKey ?? '', capturedPaymentRequest as never);
+      capturedPaymentId = response.id;
       return HttpResponse.json(response, { status: 201 });
     }),
   );
-
+  
   const { user } = renderApp(`/checkout?sku=${SEED.skus.bowl11}`, { as: 'an@example.com' });
   await fillAddress(user);
-
+  
   const fieldset = await screen.findByRole('group', { name: 'Phương thức thanh toán' });
   const vnpayRadio = within(fieldset).getByDisplayValue('VNPAY');
   await user.click(vnpayRadio);
-
+  
   expect(screen.getByRole('button', { name: 'Đặt hàng và thanh toán' })).toBeInTheDocument();
-
+  
   await user.click(screen.getByRole('button', { name: 'Đặt hàng và thanh toán' }));
 
   await waitFor(() => {
     expect(capturedIdempotencyKey).toBeDefined();
-    expect(capturedPaymentRequest.checkout_id).toBe(capturedCheckoutId);
-    expect(sessionStorage.getItem(`pay:${capturedCheckoutId}`)).toBe(capturedIdempotencyKey);
-    expect(redirectTo).toHaveBeenCalledWith(expect.stringMatching(/\/__mock\/pay\//));
+    const checkoutId = capturedPaymentRequest.checkout_id;
+    expect(checkoutId).toBeDefined();
+    expect(sessionStorage.getItem(`pay:${checkoutId}`)).toBe(capturedIdempotencyKey);
+    expect(capturedPaymentId).toBeDefined();
+    expect(redirectTo).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`/__mock/pay/${capturedPaymentId}$`)));
   });
 });
 
