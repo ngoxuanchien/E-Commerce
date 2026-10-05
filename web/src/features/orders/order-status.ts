@@ -22,7 +22,7 @@ export const ORDER_STATUS_TONE: Record<OrderStatus, string> = {
   CANCELLED: 'bg-muted text-muted-foreground',
 };
 
-const TAB_STATUSES = ['PENDING_CONFIRMATION', 'CONFIRMED', 'SHIPPING', 'DELIVERED', 'COMPLETED', 'CANCELLED'] as const;
+const TAB_STATUSES = ['AWAITING_PAYMENT', 'PENDING_CONFIRMATION', 'CONFIRMED', 'SHIPPING', 'DELIVERED', 'COMPLETED', 'CANCELLED'] as const;
 
 export const ORDER_STATUS_TABS: ReadonlyArray<{ value: OrderStatus | undefined; label: string }> = [
   { value: undefined, label: 'Tất cả' },
@@ -51,6 +51,6 @@ export function sellerActionsFor(status: OrderStatus): SellerAction[] {
   }
 }
 
-export const buyerCanCancel = (status: OrderStatus) => status === 'PENDING_CONFIRMATION';
+export const buyerCanCancel = (status: OrderStatus) => status === 'PENDING_CONFIRMATION' || status === 'AWAITING_PAYMENT';
 export const buyerCanComplete = (status: OrderStatus) => status === 'DELIVERED';
 export const shortId = (id: string) => `#${id.replace(/-/g, '').slice(-8).toUpperCase()}`;
