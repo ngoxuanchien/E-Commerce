@@ -266,7 +266,7 @@ Expected: FAIL (undefined).
 
 `TestPaymentTimeoutCancelsAndRestocks`: product stock 5, checkout 2 units VNPAY, no payment. `stockOf == 3`. `waitOrder` → `CANCELLED` within `paymentTimeout + 3*sweeperInterval + 10s`, and `CancelReason` equals the payment-timeout reason order-svc writes (read the exact string from `services/order/internal/domain` or app code and assert it exactly). Stock back to 5 within 10 s (`Eventually` on `stockOf`). `CreatePayment` afterwards → 409 `INVALID_STATE_TRANSITION`.
 
-- [ ] **Step 1** write; **Step 2** run `-run 'TestFailedPayment|TestPaymentTimeout'` → PASS; **Step 3** commit `test(e2e): failed payment retry and payment timeout`.
+- [x] **Step 1** write; **Step 2** run `-run 'TestFailedPayment|TestPaymentTimeout'` → PASS; **Step 3** commit `test(e2e): failed payment retry and payment timeout`.
 
 ---
 
@@ -278,7 +278,7 @@ Expected: FAIL (undefined).
 
 `TestCODCheckoutNeverTouchesTheLedger`: snapshot `walletOf(sellerB)`. COD checkout on shopB: the order has `PaymentMethod "COD"`, `PaymentStatus "NONE"`, `PaymentDeadline == nil`, `CommissionAmount == 0`, status `PENDING_CONFIRMATION`. Deliver + complete → `COMPLETED`. `assert.Never` for `2*sweeperInterval + 2s` that seller B's wallet differs from the snapshot.
 
-- [ ] **Step 1** write; **Step 2** run `-run 'TestSellerCancelAfterPayment|TestCOD'` → PASS; **Step 3** commit `test(e2e): refund on cancel and COD regression`.
+- [x] **Step 1** write; **Step 2** run `-run 'TestSellerCancelAfterPayment|TestCOD'` → PASS; **Step 3** commit `test(e2e): refund on cancel and COD regression`.
 
 ---
 
@@ -294,7 +294,7 @@ Expected: FAIL (undefined).
 
 Each subtest ends by seller A cancelling the order and waiting for `REFUNDED`, so no escrow is left in flight.
 
-- [ ] **Step 1** write; **Step 2** run `-run 'TestDuplicateAndStale|TestDroppedWebhook'` → PASS; **Step 3** commit `test(e2e): duplicate, stale and dropped FAKE callbacks`.
+- [x] **Step 1** write; **Step 2** run `-run 'TestDuplicateAndStale|TestDroppedWebhook'` → PASS; **Step 3** commit `test(e2e): duplicate, stale and dropped FAKE callbacks`.
 
 ---
 
@@ -308,7 +308,7 @@ Each subtest ends by seller A cancelling the order and waiting for `REFUNDED`, s
 
 If the stack disagrees with the spec here (for example, FAKE rejects a submit after expiry), stop and report the observed behavior to the controller before changing the test.
 
-- [ ] **Step 1** write; **Step 2** run `-run 'TestDoubleCharge|TestLateSuccess'` → PASS; **Step 3** commit `test(e2e): double charge and late success refunds`.
+- [x] **Step 1** write; **Step 2** run `-run 'TestDoubleCharge|TestLateSuccess'` → PASS; **Step 3** commit `test(e2e): double charge and late success refunds`.
 
 ---
 
