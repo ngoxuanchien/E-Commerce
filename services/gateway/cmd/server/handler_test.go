@@ -82,8 +82,24 @@ func TestEveryContractRouteEnforcesItsAuthLevel(t *testing.T) {
 		{"POST", "/api/seller/orders/o1/ship", routes.Order, routes.Seller},
 		{"POST", "/api/seller/orders/o1/deliver", routes.Order, routes.Seller},
 		{"POST", "/api/seller/orders/o1/cancel", routes.Order, routes.Seller},
+		// payment.yaml
+		{"POST", "/api/payments", routes.Payment, routes.User},
+		{"GET", "/api/payments/p1", routes.Payment, routes.User},
+		{"GET", "/api/payments/vnpay/ipn?vnp_TxnRef=p1&vnp_ResponseCode=00", routes.Payment, routes.Callback},
+		{"GET", "/api/payments/vnpay/return?vnp_TxnRef=p1&vnp_ResponseCode=00", routes.Payment, routes.Callback},
+		{"POST", "/api/payments/stripe/webhook", routes.Payment, routes.Callback},
+		{"GET", "/api/payments/stripe/return?session_id=cs_test_a1b2c3d4", routes.Payment, routes.Callback},
+		{"GET", "/api/payments/fake/checkout/p1", routes.Payment, routes.Callback},
+		{"POST", "/api/payments/fake/checkout/p1", routes.Payment, routes.Callback},
+		{"GET", "/api/payments/fake/return?order_id=o1&status=success", routes.Payment, routes.Callback},
+		{"POST", "/api/payments/fake/webhook", routes.Payment, routes.Callback},
+		// ledger.yaml
+		{"GET", "/api/seller/wallet", routes.Ledger, routes.Seller},
+		{"GET", "/api/seller/wallet/entries", routes.Ledger, routes.Seller},
+		{"POST", "/api/seller/payouts", routes.Ledger, routes.Seller},
+		{"GET", "/api/seller/payouts", routes.Ledger, routes.Seller},
 	}
-	require.Len(t, cases, 30, "must cover all 30 WS0 §4 operations")
+	require.Len(t, cases, 44, "must cover all 44 WS0 §4 + WS0' operations")
 
 	h := newHarness(t)
 	buyer := h.token("u-buyer", "buyer")
@@ -120,10 +136,54 @@ func TestEveryContractRouteEnforcesItsAuthLevel(t *testing.T) {
 			case routes.Seller:
 				requireError(t, anon, http.StatusUnauthorized, httpx.CodeUnauthenticated)
 				requireError(t, asBuyer, http.StatusForbidden, httpx.CodeForbidden)
+			case routes.Callback:
+				// Callback routes proxy all requests (anon, buyer, seller) with no identity headers
+				assertProxied(anon, "", "")
+				assertProxied(asBuyer, "", "")
+				assertProxied(asSeller, "", "")
+				return
 			}
 			assertProxied(asSeller, "u-seller", "buyer,seller")
 		})
 	}
+}
+
+func TestInvalidTokenIsIgnoredOnlyOnCallbackRoutes(t *testing.T) {
+	h := newHarness(t)
+
+	expired := authtest.ValidClaims("u1")
+	expired.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-time.Hour))
+	wrongIssuer := authtest.ValidClaims("u1")
+	wrongIssuer.Issuer = "someone-else"
+
+	tokens := map[string]string{
+		"expired":      h.key.Sign(t, expired),
+		"wrong issuer": h.key.Sign(t, wrongIssuer),
+		"wrong key":    authtest.NewKey(t, testKID).Sign(t, authtest.ValidClaims("u1")),
+		"garbage":      "not.a.jwt",
+	}
+	for name, tok := range tokens {
+		t.Run("callback route with "+name, func(t *testing.T) {
+			// Invalid tokens on callback routes are proxied with no identity headers
+			rec := h.do("GET", "/api/payments/vnpay/return?vnp_TxnRef=p1", withToken(tok))
+			e := h.proxied(rec)
+			assert.Equal(t, routes.Payment, e.Upstream)
+			assert.Empty(t, identityHeaders(e.Headers))
+		})
+		t.Run("user route with "+name, func(t *testing.T) {
+			// Invalid tokens on user routes still rejected
+			rec := h.do("GET", "/api/payments/p1", withToken(tok))
+			requireError(t, rec, http.StatusUnauthorized, httpx.CodeUnauthenticated)
+		})
+		t.Run("public route with "+name, func(t *testing.T) {
+			// P1 behavior unchanged
+			rec := h.do("GET", "/api/products", withToken(tok))
+			requireError(t, rec, http.StatusUnauthorized, httpx.CodeUnauthenticated)
+		})
+	}
+	// Only callback routes proxy with invalid tokens; user and public reject them without hitting upstream
+	assert.Equal(t, int64(4), h.hitCount(routes.Payment))
+	assert.Zero(t, h.hitCount(routes.Catalog))
 }
 
 func TestUnknownRouteIsJSON404WithRequestID(t *testing.T) {
@@ -202,6 +262,33 @@ func TestInvalidTokensAreRejectedEvenOnPublicRoutes(t *testing.T) {
 	assert.Zero(t, h.totalHits())
 }
 
+func TestSellerWalletRoutes(t *testing.T) {
+	h := newHarness(t)
+	buyer := h.token("u-buyer", "buyer")
+	seller := h.token("u-seller", "buyer", "seller")
+
+	t.Run("buyer cannot access seller wallet", func(t *testing.T) {
+		rec := h.do("GET", "/api/seller/wallet", withToken(buyer))
+		requireError(t, rec, http.StatusForbidden, httpx.CodeForbidden)
+		assert.Zero(t, h.hitCount(routes.Ledger))
+	})
+
+	t.Run("seller can access wallet and it routes to ledger", func(t *testing.T) {
+		rec := h.do("GET", "/api/seller/wallet", withToken(seller))
+		e := h.proxied(rec)
+		assert.Equal(t, routes.Ledger, e.Upstream)
+		assert.Equal(t, map[string][]string{
+			"X-User-Id":    {"u-seller"},
+			"X-User-Roles": {"buyer,seller"},
+		}, identityHeaders(e.Headers))
+	})
+
+	t.Run("anonymous cannot access payments", func(t *testing.T) {
+		rec := h.do("POST", "/api/payments")
+		requireError(t, rec, http.StatusUnauthorized, httpx.CodeUnauthenticated)
+	})
+}
+
 func TestNonCanonicalPathsCannotDowngradeAuth(t *testing.T) {
 	h := newHarness(t)
 	buyer := h.token("u-buyer", "buyer")
@@ -232,10 +319,17 @@ func TestNonCanonicalPathsCannotDowngradeAuth(t *testing.T) {
 			"/api/products/../seller/products",
 			"/api//seller/products",
 			"/api/./seller/products",
+			"/api/payments/stripe/../p1",
+			"/api/seller/wallet/../products",
 		} {
 			rec := h.do("CONNECT", target, withToken(buyer))
 			requireError(t, rec, http.StatusNotFound, httpx.CodeNotFound)
 		}
+	})
+
+	t.Run("CONNECT to callback paths is not allowed", func(t *testing.T) {
+		rec := h.do("CONNECT", "/api/payments/stripe/webhook")
+		requireError(t, rec, http.StatusNotFound, httpx.CodeNotFound)
 	})
 
 	t.Run("unsupported methods never reach auth or an upstream", func(t *testing.T) {
