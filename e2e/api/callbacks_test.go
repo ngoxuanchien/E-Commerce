@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,7 +67,23 @@ func TestDuplicateAndStaleWebhooksApplyOnce(t *testing.T) {
 			}, neverTimeout, 200*time.Millisecond,
 				"order/payment should stay in PENDING_CONFIRMATION/PAID/SUCCEEDED")
 
-			// Step 7: Verify history has exactly one entry with To == "PENDING_CONFIRMATION"
+			// Step 7: Deliver the order
+			deliver(t, w.sellerA, orderA.ID)
+
+			// Step 8: Buyer completes the order
+			orderA, err := w.payer.CompleteOrder(ctx(t), orderA.ID)
+			require.NoError(t, err)
+
+			// Step 9: Wait for wallet to show credit
+			waitWallet(t, w.sellerA, 10*time.Second,
+				func(wl client.Wallet) bool {
+					return wl.Available == baseA.Available+credit(orderA)
+				},
+				"sellerA wallet: Available should increase by credit(orderA)")
+
+			// Step 10: Re-fetch order and verify history has exactly one PENDING_CONFIRMATION entry
+			orderA, err = w.payer.Order(ctx(t), orderA.ID)
+			require.NoError(t, err)
 			require.NotEmpty(t, orderA.History)
 			transitionCount := 0
 			for _, entry := range orderA.History {
@@ -76,20 +93,6 @@ func TestDuplicateAndStaleWebhooksApplyOnce(t *testing.T) {
 			}
 			require.Equal(t, 1, transitionCount,
 				"order history should have exactly one PENDING_CONFIRMATION transition")
-
-			// Step 8: Deliver the order
-			deliver(t, w.sellerA, orderA.ID)
-
-			// Step 9: Buyer completes the order
-			orderA, err := w.payer.CompleteOrder(ctx(t), orderA.ID)
-			require.NoError(t, err)
-
-			// Step 10: Wait for wallet to show credit
-			waitWallet(t, w.sellerA, 10*time.Second,
-				func(wl client.Wallet) bool {
-					return wl.Available == baseA.Available+credit(orderA)
-				},
-				"sellerA wallet: Available should increase by credit(orderA)")
 
 			// Step 11: Assert.Never that wallet is credited twice
 			finalAvailable := baseA.Available + credit(orderA)
@@ -190,6 +193,7 @@ func TestDroppedWebhookIsRecovered(t *testing.T) {
 
 		// Step 3: Submit FAKE payment with "succeed" outcome and drop hook
 		hooks := url.Values{"hook_webhook": {"drop"}}
+		paymentStartTime := time.Now()
 		p := payFake(t, w.payer, checkoutID, "succeed", hooks)
 		require.Equal(t, "VNPAY", p.Method)
 
@@ -198,11 +202,16 @@ func TestDroppedWebhookIsRecovered(t *testing.T) {
 		location, err := w.payer.FakeReturn(ctx(t), p.ID)
 		require.NoError(t, err)
 		require.NotEmpty(t, location)
+		require.True(t, strings.HasPrefix(location, "/checkout/result?payment_id="), location)
 
-		// Step 5: Wait for payment to reach SUCCEEDED within reconcileMinAge
-		// (return path Query must win before reconciler is eligible)
-		p = waitPayment(t, w.payer, p.ID, "SUCCEEDED", reconcileMinAge)
+		// Step 5: Wait for payment to reach SUCCEEDED within 1 second
+		// (return path Query must win before reconciler is eligible at reconcileMinAge)
+		p = waitPayment(t, w.payer, p.ID, "SUCCEEDED", 1*time.Second)
 		require.Equal(t, "fake", p.Provider)
+		// Verify SUCCEEDED before reconcileMinAge elapsed (before reconciler becomes eligible)
+		elapsedSincePaymentStart := time.Since(paymentStartTime)
+		require.Less(t, elapsedSincePaymentStart, reconcileMinAge+1*time.Second,
+			"payment should SUCCEED via return URL before reconciler is eligible")
 
 		// Step 6: Wait for order to reach PENDING_CONFIRMATION with PAID
 		orderA = waitOrder(t, w.payer, orderA.ID, 10*time.Second,
