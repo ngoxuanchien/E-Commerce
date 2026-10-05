@@ -2,13 +2,16 @@ import type {
   Cart, CartItem, CartShop, Category, CheckoutRequest, CheckoutResponse, LoginRequest, Order, OrderItem, OrderPage,
   OrderStatus, Paths, Product, ProductInput, ProductPage, ProductPatch, ProductStatus, ProductSummary, ProductSummaryPage,
   RegisterRequest, Role, Shop, ShopCreate, ShopRef, ShopUpdate, Sku, TokenResponse, UploadResponse, User,
+  Payment, WalletEntry, Payout,
 } from '@/api/types';
 import { normalizeVi } from '@/lib/vi';
 import { MockError, notFound, validation } from './mock-error';
 import { paginate } from './paginate';
 import { buildSeed } from './seed';
 
-export const STORAGE_KEY = 'marketplace-mock-db:v1';
+export const STORAGE_KEY = 'marketplace-mock-db:v2';
+export const PAYMENT_TTL_MS = 15 * 60_000;
+export const COMMISSION_RATE_BPS = 500;
 /** Stand-in for order-svc's SHIPPING_FEE_FLAT: reported per cart shop and charged per order. */
 export const SHIPPING_FEE_FLAT = 30_000;
 export const MOCK_ASSET_BASE = 'http://localhost:9000/product-images';
@@ -24,6 +27,9 @@ export type MockProduct = {
   image_keys: string[]; skus: Sku[]; created_at: string; updated_at: string;
 };
 export type MockOrder = Order & { seller_user_id: string };
+export type MockPayment = Payment & { buyer_id: string };
+export type MockWalletEntry = WalletEntry & { seller_user_id: string };
+export type MockPayout = Payout & { seller_user_id: string };
 export type TokenGrant = { userId: string; roles: Role[] };
 export type DbState = {
   users: MockUser[];
@@ -32,6 +38,10 @@ export type DbState = {
   products: MockProduct[];
   carts: Record<string, Record<string, number>>;
   orders: MockOrder[];
+  payments: MockPayment[];
+  walletEntries: MockWalletEntry[];
+  payouts: MockPayout[];
+  keys: Record<string, { hash: string; id: string }>;
   idempotency: Record<string, { hash: string; response: CheckoutResponse }>;
   blobs: Record<string, string>;
   tokens: Record<string, TokenGrant>;
@@ -45,7 +55,7 @@ type Actor = 'buyer' | 'seller';
 // WS3 §5 state machine, per actor.
 const TRANSITIONS: Record<Actor, Partial<Record<BuyerAction | SellerAction, { from: OrderStatus[]; to: OrderStatus }>>> = {
   buyer: {
-    cancel: { from: ['PENDING_CONFIRMATION'], to: 'CANCELLED' },
+    cancel: { from: ['PENDING_CONFIRMATION', 'AWAITING_PAYMENT'], to: 'CANCELLED' },
     complete: { from: ['DELIVERED'], to: 'COMPLETED' },
   },
   seller: {
@@ -475,7 +485,7 @@ export class MockDb {
 
     const fields: Record<string, string> = {};
     for (const f of ADDRESS_FIELDS) if (!body.shipping_address?.[f]?.trim()) fields[`shipping_address.${f}`] = 'required';
-    if (body.payment_method !== 'COD') fields.payment_method = 'must be COD';
+    if (!['COD', 'VNPAY', 'STRIPE'].includes(body.payment_method ?? '')) fields.payment_method = 'must be COD, VNPAY or STRIPE';
     fail(fields);
 
     const lines = this.state.carts[userId] ?? {};
@@ -499,6 +509,7 @@ export class MockDb {
       r.ctx!.sku.stock -= r.quantity;
       byShop.set(r.ctx!.shop.id, [...(byShop.get(r.ctx!.shop.id) ?? []), r]);
     }
+    const isOnlinePayment = body.payment_method !== 'COD';
     const orders: MockOrder[] = [...byShop.values()].map((group) => {
       const shop = group[0].ctx!.shop;
       const items: OrderItem[] = group.map(({ skuId, quantity, ctx }) => ({
@@ -506,16 +517,26 @@ export class MockDb {
         image_url: this.firstImage(ctx!.product), unit_price: ctx!.sku.price, quantity, line_total: ctx!.sku.price * quantity,
       }));
       const subtotal = items.reduce((sum, i) => sum + i.line_total, 0);
+      const commissionAmount = isOnlinePayment ? Math.floor(subtotal * COMMISSION_RATE_BPS / 10_000) : 0;
       return {
-        id: uuid(), checkout_id: checkoutId, status: 'PENDING_CONFIRMATION', buyer_id: userId, seller_user_id: shop.owner_user_id,
+        id: uuid(), checkout_id: checkoutId, status: isOnlinePayment ? 'AWAITING_PAYMENT' : 'PENDING_CONFIRMATION', buyer_id: userId, seller_user_id: shop.owner_user_id,
         shop: { id: shop.id, name: shop.name, slug: shop.slug }, items, subtotal, shipping_fee: SHIPPING_FEE_FLAT, total: subtotal + SHIPPING_FEE_FLAT,
-        shipping_address: { ...body.shipping_address }, payment_method: 'COD', cancel_reason: null,
-        // The mock only supports COD: payment_status NONE, no deadline, no commission, not delivered.
-        payment_status: 'NONE', payment_deadline: null, commission_rate_bps: 0, commission_amount: 0, delivered_at: null,
-        history: [
-          { from: null, to: 'PENDING', actor_role: 'system', note: null, created_at: ts },
-          { from: 'PENDING', to: 'PENDING_CONFIRMATION', actor_role: 'system', note: null, created_at: ts },
-        ],
+        shipping_address: { ...body.shipping_address }, payment_method: body.payment_method, cancel_reason: null,
+        // COD: payment_status NONE, no deadline, no commission. Online: UNPAID, deadline, commission.
+        payment_status: isOnlinePayment ? 'UNPAID' : 'NONE',
+        payment_deadline: isOnlinePayment ? new Date(Date.now() + PAYMENT_TTL_MS).toISOString() : null,
+        commission_rate_bps: isOnlinePayment ? COMMISSION_RATE_BPS : 0,
+        commission_amount: commissionAmount,
+        delivered_at: null,
+        history: isOnlinePayment
+          ? [
+              { from: null, to: 'PENDING', actor_role: 'system', note: null, created_at: ts },
+              { from: 'PENDING', to: 'AWAITING_PAYMENT', actor_role: 'system', note: null, created_at: ts },
+            ]
+          : [
+              { from: null, to: 'PENDING', actor_role: 'system', note: null, created_at: ts },
+              { from: 'PENDING', to: 'PENDING_CONFIRMATION', actor_role: 'system', note: null, created_at: ts },
+            ],
         created_at: ts, updated_at: ts,
       };
     });
@@ -569,6 +590,22 @@ export class MockDb {
       for (const item of order.items) {
         const ctx = this.skuContext(item.sku_id);
         if (ctx) ctx.sku.stock += item.quantity; // catalog releases the reservation
+      }
+      // When a buyer cancels an AWAITING_PAYMENT order, cancel all its siblings.
+      if (actor === 'buyer' && from === 'AWAITING_PAYMENT') {
+        const siblings = this.state.orders.filter(
+          (o) => o.checkout_id === order.checkout_id && o.id !== order.id && o.buyer_id === order.buyer_id && o.status === 'AWAITING_PAYMENT',
+        );
+        for (const sibling of siblings) {
+          sibling.status = 'CANCELLED';
+          sibling.cancel_reason = note;
+          sibling.updated_at = order.updated_at;
+          for (const item of sibling.items) {
+            const ctx = this.skuContext(item.sku_id);
+            if (ctx) ctx.sku.stock += item.quantity;
+          }
+          sibling.history.push({ from: 'AWAITING_PAYMENT', to: 'CANCELLED', actor_role: 'system', note: note || null, created_at: sibling.updated_at });
+        }
       }
     }
     order.history.push({ from, to: rule.to, actor_role: actor, note: note || null, created_at: order.updated_at });

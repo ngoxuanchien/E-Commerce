@@ -34,7 +34,7 @@ export function searchParams(request: Request) {
   return { text, int };
 }
 
-const ORDER_STATUSES: OrderStatus[] = ['PENDING', 'PENDING_CONFIRMATION', 'CONFIRMED', 'SHIPPING', 'DELIVERED', 'COMPLETED', 'CANCELLED'];
+const ORDER_STATUSES: OrderStatus[] = ['PENDING', 'PENDING_CONFIRMATION', 'AWAITING_PAYMENT', 'CONFIRMED', 'SHIPPING', 'DELIVERED', 'COMPLETED', 'CANCELLED'];
 const PRODUCT_STATUSES: ProductStatus[] = ['draft', 'active', 'archived'];
 
 export function orderStatusParam(value: string | undefined): OrderStatus | undefined {

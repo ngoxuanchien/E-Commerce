@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import type { CheckoutRequest } from '@/api/types';
-import { MockDb, SHIPPING_FEE_FLAT } from './db';
+import { MockDb, SHIPPING_FEE_FLAT, PAYMENT_TTL_MS, COMMISSION_RATE_BPS } from './db';
 import { SEED } from './seed';
 
 let db: MockDb;
@@ -170,6 +170,88 @@ describe('cart and checkout', () => {
     const cart = db.cart(SEED.users.an);
     expect(cart.shops[0].items[0]).toMatchObject({ available: false });
     expect(cart.subtotal).toBe(0);
+  });
+
+  test('online checkout creates AWAITING_PAYMENT orders with deadline and commission', () => {
+    db.setCartItem(SEED.users.an, SEED.skus.bowl11, 2);
+    db.setCartItem(SEED.users.an, SEED.skus.teeM, 1);
+    const beforeTime = Date.now();
+    const res = db.checkout(SEED.users.an, 'key-online', { shipping_address: address, payment_method: 'VNPAY' });
+    const afterTime = Date.now();
+
+    expect(res.orders).toHaveLength(2);
+    expect(new Set(res.orders.map((o) => o.checkout_id)).size).toBe(1);
+    for (const order of res.orders) {
+      expect(order.status).toBe('AWAITING_PAYMENT');
+      expect(order.payment_status).toBe('UNPAID');
+      expect(order.commission_rate_bps).toBe(COMMISSION_RATE_BPS);
+    }
+
+    const bowlOrder = res.orders.find((o) => o.shop.id === SEED.shops.gom)!;
+    const teeOrder = res.orders.find((o) => o.shop.id === SEED.shops.aoThun)!;
+
+    expect(bowlOrder.commission_amount).toBe(4_500);
+    expect(teeOrder.commission_amount).toBe(7_450);
+
+    const deadline = new Date(bowlOrder.payment_deadline!).getTime();
+    expect(deadline).toBeGreaterThanOrEqual(beforeTime + PAYMENT_TTL_MS - 5000);
+    expect(deadline).toBeLessThanOrEqual(afterTime + PAYMENT_TTL_MS + 5000);
+
+    expect(bowlOrder.history[bowlOrder.history.length - 1]).toMatchObject({ from: 'PENDING', to: 'AWAITING_PAYMENT' });
+  });
+
+  test('COD checkout still creates PENDING_CONFIRMATION with payment_status NONE', () => {
+    db.setCartItem(SEED.users.an, SEED.skus.bowl11, 1);
+    const res = db.checkout(SEED.users.an, 'key-cod', { shipping_address: address, payment_method: 'COD' });
+
+    expect(res.orders).toHaveLength(1);
+    const order = res.orders[0];
+    expect(order.status).toBe('PENDING_CONFIRMATION');
+    expect(order.payment_status).toBe('NONE');
+    expect(order.payment_deadline).toBeNull();
+    expect(order.commission_rate_bps).toBe(0);
+    expect(order.commission_amount).toBe(0);
+  });
+
+  test('rejects an unknown payment method', () => {
+    db.setCartItem(SEED.users.an, SEED.skus.bowl11, 1);
+    const err = caught(() => db.checkout(SEED.users.an, 'key-bad', { shipping_address: address, payment_method: 'PAYPAL' as never }));
+    expect(err).toMatchObject({ code: 'VALIDATION_ERROR', details: { fields: { payment_method: expect.any(String) } } });
+  });
+
+  test('buyer cancel of an AWAITING order cancels its siblings and releases stock', () => {
+    db.setCartItem(SEED.users.an, SEED.skus.bowl11, 2);
+    db.setCartItem(SEED.users.an, SEED.skus.teeM, 1);
+    const beforeBowlStock = skuStock(SEED.products.bowl, SEED.skus.bowl11);
+    const beforeTeeStock = skuStock(SEED.products.tee, SEED.skus.teeM);
+
+    const res = db.checkout(SEED.users.an, 'key-siblings', { shipping_address: address, payment_method: 'VNPAY' });
+    const firstOrderId = res.orders[0].id;
+
+    const cancelled = db.buyerAction(SEED.users.an, firstOrderId, 'cancel', 'đổi ý');
+    expect(cancelled.status).toBe('CANCELLED');
+    expect(cancelled.cancel_reason).toBe('đổi ý');
+
+    for (const order of db.buyerOrders(SEED.users.an).items.filter((o) => o.checkout_id === res.checkout_id)) {
+      expect(order.status).toBe('CANCELLED');
+      expect(order.cancel_reason).toBe('đổi ý');
+    }
+
+    expect(skuStock(SEED.products.bowl, SEED.skus.bowl11)).toBe(beforeBowlStock);
+    expect(skuStock(SEED.products.tee, SEED.skus.teeM)).toBe(beforeTeeStock);
+  });
+
+  test('ignores storage saved under v1', () => {
+    const storage: Storage = {
+      getItem: (key: string) => (key === 'marketplace-mock-db:v1' ? '{"users":[]}' : null),
+      setItem: () => {},
+      removeItem: () => {},
+      clear: () => {},
+      key: () => null,
+      length: 0,
+    };
+    const db2 = new MockDb(storage);
+    expect(db2.state.payments).toEqual([]);
   });
 });
 

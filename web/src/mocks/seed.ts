@@ -81,5 +81,9 @@ export function buildSeed(): DbState {
       created_at: at(20), updated_at: at(26),
     },
   ];
-  return { users, shops, categories: categories(), products, carts: {}, orders, idempotency: {}, blobs: {}, tokens: {}, session: null };
+  return {
+    users, shops, categories: categories(), products, carts: {}, orders, idempotency: {},
+    payments: [], walletEntries: [], payouts: [], keys: {},
+    blobs: {}, tokens: {}, session: null,
+  };
 }
