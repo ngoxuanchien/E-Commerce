@@ -48,7 +48,7 @@ dependencies). To run through a real sandbox, follow one of the sections below.
    # or: export PROVIDER_STRIPE=stripe && make up-app
    ```
 
-   Wait for it to be ready (`docker compose logs payment` shows no errors).
+   Wait for it to be ready (`docker compose -f deploy/docker-compose.yml logs payment` shows no errors).
 
 ### Testing
 
@@ -65,7 +65,7 @@ dependencies). To run through a real sandbox, follow one of the sections below.
    - The seller's wallet shows the amount in "In Escrow"
 
 5. Verify webhook delivery:
-   - Check the payment service logs: `docker compose logs payment | grep -i stripe`
+   - Check the payment service logs: `docker compose -f deploy/docker-compose.yml logs payment | grep -i stripe`
    - Look for `checkout.session.completed` and `charge.refunded` webhook events
 
 ### Testing failures (optional)
@@ -192,7 +192,7 @@ For VNPay, check the payment service logs for the refund API response.
 
 ## Troubleshooting
 
-- **Payment service fails to start:** Check `docker compose logs payment` for
+- **Payment service fails to start:** Check `docker compose -f deploy/docker-compose.yml logs payment` for
   missing or invalid credentials. Make sure `PROVIDER_*` vars are `fake`, `vnpay`,
   or `stripe` (case-sensitive).
 

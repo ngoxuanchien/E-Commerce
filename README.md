@@ -42,7 +42,7 @@ flowchart LR
   G --> L["ledger-svc<br/>:8085 / gRPC :9085"]
   C -- GrantRole --> I
   O -- GetSkus / ReserveStock / ReleaseStock --> C
-  O -- outbox --> K[("Kafka<br/>order.events")]
+  O -- outbox --> K[("Kafka<br/>order.events, payment.events, payout.events")]
   K -- OrderCancelled --> C
   O -- PaymentInternal --> P
   P -- GetCheckout --> O
