@@ -168,35 +168,35 @@ type OrderShop struct {
 }
 
 type Order struct {
-	ID                  string         `json:"id"`
-	CheckoutID          string         `json:"checkout_id"`
-	Status              string         `json:"status"`
-	BuyerID             string         `json:"buyer_id"`
-	Shop                OrderShop      `json:"shop"`
-	Items               []OrderItem    `json:"items"`
-	Subtotal            int64          `json:"subtotal"`
-	ShippingFee         int64          `json:"shipping_fee"`
-	Total               int64          `json:"total"`
-	CancelReason        *string        `json:"cancel_reason"`
-	History             []HistoryEntry `json:"history"`
-	PaymentMethod       string         `json:"payment_method"`
-	PaymentStatus       string         `json:"payment_status"`
-	PaymentDeadline     *string        `json:"payment_deadline"`
-	CommissionRateBps   int            `json:"commission_rate_bps"`
-	CommissionAmount    int64          `json:"commission_amount"`
-	DeliveredAt         *string        `json:"delivered_at"`
+	ID                string         `json:"id"`
+	CheckoutID        string         `json:"checkout_id"`
+	Status            string         `json:"status"`
+	BuyerID           string         `json:"buyer_id"`
+	Shop              OrderShop      `json:"shop"`
+	Items             []OrderItem    `json:"items"`
+	Subtotal          int64          `json:"subtotal"`
+	ShippingFee       int64          `json:"shipping_fee"`
+	Total             int64          `json:"total"`
+	CancelReason      *string        `json:"cancel_reason"`
+	History           []HistoryEntry `json:"history"`
+	PaymentMethod     string         `json:"payment_method"`
+	PaymentStatus     string         `json:"payment_status"`
+	PaymentDeadline   *string        `json:"payment_deadline"`
+	CommissionRateBps int            `json:"commission_rate_bps"`
+	CommissionAmount  int64          `json:"commission_amount"`
+	DeliveredAt       *string        `json:"delivered_at"`
 }
 
 // Payment represents a payment for a checkout.
 type Payment struct {
-	ID          string  `json:"id"`
-	CheckoutID  string  `json:"checkout_id"`
-	Method      string  `json:"method"`   // VNPAY | STRIPE
-	Provider    string  `json:"provider"` // vnpay | stripe | fake
-	Status      string  `json:"status"`   // PENDING | SUCCEEDED | FAILED | EXPIRED | DUPLICATE
-	Amount      int64   `json:"amount"`
-	RedirectURL *string `json:"redirect_url"`
-	ExpiresAt   string  `json:"expires_at"`
+	ID            string  `json:"id"`
+	CheckoutID    string  `json:"checkout_id"`
+	Method        string  `json:"method"`   // VNPAY | STRIPE
+	Provider      string  `json:"provider"` // vnpay | stripe | fake
+	Status        string  `json:"status"`   // PENDING | SUCCEEDED | FAILED | EXPIRED | DUPLICATE
+	Amount        int64   `json:"amount"`
+	RedirectURL   *string `json:"redirect_url"`
+	ExpiresAt     string  `json:"expires_at"`
 	FailureReason *string `json:"failure_reason"`
 }
 

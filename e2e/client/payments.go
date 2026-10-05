@@ -54,12 +54,24 @@ func (c *Client) FakeArm(ctx context.Context, paymentID string, hooks url.Values
 		return fmt.Errorf("GET %s: %w", path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.ReadAll(resp.Body)
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
 
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("GET %s: expected 2xx, got %d", path, resp.StatusCode)
+		return apiError(resp.StatusCode, data)
 	}
 	return nil
+}
+
+// noRedirectHTTP returns a copy of c.HTTP that doesn't follow redirects.
+func (c *Client) noRedirectHTTP() *http.Client {
+	httpCopy := *c.HTTP
+	httpCopy.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &httpCopy
 }
 
 // FakeSubmit submits the FAKE provider form with outcome and hooks.
@@ -74,12 +86,6 @@ func (c *Client) FakeSubmit(ctx context.Context, paymentID, outcome string, hook
 		for _, v := range vs {
 			formData.Add(k, v)
 		}
-	}
-
-	// Create HTTP client that doesn't follow redirects
-	httpCopy := *c.HTTP
-	httpCopy.CheckRedirect = func(*http.Request, []*http.Request) error {
-		return http.ErrUseLastResponse
 	}
 
 	path := "/api/payments/fake/checkout/" + url.PathEscape(paymentID)
@@ -98,7 +104,7 @@ func (c *Client) FakeSubmit(ctx context.Context, paymentID, outcome string, hook
 		}
 	}
 
-	resp, err := httpCopy.Do(req)
+	resp, err := c.noRedirectHTTP().Do(req)
 	if err != nil {
 		return "", fmt.Errorf("POST %s: %w", path, err)
 	}
@@ -119,12 +125,6 @@ func (c *Client) FakeSubmit(ctx context.Context, paymentID, outcome string, hook
 // GET /api/payments/fake/return?payment_id=…
 // Expects 302, returns Location.
 func (c *Client) FakeReturn(ctx context.Context, paymentID string) (string, error) {
-	// Create HTTP client that doesn't follow redirects
-	httpCopy := *c.HTTP
-	httpCopy.CheckRedirect = func(*http.Request, []*http.Request) error {
-		return http.ErrUseLastResponse
-	}
-
 	path := "/api/payments/fake/return?payment_id=" + url.QueryEscape(paymentID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
 	if err != nil {
@@ -135,15 +135,18 @@ func (c *Client) FakeReturn(ctx context.Context, paymentID string) (string, erro
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
-	resp, err := httpCopy.Do(req)
+	resp, err := c.noRedirectHTTP().Do(req)
 	if err != nil {
 		return "", fmt.Errorf("GET %s: %w", path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.ReadAll(resp.Body)
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
 
 	if resp.StatusCode != http.StatusFound {
-		return "", fmt.Errorf("GET %s: expected 302, got %d", path, resp.StatusCode)
+		return "", apiError(resp.StatusCode, data)
 	}
 
 	return resp.Header.Get("Location"), nil

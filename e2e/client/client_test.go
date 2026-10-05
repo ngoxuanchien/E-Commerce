@@ -2,9 +2,11 @@ package client_test
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -58,6 +60,7 @@ func TestSignFakeKnownVector(t *testing.T) {
 }
 
 func TestFakeSubmitDoesNotFollowRedirect(t *testing.T) {
+	var followed atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/payments/fake/checkout/p1" {
 			// Verify form was submitted
@@ -69,8 +72,8 @@ func TestFakeSubmitDoesNotFollowRedirect(t *testing.T) {
 			w.WriteHeader(http.StatusFound)
 			return
 		}
-		// If we hit /api/payments/fake/return, fail the test
-		t.Fatalf("should not follow redirect to %s", r.URL.Path)
+		// If we hit /api/payments/fake/return, mark it (don't use t.Fatalf in handler)
+		followed.Store(true)
 	}))
 	defer srv.Close()
 
@@ -81,6 +84,7 @@ func TestFakeSubmitDoesNotFollowRedirect(t *testing.T) {
 	location, err := c.FakeSubmit(context.Background(), "p1", "fail", hooks, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "/api/payments/fake/return?payment_id=p1", location)
+	assert.False(t, followed.Load(), "should not follow redirect to /api/payments/fake/return")
 }
 
 func TestFakeSubmitNon302IsAPIError(t *testing.T) {
@@ -103,6 +107,10 @@ func TestCreatePayoutSendsIdempotencyKey(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify idempotency key header
 		assert.Equal(t, "k1", r.Header.Get("Idempotency-Key"))
+		// Verify body
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"amount":50000}`, string(body))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"id":"payout1","amount":50000,"status":"REQUESTED","requested_at":"2026-10-05T10:00:00Z"}`))
