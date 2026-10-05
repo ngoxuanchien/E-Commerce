@@ -41,7 +41,16 @@ Seeded accounts (password `matkhau123`):
 | `binh@example.com` | seller of "Gốm Bát Tràng Cô Bình" |
 | `chi@example.com` | seller of "Áo Thun Sài Gòn" |
 
-The mock data is saved in `localStorage` under `marketplace-mock-db:v1`. Delete that key to reset it.
+The mock data is saved in `localStorage` under `marketplace-mock-db:v2`. Delete that key to reset it.
+
+Payments: online orders (VNPAY, STRIPE) start in `AWAITING_PAYMENT` with a 15-minute deadline. The
+mock keeps the payment state machine in memory; `window.location.assign('/__mock/pay/<id>')` opens
+a fake gateway page ("Thành công" / "Thất bại") that settles the payment and returns to
+`/checkout/result?payment_id=<id>`.
+
+Ledger: wallet balances are derived from entries, never stored. Releasing an order to the seller
+credits total − commission (5 %). Payouts settle 3 s after the request and always succeed.
+`binh@example.com` is seeded with an available balance of 457,500 ₫.
 
 ## API types
 
@@ -78,4 +87,18 @@ e2e              Playwright specs (MSW mode, plus a session check against a stub
 - No endpoint exposes the shipping fee before checkout, so the checkout preview uses the constant
   `SHIPPING_FEE_FLAT` (`src/features/checkout/shipping.ts`). The orders it creates carry the
   server's fee.
-- `Order.shop` has no `slug`, so order pages show the shop name without a link.
+
+## Deviations and decisions (WS5')
+
+1. A wallet entry's order link targets `/orders/{id}`, because `WalletEntry` has no shop slug.
+2. The first online submit reuses the idempotency key stored under `pay:{checkout_id}`; pay-again
+   always renews it.
+3. If payment creation fails after checkout, the user always lands on the AWAITING orders, with the
+   deadline toast for 503/network errors and the reason message otherwise.
+4. `meta.silent` mutations skip the global retry toast.
+5. Mock payouts never fail.
+6. The mock payment page (`/__mock/pay/:id`) is DEV-only.
+7. `data-testid`s for WS6': `payment-method-COD|VNPAY|STRIPE`, `payment-result` (`data-status`),
+   `pay-again`, `order-payment-status`, `payment-countdown`, `order-pay-button`, `wallet-available`,
+   `wallet-in-escrow`, `wallet-pending-payout`, `wallet-entry`, `payout-amount`, `payout-submit`,
+   `payout-row` (`data-status`).

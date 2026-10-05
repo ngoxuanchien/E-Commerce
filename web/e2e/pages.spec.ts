@@ -54,7 +54,7 @@ test('seller pages: products, edit form, orders, shop profile', async ({ page })
   await expect(page.getByLabel('Tên sản phẩm')).toHaveValue('Bát ăn cơm men lam Bát Tràng');
   const sellerNav = page.getByRole('navigation', { name: 'Kênh người bán' });
   await sellerNav.getByRole('link', { name: 'Đơn hàng' }).click();
-  await expect(page.getByRole('article', { name: 'Đơn hàng của Gốm Bát Tràng Cô Bình' })).toBeVisible();
+  await expect(page.getByRole('article', { name: 'Đơn hàng của Gốm Bát Tràng Cô Bình' }).first()).toBeVisible();
   await sellerNav.getByRole('link', { name: 'Hồ sơ shop' }).click();
   await page.getByLabel('Giới thiệu shop').fill('Gốm men lam Bát Tràng, giao toàn quốc.');
   await page.getByRole('button', { name: 'Lưu thay đổi' }).click();
