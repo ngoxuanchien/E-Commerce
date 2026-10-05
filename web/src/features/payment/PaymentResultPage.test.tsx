@@ -1,6 +1,6 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import { HttpResponse, http } from 'msw';
-import { beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { SEED } from '@/mocks/seed';
 import { getDb } from '@/mocks/state';
 import { server } from '@/test/server';
@@ -20,12 +20,14 @@ vi.mock('sonner', async () => {
   };
 });
 
-type User = ReturnType<typeof renderApp>['user'];
-
 beforeEach(() => {
   vi.mocked(redirectTo).mockClear();
   vi.mocked(toast.success).mockClear();
   vi.mocked(toast.error).mockClear();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 function setupCart() {
@@ -63,9 +65,7 @@ test('pending then success: polls and updates heading when status changes', asyn
   expect(section).toHaveAttribute('data-status', 'PENDING');
 
   // Simulate payment success in the mock db
-  await waitFor(() => {
-    getDb().submitMockPayment(payment.id, 'succeed');
-  });
+  getDb().submitMockPayment(payment.id, 'succeed');
 
   // After polling picks it up (within 2s + some buffer), heading should change
   const successHeading = await screen.findByRole('heading', { name: 'Thanh toán thành công' }, { timeout: 4000 });
@@ -99,7 +99,6 @@ test('pay-again button sends new POST and redirects', async () => {
   const payment = getDb().createPayment(SEED.users.an, 'p1', { checkout_id: checkoutId });
   getDb().submitMockPayment(payment.id, 'fail');
 
-  const newPaymentIds: string[] = [];
   const newIdempotencyKeys: string[] = [];
   server.use(
     http.post('*/api/payments', async ({ request }) => {
@@ -238,8 +237,13 @@ test('timeout: after 60s, heading changes and polling stops', async () => {
   const heading = await screen.findByRole('heading', { name: 'Đang chờ kết quả thanh toán…' });
   expect(heading).toBeInTheDocument();
 
-  // Advance time by 60 seconds
-  await vi.advanceTimersByTimeAsync(60_000);
+  // Let some polling happen (2s interval, so should have at least 2 requests)
+  await vi.advanceTimersByTimeAsync(5_000);
+  const pollCount = getCount;
+  expect(pollCount).toBeGreaterThan(1); // Proves polling was running
+
+  // Advance time by 60 seconds total
+  await vi.advanceTimersByTimeAsync(55_000);
 
   // Heading should change to the timed-out version
   const timedOutHeading = await screen.findByRole('heading', { name: 'Đang xác nhận thanh toán…' });
@@ -254,21 +258,19 @@ test('timeout: after 60s, heading changes and polling stops', async () => {
 
   const initialGetCount = getCount;
 
-  // Advance further
+  // Advance further - polling should have stopped
   await vi.advanceTimersByTimeAsync(10_000);
 
   // GET count should not increase (polling stopped)
   expect(getCount).toBe(initialGetCount);
-
-  vi.useRealTimers();
 });
 
 test('no payment_id param shows empty state', async () => {
   setupCheckout();
   renderApp('/checkout/result', { as: 'an@example.com' });
 
-  const heading = await screen.findByRole('heading', { name: 'Không tìm thấy giao dịch' });
-  expect(heading).toBeInTheDocument();
+  const title = await screen.findByText('Không tìm thấy giao dịch');
+  expect(title).toBeInTheDocument();
 
   // Should have link to orders
   expect(screen.getByRole('link', { name: 'Xem đơn mua' })).toHaveAttribute('href', '/orders');
@@ -280,8 +282,8 @@ test('unknown payment id shows empty state', async () => {
 
   renderApp(`/checkout/result?payment_id=${unknownId}`, { as: 'an@example.com' });
 
-  const heading = await screen.findByRole('heading', { name: 'Không tìm thấy giao dịch' });
-  expect(heading).toBeInTheDocument();
+  const title = await screen.findByText('Không tìm thấy giao dịch');
+  expect(title).toBeInTheDocument();
 });
 
 test('succeeded state shows heading and link to orders', async () => {
@@ -351,4 +353,55 @@ test('MockPayPage: clicking success button', async () => {
 
   // Mock db should show payment as SUCCEEDED
   expect(getDb().payment(SEED.users.an, payment.id).status).toBe('SUCCEEDED');
+});
+
+test('503 error shows ErrorState with retry button', async () => {
+  const checkoutId = setupCheckout();
+  const payment = getDb().createPayment(SEED.users.an, 'p1', { checkout_id: checkoutId });
+
+  server.use(
+    http.get('*/api/payments/*', () => {
+      return HttpResponse.json({}, { status: 503 });
+    }),
+  );
+
+  renderApp(`/checkout/result?payment_id=${payment.id}`, { as: 'an@example.com' });
+
+  // Should show ErrorState with "Dịch vụ đang tạm gián đoạn"
+  const errorMsg = await screen.findByText('Dịch vụ đang tạm gián đoạn. Vui lòng thử lại.');
+  expect(errorMsg).toBeInTheDocument();
+
+  // Should have a retry button
+  const retryBtn = screen.getByRole('button', { name: 'Thử lại' });
+  expect(retryBtn).toBeInTheDocument();
+});
+
+test('SUCCEEDED status invalidates orders and order queries', async () => {
+  const checkoutId = setupCheckout();
+  const payment = getDb().createPayment(SEED.users.an, 'p1', { checkout_id: checkoutId });
+
+  const { queryClient } = renderApp(`/checkout/result?payment_id=${payment.id}`, { as: 'an@example.com' });
+
+  // Wait for PENDING heading
+  await screen.findByRole('heading', { name: 'Đang chờ kết quả thanh toán…' });
+
+  // Create a spy on invalidateQueries BEFORE the effect runs
+  const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+  // Update payment to SUCCEEDED (this should trigger the polling to pick it up within 2s)
+  getDb().submitMockPayment(payment.id, 'succeed');
+
+  // Wait for the heading to change to SUCCEEDED (polling picks it up)
+  await screen.findByRole('heading', { name: 'Thanh toán thành công' }, { timeout: 4000 });
+
+  // Now check that invalidateQueries was called with the correct keys
+  await waitFor(() => {
+    const calls = invalidateSpy.mock.calls;
+    const hasOrdersCall = calls.some((call) => JSON.stringify(call[0]) === JSON.stringify({ queryKey: ['orders'] }));
+    const hasOrderCall = calls.some((call) => JSON.stringify(call[0]) === JSON.stringify({ queryKey: ['order'] }));
+    expect(hasOrdersCall).toBe(true);
+    expect(hasOrderCall).toBe(true);
+  });
+
+  invalidateSpy.mockRestore();
 });

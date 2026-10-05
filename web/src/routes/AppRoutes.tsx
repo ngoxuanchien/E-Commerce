@@ -33,7 +33,7 @@ export function AppRoutes() {
           <Route path="search" element={<SearchPage />} />
           <Route path="products/:id" element={<ProductPage />} />
           <Route path="shops/:slug" element={<ShopPage />} />
-          <Route path="__mock/pay/:id" element={<MockPayPage />} />
+          {import.meta.env.DEV ? <Route path="__mock/pay/:id" element={<MockPayPage />} /> : null}
           <Route element={<RequireAuth />}>
             <Route path="cart" element={<CartPage />} />
             <Route path="checkout" element={<CheckoutPage />} />

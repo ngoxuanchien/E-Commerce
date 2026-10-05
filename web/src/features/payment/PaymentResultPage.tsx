@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePayment, useStartPayment } from '@/api/hooks/payments';
-import { paymentErrorMessage, paymentReasonOf } from '@/api/errors';
+import { ApiError, paymentErrorMessage, paymentReasonOf } from '@/api/errors';
 import { qk } from '@/api/query-keys';
 import { EmptyState, ErrorState, PageSpinner } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -16,8 +16,20 @@ export function PaymentResultPage() {
   const [timedOut, setTimedOut] = useState(false);
   const queryClient = useQueryClient();
 
-  const { data: payment, error, isLoading } = usePayment(paymentId, !timedOut);
+  const { data: payment, error, isLoading, refetch } = usePayment(paymentId, !timedOut);
   const startPayment = useStartPayment();
+
+  // Compute canClickButton early (before early returns, for hook ordering)
+  const canClickButton = useMemo(() => {
+    if (!payment) return false;
+    const status = payment.status;
+    const canRetry = status === 'FAILED' || status === 'EXPIRED';
+    if (!canRetry) return false;
+    const expiresAtTime = new Date(payment.expires_at).getTime();
+    // eslint-disable-next-line react-hooks/purity
+    const isExpired = expiresAtTime <= Date.now();
+    return !isExpired;
+  }, [payment]);
 
   // Set timeout after 60 seconds
   useEffect(() => {
@@ -34,24 +46,19 @@ export function PaymentResultPage() {
   useEffect(() => {
     if (payment?.status === 'SUCCEEDED') {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
-      queryClient.invalidateQueries({ queryKey: qk.order('') });
+      queryClient.invalidateQueries({ queryKey: ['order'] });
     }
   }, [payment?.status, queryClient]);
 
-  const renderNotFound = () => (
-    <div className="rounded-lg border border-dashed bg-card p-8 text-center">
-      <h1 className="text-2xl font-bold">Không tìm thấy giao dịch</h1>
-      <div className="mt-3 text-sm text-muted-foreground">
+  // No payment ID provided
+  if (!paymentId) {
+    return (
+      <EmptyState title="Không tìm thấy giao dịch">
         <Link to="/orders" className="font-medium text-tarp hover:underline">
           Xem đơn mua
         </Link>
-      </div>
-    </div>
-  );
-
-  // No payment ID provided
-  if (!paymentId) {
-    return renderNotFound();
+      </EmptyState>
+    );
   }
 
   // Loading state
@@ -59,9 +66,19 @@ export function PaymentResultPage() {
     return <PageSpinner label="Đang tải…" />;
   }
 
-  // Error state (including NOT_FOUND)
+  // Error state (NOT_FOUND vs other errors)
   if (error) {
-    return renderNotFound();
+    const isNotFound = error instanceof ApiError && error.code === 'NOT_FOUND';
+    if (isNotFound) {
+      return (
+        <EmptyState title="Không tìm thấy giao dịch">
+          <Link to="/orders" className="font-medium text-tarp hover:underline">
+            Xem đơn mua
+          </Link>
+        </EmptyState>
+      );
+    }
+    return <ErrorState error={error} onRetry={() => void refetch()} />;
   }
 
   // No data
@@ -70,9 +87,6 @@ export function PaymentResultPage() {
   }
 
   const status = payment.status;
-  const canRetry = status === 'FAILED' || status === 'EXPIRED';
-  const expiresAtTime = new Date(payment.expires_at).getTime();
-  const canClickButton = canRetry && Date.now() < expiresAtTime;
 
   const handlePayAgain = () => {
     startPayment.mutate(
