@@ -83,10 +83,26 @@ func run() error {
 	}
 	defer func() { _ = catalogConn.Close() }()
 
-	svc := bootstrap.New(bootstrap.Config{
+	// payment-svc dials lazily like the catalog one, so /readyz does not
+	// depend on it.
+	paymentConn, err := grpcx.Dial(cfg.PaymentGRPCAddr)
+	if err != nil {
+		return fmt.Errorf("dial payment: %w", err)
+	}
+	defer func() { _ = paymentConn.Close() }()
+
+	svc, err := bootstrap.New(bootstrap.Config{
 		ShippingFeeFlat: cfg.ShippingFeeFlat, SweeperInterval: cfg.SweeperInterval,
 		PendingTimeout: cfg.PendingTimeout, Catalog: catalog.DefaultConfig(),
-	}, bootstrap.Deps{Pool: pool, Redis: rdb, CatalogConn: catalogConn, Producer: producer, Logger: logger})
+		OnlineMethods: cfg.onlineMethods(), CommissionRateBps: cfg.CommissionRateBps,
+		PaymentTimeout: cfg.PaymentTimeout, AutoCompleteAfter: cfg.AutoCompleteAfter,
+	}, bootstrap.Deps{
+		Pool: pool, Redis: rdb, CatalogConn: catalogConn, PaymentConn: paymentConn,
+		Producer: producer, KafkaBrokers: cfg.KafkaBrokers, Logger: logger,
+	})
+	if err != nil {
+		return err
+	}
 
 	// Workers stop (deferred last, so run first) before the connections close.
 	workersCtx, stopWorkers := context.WithCancel(ctx)
@@ -95,6 +111,7 @@ func run() error {
 	defer func() { stopWorkers(); <-workersDone }()
 
 	grpcSrv, _ := grpcx.NewServer()
+	svc.RegisterGRPC(grpcSrv)
 	return server.Run(ctx, server.Config{
 		HTTP: &http.Server{
 			Addr:              cfg.HTTPAddr,

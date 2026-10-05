@@ -66,9 +66,15 @@ func (h *harness) testLifecycle(t *testing.T) {
 		require.Len(t, got.History, 6)
 		assert.Equal(t, "GHN-123", *got.History[3].Note)
 	}
-	h.events.waitTypes(t, o.ID, event.TypeOrderCreated,
+	evs := h.events.waitTypes(t, o.ID, event.TypeOrderCreated,
 		event.TypeOrderStatusChanged, event.TypeOrderStatusChanged, event.TypeOrderStatusChanged,
-		event.TypeOrderStatusChanged, event.TypeOrderStatusChanged)
+		event.TypeOrderStatusChanged, event.TypeOrderStatusChanged, event.TypeOrderCompleted)
+	completed, err := event.DecodeData[event.OrderCompleted](evs[len(evs)-1])
+	require.NoError(t, err)
+	assert.Equal(t, event.OrderCompleted{
+		OrderID: o.ID, CheckoutID: o.CheckoutID, SellerUserID: shop.SellerUserID, PaymentMethod: "COD",
+		Total: o.Total, CommissionAmount: 0, CompletedBy: "buyer",
+	}, completed)
 }
 
 func (h *harness) testBuyerCannotCancelConfirmed(t *testing.T) {
@@ -88,7 +94,80 @@ func (h *harness) testBuyerCannotCancelConfirmed(t *testing.T) {
 		event.TypeOrderStatusChanged, event.TypeOrderStatusChanged, event.TypeOrderCancelled)
 	c, err := event.DecodeData[event.OrderCancelled](evs[4])
 	require.NoError(t, err)
-	assert.Equal(t, event.OrderCancelled{OrderID: o.ID, Reason: "hết hàng", CancelledBy: "seller"}, c)
+	assert.Equal(t, event.OrderCancelled{
+		OrderID: o.ID, Reason: "hết hàng", CancelledBy: "seller",
+		CheckoutID: o.CheckoutID, PaymentMethod: "COD",
+	}, c)
+}
+
+// testBuyerCancelsAwaitingCheckout cancels one order of an unpaid checkout:
+// every order of that checkout still awaiting payment is cancelled with it.
+func (h *harness) testBuyerCancelsAwaitingCheckout(t *testing.T) {
+	b, shopA, shopB := newBuyer(), catalogfake.NewShop("Cancel A"), catalogfake.NewShop("Cancel B")
+	a := h.fake.AddSku(shopA, 120_000, 10)
+	bb := h.fake.AddSku(shopB, 45_000, 10)
+	h.addToCart(t, b, a.GetSkuId(), 1)
+	h.addToCart(t, b, bb.GetSkuId(), 1)
+
+	status, body := h.checkout(t, b, "ck-cancel", checkoutBodyWith("VNPAY"))
+	require.Equal(t, http.StatusCreated, status, string(body))
+	res := decode[checkoutResp](t, body)
+	require.Len(t, res.Orders, 2)
+	first, second := res.Orders[0], res.Orders[1]
+	require.Equal(t, "AWAITING_PAYMENT", first.Status)
+	h.events.waitTypes(t, first.ID, event.TypeOrderCreated, event.TypeOrderStatusChanged)
+	h.events.waitTypes(t, second.ID, event.TypeOrderCreated, event.TypeOrderStatusChanged)
+
+	status, got := h.act(t, b, "/api/orders/"+first.ID+"/cancel", map[string]string{"reason": "no longer needed"})
+	require.Equal(t, http.StatusOK, status)
+	assert.Equal(t, "CANCELLED", got.Status)
+	assert.Equal(t, "no longer needed", *got.CancelReason)
+	assert.Equal(t, res.CheckoutID, got.CheckoutID)
+
+	status, body = h.do(t, b, http.MethodGet, "/api/orders/"+second.ID, nil)
+	require.Equal(t, http.StatusOK, status)
+	assert.Equal(t, "CANCELLED", decode[orderResp](t, body).Status, "the sibling is cancelled too")
+
+	for _, o := range []orderResp{first, second} {
+		evs := h.events.waitTypes(t, o.ID, event.TypeOrderCreated, event.TypeOrderStatusChanged,
+			event.TypeOrderStatusChanged, event.TypeOrderCancelled)
+		c, err := event.DecodeData[event.OrderCancelled](evs[3])
+		require.NoError(t, err)
+		assert.Equal(t, event.OrderCancelled{
+			OrderID: o.ID, Reason: "no longer needed", CancelledBy: "buyer",
+			CheckoutID: res.CheckoutID, PaymentMethod: "VNPAY",
+		}, c)
+		changed, err := event.DecodeData[event.OrderStatusChanged](evs[2])
+		require.NoError(t, err)
+		assert.Equal(t, event.OrderStatusChanged{
+			OrderID: o.ID, From: "AWAITING_PAYMENT", To: "CANCELLED", ActorID: b.id, ActorRole: "buyer",
+		}, changed)
+	}
+}
+
+// testSellerCannotActOnAwaitingPayment: the seller may neither confirm nor
+// cancel an unpaid order, but does see it in their list.
+func (h *harness) testSellerCannotActOnAwaitingPayment(t *testing.T) {
+	b, shop := newBuyer(), catalogfake.NewShop("Await Shop")
+	h.addToCart(t, b, h.fake.AddSku(shop, 50_000, 10).GetSkuId(), 1)
+	status, body := h.checkout(t, b, "ck-await", checkoutBodyWith("VNPAY"))
+	require.Equal(t, http.StatusCreated, status, string(body))
+	o := decode[checkoutResp](t, body).Orders[0]
+	require.Equal(t, "AWAITING_PAYMENT", o.Status)
+
+	s := sellerOf(shop)
+	status, body = h.do(t, s, http.MethodPost, "/api/seller/orders/"+o.ID+"/confirm", nil)
+	assert.Equal(t, http.StatusConflict, status)
+	assert.Equal(t, "INVALID_STATE_TRANSITION", decode[errResp](t, body).Error.Code)
+	status, body = h.do(t, s, http.MethodPost, "/api/seller/orders/"+o.ID+"/cancel", map[string]string{"reason": "hết hàng"})
+	assert.Equal(t, http.StatusConflict, status)
+	assert.Equal(t, "INVALID_STATE_TRANSITION", decode[errResp](t, body).Error.Code)
+
+	status, body = h.do(t, s, http.MethodGet, "/api/seller/orders?status=AWAITING_PAYMENT", nil)
+	require.Equal(t, http.StatusOK, status, string(body))
+	page := decode[pageResp](t, body)
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, o.ID, page.Items[0].ID)
 }
 
 func (h *harness) testStrangers(t *testing.T) {

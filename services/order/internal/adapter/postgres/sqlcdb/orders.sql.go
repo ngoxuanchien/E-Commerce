@@ -12,8 +12,64 @@ import (
 	"github.com/google/uuid"
 )
 
+const claimDueDelivered = `-- name: ClaimDueDelivered :many
+SELECT id, checkout_id, buyer_id, shop_id, shop_name, seller_user_id, status, subtotal, shipping_fee, total, shipping_address, payment_method, cancel_reason, version, created_at, updated_at, shop_slug, payment_status, payment_deadline, commission_rate_bps, commission_amount, delivered_at FROM orders
+WHERE status = 'DELIVERED' AND delivered_at <= $1
+ORDER BY delivered_at, id
+LIMIT $2
+FOR UPDATE SKIP LOCKED
+`
+
+type ClaimDueDeliveredParams struct {
+	DeliveredBefore *time.Time
+	BatchSize       int32
+}
+
+func (q *Queries) ClaimDueDelivered(ctx context.Context, arg ClaimDueDeliveredParams) ([]Order, error) {
+	rows, err := q.db.Query(ctx, claimDueDelivered, arg.DeliveredBefore, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Order
+	for rows.Next() {
+		var i Order
+		if err := rows.Scan(
+			&i.ID,
+			&i.CheckoutID,
+			&i.BuyerID,
+			&i.ShopID,
+			&i.ShopName,
+			&i.SellerUserID,
+			&i.Status,
+			&i.Subtotal,
+			&i.ShippingFee,
+			&i.Total,
+			&i.ShippingAddress,
+			&i.PaymentMethod,
+			&i.CancelReason,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ShopSlug,
+			&i.PaymentStatus,
+			&i.PaymentDeadline,
+			&i.CommissionRateBps,
+			&i.CommissionAmount,
+			&i.DeliveredAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const claimStalePending = `-- name: ClaimStalePending :many
-SELECT id, checkout_id, buyer_id, shop_id, shop_name, seller_user_id, status, subtotal, shipping_fee, total, shipping_address, payment_method, cancel_reason, version, created_at, updated_at FROM orders
+SELECT id, checkout_id, buyer_id, shop_id, shop_name, seller_user_id, status, subtotal, shipping_fee, total, shipping_address, payment_method, cancel_reason, version, created_at, updated_at, shop_slug, payment_status, payment_deadline, commission_rate_bps, commission_amount, delivered_at FROM orders
 WHERE status = 'PENDING' AND created_at < $1
 ORDER BY created_at, id
 LIMIT $2
@@ -51,6 +107,12 @@ func (q *Queries) ClaimStalePending(ctx context.Context, arg ClaimStalePendingPa
 			&i.Version,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ShopSlug,
+			&i.PaymentStatus,
+			&i.PaymentDeadline,
+			&i.CommissionRateBps,
+			&i.CommissionAmount,
+			&i.DeliveredAt,
 		); err != nil {
 			return nil, err
 		}
@@ -62,8 +124,56 @@ func (q *Queries) ClaimStalePending(ctx context.Context, arg ClaimStalePendingPa
 	return items, nil
 }
 
+const expiredCheckouts = `-- name: ExpiredCheckouts :many
+SELECT checkout_id, min(payment_deadline)::timestamptz AS deadline
+FROM orders
+WHERE status = 'AWAITING_PAYMENT' AND payment_deadline <= $1
+GROUP BY checkout_id
+HAVING $2::timestamptz IS NULL
+    OR (min(payment_deadline), checkout_id) > ($2::timestamptz, $3::uuid)
+ORDER BY deadline, checkout_id
+LIMIT $4
+`
+
+type ExpiredCheckoutsParams struct {
+	Now             *time.Time
+	AfterDeadline   *time.Time
+	AfterCheckoutID *uuid.UUID
+	BatchSize       int32
+}
+
+type ExpiredCheckoutsRow struct {
+	CheckoutID uuid.UUID
+	Deadline   time.Time
+}
+
+func (q *Queries) ExpiredCheckouts(ctx context.Context, arg ExpiredCheckoutsParams) ([]ExpiredCheckoutsRow, error) {
+	rows, err := q.db.Query(ctx, expiredCheckouts,
+		arg.Now,
+		arg.AfterDeadline,
+		arg.AfterCheckoutID,
+		arg.BatchSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ExpiredCheckoutsRow
+	for rows.Next() {
+		var i ExpiredCheckoutsRow
+		if err := rows.Scan(&i.CheckoutID, &i.Deadline); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getOrder = `-- name: GetOrder :one
-SELECT id, checkout_id, buyer_id, shop_id, shop_name, seller_user_id, status, subtotal, shipping_fee, total, shipping_address, payment_method, cancel_reason, version, created_at, updated_at FROM orders WHERE id = $1
+SELECT id, checkout_id, buyer_id, shop_id, shop_name, seller_user_id, status, subtotal, shipping_fee, total, shipping_address, payment_method, cancel_reason, version, created_at, updated_at, shop_slug, payment_status, payment_deadline, commission_rate_bps, commission_amount, delivered_at FROM orders WHERE id = $1
 `
 
 func (q *Queries) GetOrder(ctx context.Context, id uuid.UUID) (Order, error) {
@@ -86,6 +196,12 @@ func (q *Queries) GetOrder(ctx context.Context, id uuid.UUID) (Order, error) {
 		&i.Version,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ShopSlug,
+		&i.PaymentStatus,
+		&i.PaymentDeadline,
+		&i.CommissionRateBps,
+		&i.CommissionAmount,
+		&i.DeliveredAt,
 	)
 	return i, err
 }
@@ -123,27 +239,36 @@ func (q *Queries) InsertHistory(ctx context.Context, arg InsertHistoryParams) er
 const insertOrder = `-- name: InsertOrder :exec
 INSERT INTO orders (id, checkout_id, buyer_id, shop_id, shop_name, seller_user_id, status,
                     subtotal, shipping_fee, total, shipping_address, payment_method,
-                    cancel_reason, version, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                    cancel_reason, version, created_at, updated_at,
+                    shop_slug, payment_status, payment_deadline, commission_rate_bps,
+                    commission_amount, delivered_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+        $17, $18, $19, $20, $21, $22)
 `
 
 type InsertOrderParams struct {
-	ID              uuid.UUID
-	CheckoutID      uuid.UUID
-	BuyerID         uuid.UUID
-	ShopID          uuid.UUID
-	ShopName        string
-	SellerUserID    uuid.UUID
-	Status          string
-	Subtotal        int64
-	ShippingFee     int64
-	Total           int64
-	ShippingAddress []byte
-	PaymentMethod   string
-	CancelReason    *string
-	Version         int32
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                uuid.UUID
+	CheckoutID        uuid.UUID
+	BuyerID           uuid.UUID
+	ShopID            uuid.UUID
+	ShopName          string
+	SellerUserID      uuid.UUID
+	Status            string
+	Subtotal          int64
+	ShippingFee       int64
+	Total             int64
+	ShippingAddress   []byte
+	PaymentMethod     string
+	CancelReason      *string
+	Version           int32
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	ShopSlug          string
+	PaymentStatus     string
+	PaymentDeadline   *time.Time
+	CommissionRateBps int32
+	CommissionAmount  int64
+	DeliveredAt       *time.Time
 }
 
 func (q *Queries) InsertOrder(ctx context.Context, arg InsertOrderParams) error {
@@ -164,6 +289,12 @@ func (q *Queries) InsertOrder(ctx context.Context, arg InsertOrderParams) error 
 		arg.Version,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.ShopSlug,
+		arg.PaymentStatus,
+		arg.PaymentDeadline,
+		arg.CommissionRateBps,
+		arg.CommissionAmount,
+		arg.DeliveredAt,
 	)
 	return err
 }
@@ -204,7 +335,7 @@ func (q *Queries) InsertOrderItem(ctx context.Context, arg InsertOrderItemParams
 }
 
 const listBuyerOrders = `-- name: ListBuyerOrders :many
-SELECT id, checkout_id, buyer_id, shop_id, shop_name, seller_user_id, status, subtotal, shipping_fee, total, shipping_address, payment_method, cancel_reason, version, created_at, updated_at FROM orders
+SELECT id, checkout_id, buyer_id, shop_id, shop_name, seller_user_id, status, subtotal, shipping_fee, total, shipping_address, payment_method, cancel_reason, version, created_at, updated_at, shop_slug, payment_status, payment_deadline, commission_rate_bps, commission_amount, delivered_at FROM orders
 WHERE buyer_id = $1
   AND ($2::text IS NULL OR status = $2::text)
   AND ($3::timestamptz IS NULL
@@ -253,6 +384,59 @@ func (q *Queries) ListBuyerOrders(ctx context.Context, arg ListBuyerOrdersParams
 			&i.Version,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ShopSlug,
+			&i.PaymentStatus,
+			&i.PaymentDeadline,
+			&i.CommissionRateBps,
+			&i.CommissionAmount,
+			&i.DeliveredAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCheckoutOrders = `-- name: ListCheckoutOrders :many
+SELECT id, checkout_id, buyer_id, shop_id, shop_name, seller_user_id, status, subtotal, shipping_fee, total, shipping_address, payment_method, cancel_reason, version, created_at, updated_at, shop_slug, payment_status, payment_deadline, commission_rate_bps, commission_amount, delivered_at FROM orders WHERE checkout_id = $1 ORDER BY id
+`
+
+func (q *Queries) ListCheckoutOrders(ctx context.Context, checkoutID uuid.UUID) ([]Order, error) {
+	rows, err := q.db.Query(ctx, listCheckoutOrders, checkoutID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Order
+	for rows.Next() {
+		var i Order
+		if err := rows.Scan(
+			&i.ID,
+			&i.CheckoutID,
+			&i.BuyerID,
+			&i.ShopID,
+			&i.ShopName,
+			&i.SellerUserID,
+			&i.Status,
+			&i.Subtotal,
+			&i.ShippingFee,
+			&i.Total,
+			&i.ShippingAddress,
+			&i.PaymentMethod,
+			&i.CancelReason,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ShopSlug,
+			&i.PaymentStatus,
+			&i.PaymentDeadline,
+			&i.CommissionRateBps,
+			&i.CommissionAmount,
+			&i.DeliveredAt,
 		); err != nil {
 			return nil, err
 		}
@@ -333,7 +517,7 @@ func (q *Queries) ListItemsByOrderIDs(ctx context.Context, orderIds []uuid.UUID)
 }
 
 const listSellerOrders = `-- name: ListSellerOrders :many
-SELECT id, checkout_id, buyer_id, shop_id, shop_name, seller_user_id, status, subtotal, shipping_fee, total, shipping_address, payment_method, cancel_reason, version, created_at, updated_at FROM orders
+SELECT id, checkout_id, buyer_id, shop_id, shop_name, seller_user_id, status, subtotal, shipping_fee, total, shipping_address, payment_method, cancel_reason, version, created_at, updated_at, shop_slug, payment_status, payment_deadline, commission_rate_bps, commission_amount, delivered_at FROM orders
 WHERE seller_user_id = $1
   AND ($2::text IS NULL OR status = $2::text)
   AND ($3::timestamptz IS NULL
@@ -382,6 +566,12 @@ func (q *Queries) ListSellerOrders(ctx context.Context, arg ListSellerOrdersPara
 			&i.Version,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ShopSlug,
+			&i.PaymentStatus,
+			&i.PaymentDeadline,
+			&i.CommissionRateBps,
+			&i.CommissionAmount,
+			&i.DeliveredAt,
 		); err != nil {
 			return nil, err
 		}
@@ -393,24 +583,113 @@ func (q *Queries) ListSellerOrders(ctx context.Context, arg ListSellerOrdersPara
 	return items, nil
 }
 
-const updateOrderStatus = `-- name: UpdateOrderStatus :execrows
-UPDATE orders
-SET status = $1, cancel_reason = $2, version = version + 1, updated_at = $3
-WHERE id = $4 AND version = $5
+const lockAwaitingPayment = `-- name: LockAwaitingPayment :many
+SELECT id, checkout_id, buyer_id, shop_id, shop_name, seller_user_id, status, subtotal, shipping_fee, total, shipping_address, payment_method, cancel_reason, version, created_at, updated_at, shop_slug, payment_status, payment_deadline, commission_rate_bps, commission_amount, delivered_at FROM orders
+WHERE checkout_id = $1 AND status = 'AWAITING_PAYMENT' AND payment_deadline <= $2
+ORDER BY id
+FOR UPDATE SKIP LOCKED
 `
 
-type UpdateOrderStatusParams struct {
-	Status       string
-	CancelReason *string
-	UpdatedAt    time.Time
-	ID           uuid.UUID
-	Version      int32
+type LockAwaitingPaymentParams struct {
+	CheckoutID uuid.UUID
+	Now        *time.Time
 }
 
-func (q *Queries) UpdateOrderStatus(ctx context.Context, arg UpdateOrderStatusParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateOrderStatus,
+func (q *Queries) LockAwaitingPayment(ctx context.Context, arg LockAwaitingPaymentParams) ([]Order, error) {
+	rows, err := q.db.Query(ctx, lockAwaitingPayment, arg.CheckoutID, arg.Now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Order
+	for rows.Next() {
+		var i Order
+		if err := rows.Scan(
+			&i.ID,
+			&i.CheckoutID,
+			&i.BuyerID,
+			&i.ShopID,
+			&i.ShopName,
+			&i.SellerUserID,
+			&i.Status,
+			&i.Subtotal,
+			&i.ShippingFee,
+			&i.Total,
+			&i.ShippingAddress,
+			&i.PaymentMethod,
+			&i.CancelReason,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ShopSlug,
+			&i.PaymentStatus,
+			&i.PaymentDeadline,
+			&i.CommissionRateBps,
+			&i.CommissionAmount,
+			&i.DeliveredAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateOrder = `-- name: UpdateOrder :execrows
+UPDATE orders
+SET status = $1, cancel_reason = $2, payment_status = $3,
+    payment_deadline = $4, delivered_at = $5,
+    version = version + 1, updated_at = $6
+WHERE id = $7 AND version = $8
+`
+
+type UpdateOrderParams struct {
+	Status          string
+	CancelReason    *string
+	PaymentStatus   string
+	PaymentDeadline *time.Time
+	DeliveredAt     *time.Time
+	UpdatedAt       time.Time
+	ID              uuid.UUID
+	Version         int32
+}
+
+func (q *Queries) UpdateOrder(ctx context.Context, arg UpdateOrderParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateOrder,
 		arg.Status,
 		arg.CancelReason,
+		arg.PaymentStatus,
+		arg.PaymentDeadline,
+		arg.DeliveredAt,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.Version,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updatePaymentStatus = `-- name: UpdatePaymentStatus :execrows
+UPDATE orders
+SET payment_status = $1, version = version + 1, updated_at = $2
+WHERE id = $3 AND version = $4
+`
+
+type UpdatePaymentStatusParams struct {
+	PaymentStatus string
+	UpdatedAt     time.Time
+	ID            uuid.UUID
+	Version       int32
+}
+
+func (q *Queries) UpdatePaymentStatus(ctx context.Context, arg UpdatePaymentStatusParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updatePaymentStatus,
+		arg.PaymentStatus,
 		arg.UpdatedAt,
 		arg.ID,
 		arg.Version,

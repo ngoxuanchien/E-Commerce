@@ -541,7 +541,7 @@ components:
       enum: [buyer, seller, system]
     OrderShop:
       type: object
-      required: [id, name]
+      required: [id, name, slug]
       properties:
         id:
           $ref: 'common.yaml#/components/schemas/Id'
@@ -549,7 +549,7 @@ components:
           type: string
         slug:
           type: string
-          description: Shop slug for links (P2; optional until WS3' marks it required)
+          description: Shop slug for links
     OrderItem:
       type: object
       required: [sku_id, product_id, product_name, variant_name, image_url, unit_price, quantity, line_total]
@@ -590,7 +590,7 @@ components:
           $ref: 'common.yaml#/components/schemas/Timestamp'
     Order:
       type: object
-      required: [id, checkout_id, status, buyer_id, shop, items, subtotal, shipping_fee, total, shipping_address, payment_method, cancel_reason, history, created_at, updated_at]
+      required: [id, checkout_id, status, buyer_id, shop, items, subtotal, shipping_fee, total, shipping_address, payment_method, payment_status, payment_deadline, commission_rate_bps, commission_amount, delivered_at, cancel_reason, history, created_at, updated_at]
       properties:
         id:
           $ref: 'common.yaml#/components/schemas/Id'
@@ -620,24 +620,23 @@ components:
         payment_status:
           type: string
           enum: [NONE, UNPAID, PAID, REFUND_PENDING, REFUNDED]
-          description: NONE for COD (P2; optional until WS3' marks it required)
+          description: NONE for COD
         payment_deadline:
           type: [string, 'null']
           format: date-time
-          description: null for COD (P2; optional until WS3' marks it required)
+          description: null for COD
         commission_rate_bps:
           type: integer
           minimum: 0
           maximum: 10000
-          description: 0 for COD (P2; optional until WS3' marks it required)
+          description: 0 for COD
         commission_amount:
           allOf:
             - $ref: 'common.yaml#/components/schemas/Money'
-          description: 0 for COD (P2; optional until WS3' marks it required)
+          description: 0 for COD
         delivered_at:
           type: [string, 'null']
           format: date-time
-          description: (P2; optional until WS3' marks it required)
         cancel_reason:
           type: [string, 'null']
         history:

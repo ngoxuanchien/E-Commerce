@@ -22,6 +22,25 @@ type Catalog interface {
 	ReleaseStock(ctx context.Context, orderID string) error
 }
 
+// PaymentOutcome is PaymentInternal.CancelCheckoutPayments' answer.
+type PaymentOutcome int
+
+const (
+	OutcomeNotPaid PaymentOutcome = iota + 1
+	OutcomePaid
+)
+
+// Payments is payment-svc's internal API (adapter/payment).
+type Payments interface {
+	// CancelCheckoutPayments makes sure no attempt of the checkout can still
+	// succeed and reports whether one did. ErrPaymentTimeout when payment-svc
+	// did not answer within the call's deadline (it may be down, so the
+	// sweeper stops asking for the rest of the tick); ErrPaymentUnavailable
+	// for any other failure, which concerns only that checkout. Either way the
+	// caller retries on a later tick.
+	CancelCheckoutPayments(ctx context.Context, checkoutID string) (PaymentOutcome, error)
+}
+
 // CartStore persists carts as SKU ID → quantity (adapter/redis).
 type CartStore interface {
 	Lines(ctx context.Context, userID string) (map[string]int32, error)
@@ -39,6 +58,10 @@ type Store interface {
 	// ListOrders returns up to q.Limit orders, newest first, with items and
 	// history, strictly after q.After when set.
 	ListOrders(ctx context.Context, q ListQuery) ([]domain.Order, error)
+	// ListCheckoutOrders returns every order of a checkout, whatever its
+	// status, with items and history, ordered by id. An unknown or malformed
+	// checkoutID gives an empty slice.
+	ListCheckoutOrders(ctx context.Context, checkoutID string) ([]domain.Order, error)
 	// BeginIdempotency claims (userID, key) at `at`. created reports whether
 	// this call holds the claim now: it inserted the row, or took over an
 	// orphaned one (same requestHash, no response, claimed before
@@ -54,21 +77,48 @@ type Store interface {
 	// retry to replay, so a release that matches no row is a no-op, not an error.
 	DeleteIdempotencyKey(ctx context.Context, userID, key string, claimedAt time.Time) error
 	DeleteIdempotencyKeysBefore(ctx context.Context, before time.Time) (int64, error)
+	// ExpiredCheckouts returns up to limit checkouts with an AWAITING_PAYMENT
+	// order whose payment deadline is at or before now, oldest deadline
+	// first, strictly after after when set. Rows are not locked, so the
+	// sweeper may ask payment-svc about a checkout it will not act on.
+	ExpiredCheckouts(ctx context.Context, now time.Time, after *CheckoutCursor, limit int) ([]CheckoutCursor, error)
 }
 
 // Tx is the set of writes that must commit atomically.
 type Tx interface {
 	// InsertOrder stores a new order with its items and history entries.
 	InsertOrder(ctx context.Context, o domain.Order) error
-	// SaveTransition persists o's status, cancel reason and updated_at if the
-	// stored version is still prevVersion (and bumps it), then appends o's
-	// last history entry. ErrConcurrentUpdate when the version moved on.
+	// SaveTransition persists o's status, cancel reason, payment status,
+	// payment deadline, delivered_at and updated_at if the stored version is
+	// still prevVersion (and bumps it), then appends o's last history entry.
+	// ErrConcurrentUpdate when the version moved on.
 	SaveTransition(ctx context.Context, o domain.Order, prevVersion int) error
+	// SavePaymentStatus persists only o's payment status and updated_at if the
+	// stored version is still prevVersion (and bumps it). Status, cancel
+	// reason, payment deadline and delivered_at are never written, so a stale
+	// or partly built o cannot overwrite them. It adds no history row.
+	// ErrConcurrentUpdate when the version moved on.
+	SavePaymentStatus(ctx context.Context, o domain.Order, prevVersion int) error
+	// GetOrder returns an order with items and history, read inside the
+	// transaction. ErrNotFound if the id is unknown or malformed.
+	GetOrder(ctx context.Context, id string) (domain.Order, error)
+	// MarkProcessed records eventID in the inbox as this consumer. firstTime is
+	// false when it was already recorded, in which case the caller must skip
+	// the event. It is called in the same transaction as the event's effect.
+	MarkProcessed(ctx context.Context, eventID string) (firstTime bool, err error)
 	// Publish writes p to the outbox for topic order.events, keyed by orderID.
 	Publish(ctx context.Context, orderID string, p event.Payload, at time.Time) error
 	// ClaimStalePending locks up to limit PENDING orders created before
 	// `before` (FOR UPDATE SKIP LOCKED). Items and history are not loaded.
 	ClaimStalePending(ctx context.Context, before time.Time, limit int) ([]domain.Order, error)
+	// LockAwaitingPayment locks the checkout's AWAITING_PAYMENT orders whose
+	// payment deadline is at or before now (FOR UPDATE SKIP LOCKED), so
+	// concurrent sweepers split them. Items and history are not loaded.
+	LockAwaitingPayment(ctx context.Context, checkoutID string, now time.Time) ([]domain.Order, error)
+	// ClaimDueDelivered locks up to limit DELIVERED orders delivered at or
+	// before deliveredBefore, oldest first (FOR UPDATE SKIP LOCKED). Items and
+	// history are not loaded.
+	ClaimDueDelivered(ctx context.Context, deliveredBefore time.Time, limit int) ([]domain.Order, error)
 	// CompleteIdempotencyKey stores the final response for (userID, key).
 	// ErrIdempotencyClaimLost when claimedAt is no longer the key's claim (a
 	// newer request reclaimed it), which rolls the transaction back.
@@ -96,6 +146,13 @@ type ListQuery struct {
 type Cursor struct {
 	CreatedAt time.Time
 	ID        string
+}
+
+// CheckoutCursor is a keyset position in the expired-checkout sweep, ordered
+// by (deadline, checkout_id).
+type CheckoutCursor struct {
+	Deadline   time.Time
+	CheckoutID string
 }
 
 // Response is a rendered HTTP response, stored for idempotent replays.

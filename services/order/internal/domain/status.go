@@ -5,6 +5,7 @@ type Status string
 
 const (
 	StatusPending             Status = "PENDING"
+	StatusAwaitingPayment     Status = "AWAITING_PAYMENT"
 	StatusPendingConfirmation Status = "PENDING_CONFIRMATION"
 	StatusConfirmed           Status = "CONFIRMED"
 	StatusShipping            Status = "SHIPPING"
@@ -15,9 +16,21 @@ const (
 
 // Statuses lists every status in lifecycle order.
 var Statuses = []Status{
-	StatusPending, StatusPendingConfirmation, StatusConfirmed, StatusShipping,
+	StatusPending, StatusAwaitingPayment, StatusPendingConfirmation, StatusConfirmed, StatusShipping,
 	StatusDelivered, StatusCompleted, StatusCancelled,
 }
+
+// PaymentStatus is where an order's money stands, independent of its
+// lifecycle Status (WS3' spec §2).
+type PaymentStatus string
+
+const (
+	PaymentNone          PaymentStatus = "NONE" // COD: nothing is collected online
+	PaymentUnpaid        PaymentStatus = "UNPAID"
+	PaymentPaid          PaymentStatus = "PAID"
+	PaymentRefundPending PaymentStatus = "REFUND_PENDING"
+	PaymentRefunded      PaymentStatus = "REFUNDED"
+)
 
 // ParseStatus returns the Status named s (case-sensitive).
 func ParseStatus(s string) (Status, bool) {
@@ -51,13 +64,15 @@ func SystemActor() Actor { return Actor{Role: RoleSystem} }
 type Action string
 
 const (
-	ActionSubmit   Action = "submit" // checkout reserved all stock: PENDING → PENDING_CONFIRMATION
-	ActionConfirm  Action = "confirm"
-	ActionShip     Action = "ship"
-	ActionDeliver  Action = "deliver"
-	ActionComplete Action = "complete"
-	ActionCancel   Action = "cancel"
+	ActionSubmit       Action = "submit" // COD checkout reserved all stock: PENDING → PENDING_CONFIRMATION
+	ActionConfirm      Action = "confirm"
+	ActionShip         Action = "ship"
+	ActionDeliver      Action = "deliver"
+	ActionComplete     Action = "complete"
+	ActionCancel       Action = "cancel"
+	ActionAwaitPayment Action = "await_payment" // online checkout reserved all stock: PENDING → AWAITING_PAYMENT
+	ActionMarkPaid     Action = "mark_paid"     // payment captured: AWAITING_PAYMENT → PENDING_CONFIRMATION
 )
 
 // Actions lists every action.
-var Actions = []Action{ActionSubmit, ActionConfirm, ActionShip, ActionDeliver, ActionComplete, ActionCancel}
+var Actions = []Action{ActionSubmit, ActionConfirm, ActionShip, ActionDeliver, ActionComplete, ActionCancel, ActionAwaitPayment, ActionMarkPaid}

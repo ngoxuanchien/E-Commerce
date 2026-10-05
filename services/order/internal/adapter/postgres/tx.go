@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/ngoxuanchien/e-commerce/pkg/event"
+	"github.com/ngoxuanchien/e-commerce/pkg/inbox"
 	"github.com/ngoxuanchien/e-commerce/pkg/outbox"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/adapter/postgres/sqlcdb"
 	"github.com/ngoxuanchien/e-commerce/services/order/internal/app"
@@ -54,6 +56,8 @@ func (t *txStore) InsertOrder(ctx context.Context, o domain.Order) error {
 		SellerUserID: sellerID, Status: string(o.Status), Subtotal: o.Subtotal, ShippingFee: o.ShippingFee,
 		Total: o.Total, ShippingAddress: addr, PaymentMethod: o.PaymentMethod, CancelReason: o.CancelReason,
 		Version: int32(o.Version), CreatedAt: o.CreatedAt, UpdatedAt: o.UpdatedAt,
+		ShopSlug: o.ShopSlug, PaymentStatus: string(o.PaymentStatus), PaymentDeadline: o.PaymentDeadline,
+		CommissionRateBps: o.CommissionRateBps, CommissionAmount: o.CommissionAmount, DeliveredAt: o.DeliveredAt,
 	}); err != nil {
 		return fmt.Errorf("insert order: %w", err)
 	}
@@ -94,14 +98,8 @@ func (t *txStore) SaveTransition(ctx context.Context, o domain.Order, prevVersio
 	if err != nil {
 		return err
 	}
-	n, err := t.q.UpdateOrderStatus(ctx, sqlcdb.UpdateOrderStatusParams{
-		Status: string(o.Status), CancelReason: o.CancelReason, UpdatedAt: o.UpdatedAt, ID: id, Version: int32(prevVersion),
-	})
-	if err != nil {
-		return fmt.Errorf("update order status: %w", err)
-	}
-	if n == 0 {
-		return app.ErrConcurrentUpdate
+	if err := t.update(ctx, id, o, prevVersion); err != nil {
+		return err
 	}
 	p, err := historyParams(id, o.History[len(o.History)-1])
 	if err != nil {
@@ -111,6 +109,54 @@ func (t *txStore) SaveTransition(ctx context.Context, o domain.Order, prevVersio
 		return fmt.Errorf("insert order history: %w", err)
 	}
 	return nil
+}
+
+// update writes o's mutable columns if the stored version is still prevVersion.
+func (t *txStore) update(ctx context.Context, id uuid.UUID, o domain.Order, prevVersion int) error {
+	n, err := t.q.UpdateOrder(ctx, sqlcdb.UpdateOrderParams{
+		Status: string(o.Status), CancelReason: o.CancelReason, PaymentStatus: string(o.PaymentStatus),
+		PaymentDeadline: o.PaymentDeadline, DeliveredAt: o.DeliveredAt, UpdatedAt: o.UpdatedAt,
+		ID: id, Version: int32(prevVersion),
+	})
+	if err != nil {
+		return fmt.Errorf("update order: %w", err)
+	}
+	if n == 0 {
+		return app.ErrConcurrentUpdate
+	}
+	return nil
+}
+
+func (t *txStore) SavePaymentStatus(ctx context.Context, o domain.Order, prevVersion int) error {
+	id, err := mustParseUUID(o.ID)
+	if err != nil {
+		return err
+	}
+	// Only the payment columns: a stale or partly built o must not overwrite
+	// status, cancel_reason, payment_deadline or delivered_at.
+	n, err := t.q.UpdatePaymentStatus(ctx, sqlcdb.UpdatePaymentStatusParams{
+		PaymentStatus: string(o.PaymentStatus), UpdatedAt: o.UpdatedAt, ID: id, Version: int32(prevVersion),
+	})
+	if err != nil {
+		return fmt.Errorf("update payment status: %w", err)
+	}
+	if n == 0 {
+		return app.ErrConcurrentUpdate
+	}
+	return nil
+}
+
+// GetOrder reads an order with its items and history inside the transaction, so
+// a consumer sees the same snapshot as the effects it writes.
+func (t *txStore) GetOrder(ctx context.Context, id string) (domain.Order, error) {
+	return getOrder(ctx, t.q, id)
+}
+
+// InboxConsumer is this service's inbox identity (WS3' §5).
+const InboxConsumer = "order-svc"
+
+func (t *txStore) MarkProcessed(ctx context.Context, eventID string) (bool, error) {
+	return inbox.MarkProcessed(ctx, t.tx, InboxConsumer, eventID)
 }
 
 func (t *txStore) Publish(ctx context.Context, orderID string, p event.Payload, at time.Time) error {
@@ -126,6 +172,33 @@ func (t *txStore) ClaimStalePending(ctx context.Context, before time.Time, limit
 	if err != nil {
 		return nil, fmt.Errorf("claim stale pending orders: %w", err)
 	}
+	return toDomainOrders(rows)
+}
+
+func (t *txStore) LockAwaitingPayment(ctx context.Context, checkoutID string, now time.Time) ([]domain.Order, error) {
+	cid, err := mustParseUUID(checkoutID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := t.q.LockAwaitingPayment(ctx, sqlcdb.LockAwaitingPaymentParams{CheckoutID: cid, Now: &now})
+	if err != nil {
+		return nil, fmt.Errorf("lock awaiting payment orders: %w", err)
+	}
+	return toDomainOrders(rows)
+}
+
+func (t *txStore) ClaimDueDelivered(ctx context.Context, deliveredBefore time.Time, limit int) ([]domain.Order, error) {
+	rows, err := t.q.ClaimDueDelivered(ctx, sqlcdb.ClaimDueDeliveredParams{
+		DeliveredBefore: &deliveredBefore, BatchSize: int32(limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("claim due delivered orders: %w", err)
+	}
+	return toDomainOrders(rows)
+}
+
+// toDomainOrders converts claimed rows; items and history are not loaded.
+func toDomainOrders(rows []sqlcdb.Order) ([]domain.Order, error) {
 	orders := make([]domain.Order, 0, len(rows))
 	for _, r := range rows {
 		o, err := toDomainOrder(r)

@@ -72,8 +72,10 @@ type CheckoutParams struct {
 	ShippingFee   int64          // flat fee per order
 	Address       Address
 	PaymentMethod string
-	Now           time.Time
-	NewID         func() string
+	// CommissionRateBps is the platform commission snapshot; used for online methods only.
+	CommissionRateBps int32
+	Now               time.Time
+	NewID             func() string
 }
 
 // BuildOrders splits a checkout into one PENDING order per shop, pricing every
@@ -111,8 +113,13 @@ func BuildOrders(p CheckoutParams) ([]Order, error) {
 			ID: p.NewID(), CheckoutID: p.CheckoutID, BuyerID: p.BuyerID,
 			ShopID: shopID, ShopName: first.ShopName, SellerUserID: first.SellerUserID,
 			Status: StatusPending, ShippingFee: p.ShippingFee, ShippingAddress: p.Address,
-			PaymentMethod: p.PaymentMethod, CreatedAt: p.Now, UpdatedAt: p.Now,
+			PaymentMethod: p.PaymentMethod, PaymentStatus: PaymentNone, CreatedAt: p.Now, UpdatedAt: p.Now,
 			History: []HistoryEntry{{To: StatusPending, ActorRole: RoleSystem, At: p.Now}},
+		}
+		o.ShopSlug = first.ShopSlug
+		if IsOnline(p.PaymentMethod) {
+			o.PaymentStatus = PaymentUnpaid
+			o.CommissionRateBps = p.CommissionRateBps
 		}
 		for _, l := range lines {
 			s := p.Skus[l.SkuID]
@@ -123,6 +130,9 @@ func BuildOrders(p CheckoutParams) ([]Order, error) {
 			}
 			o.Items = append(o.Items, it)
 			o.Subtotal += it.LineTotal
+		}
+		if IsOnline(p.PaymentMethod) {
+			o.CommissionAmount = Commission(o.Subtotal, p.CommissionRateBps)
 		}
 		o.Total = o.Subtotal + o.ShippingFee
 		orders = append(orders, o)

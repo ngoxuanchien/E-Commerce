@@ -136,3 +136,76 @@ func TestCheckoutTxCFailure(t *testing.T) {
 		assert.Equal(t, domain.StatusPendingConfirmation, orders[0].Status)
 	})
 }
+
+// commitAtDeadline lets Tx C commit, then holds the reply until the forward
+// context's deadline has fired, as if the commit landed right at the deadline.
+type commitAtDeadline struct{ app.Store }
+
+func (s commitAtDeadline) InTx(ctx context.Context, fn func(app.Tx) error) error {
+	completed := false
+	err := s.Store.InTx(ctx, func(tx app.Tx) error {
+		return fn(&faultyTx{Tx: tx, store: &faultyStore{}, completed: &completed})
+	})
+	if err == nil && completed {
+		<-ctx.Done()
+	}
+	return err
+}
+
+// A Tx C that commits just before the forward deadline still clears the
+// purchased cart lines: the cart is cleaned up under its own context (T10).
+func TestCheckoutClearsCartAfterACommitAtTheDeadline(t *testing.T) {
+	e := newEnv(t, envOpts{postgres: true, redis: true})
+	svc := app.NewCheckoutService(commitAtDeadline{e.store}, e.carts, e.catalog, app.CheckoutConfig{
+		ShippingFee: 30_000, Now: e.clock.Now, Deadline: 2 * time.Second,
+	})
+	buyer := uid()
+	s := e.fake.AddSku(catalogfake.NewShop("Deadline cart"), 10_000, 5)
+	e.cartSet(t, buyer, s.GetSkuId(), 1)
+
+	resp, err := svc.Checkout(ctx, checkoutInput(buyer, "deadline-cart"), (&recorder{}).encode)
+	require.NoError(t, err)
+	assert.Len(t, createdOrderIDs(t, resp), 1)
+	lines, err := e.carts.Lines(ctx, buyer)
+	require.NoError(t, err)
+	assert.Empty(t, lines, "purchased lines leave the cart")
+}
+
+// deadlineProbe records whether the context that stores an idempotency
+// response carries a deadline.
+type deadlineProbe struct {
+	app.Store
+	sawDeadline atomic.Bool
+	calls       atomic.Int32
+}
+
+func (s *deadlineProbe) InTx(ctx context.Context, fn func(app.Tx) error) error {
+	return s.Store.InTx(ctx, func(tx app.Tx) error { return fn(&deadlineProbeTx{Tx: tx, probe: s}) })
+}
+
+type deadlineProbeTx struct {
+	app.Tx
+	probe *deadlineProbe
+}
+
+func (t *deadlineProbeTx) CompleteIdempotencyKey(ctx context.Context, userID, key string, claimedAt time.Time, resp app.Response) error {
+	_, ok := ctx.Deadline()
+	t.probe.sawDeadline.Store(ok)
+	t.probe.calls.Add(1)
+	return t.Tx.CompleteIdempotencyKey(ctx, userID, key, claimedAt, resp)
+}
+
+// A stored rejection runs on the bounded cleanup context, never on the
+// unbounded base context, so a hung database cannot hold it forever.
+func TestCheckoutRejectionIsStoredUnderTheCleanupBudget(t *testing.T) {
+	e := newEnv(t, envOpts{postgres: true, redis: true})
+	store := &deadlineProbe{Store: e.store}
+	svc := app.NewCheckoutService(store, e.carts, e.catalog, app.CheckoutConfig{ShippingFee: 30_000, Now: e.clock.Now})
+
+	rec := &recorder{}
+	_, err := svc.Checkout(context.Background(), checkoutInput(uid(), "empty-cart"), rec.encode)
+	require.NoError(t, err)
+	require.Error(t, rec.lastErr(), "an empty selection is a stored rejection")
+	require.Equal(t, int32(1), store.calls.Load(), "the rejection is stored once")
+	assert.True(t, store.sawDeadline.Load(), "the rejection is stored on a context with a deadline")
+}

@@ -20,22 +20,28 @@ type IdempotencyKey struct {
 }
 
 type Order struct {
-	ID              uuid.UUID
-	CheckoutID      uuid.UUID
-	BuyerID         uuid.UUID
-	ShopID          uuid.UUID
-	ShopName        string
-	SellerUserID    uuid.UUID
-	Status          string
-	Subtotal        int64
-	ShippingFee     int64
-	Total           int64
-	ShippingAddress []byte
-	PaymentMethod   string
-	CancelReason    *string
-	Version         int32
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                uuid.UUID
+	CheckoutID        uuid.UUID
+	BuyerID           uuid.UUID
+	ShopID            uuid.UUID
+	ShopName          string
+	SellerUserID      uuid.UUID
+	Status            string
+	Subtotal          int64
+	ShippingFee       int64
+	Total             int64
+	ShippingAddress   []byte
+	PaymentMethod     string
+	CancelReason      *string
+	Version           int32
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	ShopSlug          string
+	PaymentStatus     string
+	PaymentDeadline   *time.Time
+	CommissionRateBps int32
+	CommissionAmount  int64
+	DeliveredAt       *time.Time
 }
 
 type OrderItem struct {
@@ -70,4 +76,10 @@ type Outbox struct {
 	Headers     []byte
 	CreatedAt   time.Time
 	PublishedAt *time.Time
+}
+
+type ProcessedEvent struct {
+	Consumer    string
+	EventID     uuid.UUID
+	ProcessedAt time.Time
 }
