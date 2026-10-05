@@ -61,7 +61,7 @@ test('shows awaiting payment orders with payment status and countdown', async ()
   }
 });
 
-test('clicking pay button sends payment request with different idempotency keys', async () => {
+test('clicking pay button sends payment request and redirects', async () => {
   const db = getDb();
   db.setCartItem(SEED.users.an, SEED.skus.bowl11, 1);
   db.setCartItem(SEED.users.an, SEED.skus.teeM, 1);
@@ -77,14 +77,10 @@ test('clicking pay button sends payment request with different idempotency keys'
     },
     payment_method: 'VNPAY',
   });
+
   const { user } = renderApp('/orders?status=AWAITING_PAYMENT', { as: 'an@example.com' });
   const buttons = await screen.findAllByTestId('order-pay-button');
   expect(buttons).toHaveLength(2);
-
-  const keys: string[] = [];
-  vi.mocked(redirectTo).mockImplementation(() => {
-    // Capture the idempotency key from the request
-  });
 
   await user.click(buttons[0]);
   expect(vi.mocked(redirectTo)).toHaveBeenCalled();

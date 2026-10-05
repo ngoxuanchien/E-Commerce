@@ -16,8 +16,7 @@ import { PaymentStatusBadge } from './PaymentStatusBadge';
 import { PaymentCountdown } from './PaymentCountdown';
 import { OrderTimeline } from './OrderTimeline';
 import { buyerCanCancel, buyerCanComplete, shortId } from './order-status';
-import { isPayable } from './payment-labels';
-import { PAYMENT_METHOD_LABEL } from './payment-labels';
+import { isPayable, PAYMENT_METHOD_LABEL } from './payment-labels';
 
 const reportError = (err: unknown) => {
   if (!isRetryable(err)) toast.error(errorMessage(err));
@@ -111,14 +110,14 @@ export function OrderDetailPage() {
               </div>
             ) : null}
             {!isBuyer && o.payment_method !== 'COD' ? (
-              <>
-                <div className="flex justify-between border-t pt-2 mt-2"><dt>Phí sàn ({o.commission_rate_bps / 100}%)</dt><dd><Price value={o.commission_amount} /></dd></div>
+              <dl className="space-y-1 border-t pt-2 mt-2">
+                <div className="flex justify-between"><dt>Phí sàn ({o.commission_rate_bps / 100}%)</dt><dd><Price value={o.commission_amount} /></dd></div>
                 <div className="flex justify-between"><dt>Bạn nhận được</dt><dd><Price value={o.total - o.commission_amount} /></dd></div>
-              </>
+              </dl>
             ) : null}
           </section>
           {isBuyer && isPayable(o) ? (
-            <PayAgainButton order={o} />
+            <PayAgainButton order={o} className="w-full" />
           ) : null}
           {isBuyer && buyerCanComplete(o.status) ? (
             <Button className="w-full" disabled={complete.isPending} onClick={() => complete.mutate(o.id, { onError: reportError })}>

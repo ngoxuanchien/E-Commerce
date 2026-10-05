@@ -1,16 +1,8 @@
 import { screen, within } from '@testing-library/react';
-import { expect, test, vi, beforeEach } from 'vitest';
+import { expect, test } from 'vitest';
 import { SEED } from '@/mocks/seed';
 import { getDb } from '@/mocks/state';
 import { renderApp } from '@/test/render';
-
-vi.mock('@/lib/redirect', () => ({ redirectTo: vi.fn() }));
-
-beforeEach(() => {
-  vi.mocked(redirectTo).mockClear();
-});
-
-const { redirectTo } = await import('@/lib/redirect');
 
 const card = () => screen.findByRole('article', { name: 'Đơn hàng của Áo Thun Sài Gòn' });
 
