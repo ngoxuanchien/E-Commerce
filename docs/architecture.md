@@ -20,9 +20,9 @@ the key decisions are recorded as ADRs in [adr/](adr).
 One Postgres instance hosts five separate databases; no service reads
 another service's database. Only the gateway, web, MinIO and Jaeger publish
 ports to the host, which is why services can trust the `X-User-*` headers
-set by the gateway. Payment callbacks (`/api/payments/*/`) skip authentication
-and routing to a specific user, but the gateway still verifies the signature
-before forwarding.
+set by the gateway. Payment callbacks (`/api/payments/{vnpay,stripe,fake}/`)
+skip authentication and never inject identity; payment-svc verifies provider
+signatures and return URLs.
 
 ## A request through the gateway
 
@@ -94,8 +94,9 @@ shipping fee is a flat 30,000 VND per order.
 When the buyer chooses an online payment method (VNPay or Stripe), the orders
 are placed in `AWAITING_PAYMENT` instead of `PENDING_CONFIRMATION`, and a
 separate step creates a payment and redirects to the provider's hosted page.
-Once the provider confirms the payment asynchronously, the orders move to
-`PENDING_CONFIRMATION` and the escrow is captured into the ledger.
+Once the provider confirms the payment asynchronously (or the reconciler recovers
+it), the orders move to `PENDING_CONFIRMATION` and the escrow is captured into
+the ledger.
 
 ```mermaid
 sequenceDiagram
@@ -105,6 +106,7 @@ sequenceDiagram
   participant O as order-svc
   participant P as payment-svc
   participant PSP as VNPay / Stripe / FAKE
+  participant K as Kafka
   participant L as ledger-svc
   Buyer->>W: place order (VNPAY)
   W->>O: POST /api/checkout {payment_method: VNPAY}
@@ -113,15 +115,22 @@ sequenceDiagram
   P->>O: gRPC GetCheckout
   P-->>W: {payment_id, redirect_url}
   W->>PSP: redirect
-  PSP->>P: IPN / webhook (signed)
+  PSP->>P: IPN / webhook (signed) or return query
   P->>P: verify, attempt SUCCEEDED, PaymentSucceeded to outbox
-  P->>L: emit payment.events PaymentSucceeded
-  O->>O: consume payment.events → orders PENDING_CONFIRMATION, payment_status PAID
-  L->>L: allocate payment amount to order escrows
-  PSP-->>W: return URL → /checkout/result
+  P->>K: emit payment.events PaymentSucceeded
+  PSP-->>W: return URL → /api/payments/{fake|vnpay|stripe}/return
+  P->>P: verify, Query, 302 to /checkout/result
+  W->>W: at /checkout/result
+  par payment and order-svc
+    K->>O: payment.events PaymentSucceeded → orders PENDING_CONFIRMATION, payment_status PAID
+    K->>L: payment.events PaymentSucceeded → capture allocations to escrow
+  end
   Note over O,L: … confirm → ship → deliver → complete (buyer or auto after 72 h)
-  O->>L: emit order.events OrderCompleted
-  L->>L: release escrow: seller wallet += total − commission, platform revenue += commission
+  par on OrderCompleted
+    O->>K: emit order.events OrderCompleted
+    K->>L: release escrow: seller_wallet += (total − commission), platform_commission_revenue += commission
+  end
+  Note over P: reconciler (every 60s) polls stuck PENDING attempts via provider Query
 ```
 
 ## Refund on cancel (P2)
@@ -138,17 +147,20 @@ sequenceDiagram
   participant O as order-svc
   participant ODB as order_db
   participant P as payment-svc
-  participant K as Kafka payment.events
+  participant KO as Kafka order.events
+  participant KP as Kafka payment.events
   participant L as ledger-svc
   User->>O: POST .../cancel
   O->>ODB: one tx: status CANCELLED, history, OrderCancelled to outbox
   O-->>User: 200 Order
-  ODB-->>K: emit order.events OrderCancelled (with payment_method, checkout_id)
-  K->>P: OrderCancelled
+  ODB-->>KO: emit OrderCancelled (with payment_method, checkout_id)
+  KO->>P: OrderCancelled consumer
   P->>P: check if capture exists; if yes, create refund, PaymentRefunded to outbox
-  P->>K: emit payment.events PaymentRefunded
-  K->>L: PaymentRefunded → reverse escrow allocation
-  K->>O: PaymentRefunded → update payment_status to REFUNDED
+  P-->>KP: emit PaymentRefunded
+  par consumer parallel
+    KP->>L: PaymentRefunded → reverse escrow allocation
+    KP->>O: PaymentRefunded → update payment_status to REFUNDED
+  end
 ```
 
 ## Escrow release on completion (P2)
@@ -176,10 +188,11 @@ sequenceDiagram
 
 ## Payout request and settlement (P2)
 
-A seller can request a payout up to their available wallet balance. The
-ledger-svc moves the amount to the payout-pending account. A settle job then
-settles it, moving it from payout-pending to platform_cash (a simulated bank
-account), and publishes payout events for notifications.
+A seller can request a payout up to their available wallet balance using
+`POST /api/seller/payouts` with an Idempotency-Key header. The ledger-svc
+checks the balance against the minimum and moves the amount to the payout-pending
+account. A settle job then settles payouts via a simulated bank transfer, moving
+them from payout-pending to platform_cash, or fails and credits the wallet back.
 
 ```mermaid
 sequenceDiagram
@@ -187,16 +200,30 @@ sequenceDiagram
   actor Seller
   participant L as ledger-svc
   participant LDB as ledger_db
+  participant B as Bank (simulated)
   participant K as Kafka payout.events
-  Seller->>L: POST /api/payouts {amount}
-  L->>LDB: check balance >= amount (check payout minimum)
-  LDB-->>L: verified
-  L->>LDB: one tx: seller_wallet -= amount, seller_payout_pending += amount, idempotency key, PayoutRequested to outbox
-  L-->>Seller: 201 {payout_id}
-  LDB-->>K: emit payout.events PayoutRequested
-  Note over L,K: ... settle job runs every 30 s (PAYOUT_SETTLE_INTERVAL)
-  L->>LDB: claim pending payouts, RELEASE pending: seller_payout_pending -= amount, platform_cash -= amount
-  LDB-->>K: emit payout.events PayoutSettled
+  Seller->>L: POST /api/seller/payouts {amount} (Idempotency-Key)
+  alt amount < PAYOUT_MIN_AMOUNT
+    L-->>Seller: 400 validation error
+  else available < amount
+    L-->>Seller: 409 INSUFFICIENT_FUNDS
+  else success
+    L->>LDB: one tx: seller_wallet -= amount, seller_payout_pending += amount, PayoutRequested to outbox
+    L-->>Seller: 201 Payout {id, status: REQUESTED}
+    LDB-->>K: emit payout.events PayoutRequested
+    Note over L,K: ... settle job runs every PAYOUT_SETTLE_INTERVAL (30s)
+    L->>LDB: claim payouts older than PAYOUT_SETTLE_DELAY (1m)
+    L->>B: Transfer(payoutID, sellerID, amount)
+    alt bank succeeds
+      L->>LDB: one tx: seller_payout_pending -= amount, platform_cash -= amount, PayoutSettled to outbox
+      LDB-->>K: emit payout.events PayoutSettled
+    else bank rejects
+      L->>LDB: one tx: seller_payout_pending -= amount, seller_wallet += amount, PayoutFailed to outbox
+      LDB-->>K: emit payout.events PayoutFailed
+    else bank unavailable
+      Note over L: retry with age backoff
+    end
+  end
 ```
 
 ## Cancellation
@@ -266,31 +293,47 @@ retries never create a second set of orders.
 
 ### Sweeper
 
-If order-svc dies between Tx A and Tx C, orders stay `PENDING`. Every
-minute, a sweeper cancels orders still `PENDING` after 2 minutes
-(`PENDING_TIMEOUT`, cancel reason `CHECKOUT_TIMEOUT`). It uses `FOR UPDATE SKIP LOCKED`, so replicas don't
-collide, writes the cancellation events and releases the reserved stock.
-The same job deletes idempotency keys older than 24 hours.
+The sweeper runs every minute (`SWEEPER_INTERVAL`) and executes four steps
+in order, each on batches of 50 with `FOR UPDATE SKIP LOCKED`:
+
+1. **Stale PENDING:** Cancels orders still `PENDING` after `PENDING_TIMEOUT`
+   (default 2 minutes), with cancel reason `CHECKOUT_TIMEOUT`. Releases reserved
+   stock after commit (best effort).
+
+2. **Payment timeout:** For checkouts whose `payment_deadline` has passed,
+   asks payment-svc `CancelCheckoutPayments` (3 s timeout, no retry within a tick)
+   first. If payment-svc confirms the payment was successful, the checkout is left
+   alone (the payment was late but captured). Otherwise, locks the `AWAITING_PAYMENT`
+   orders and cancels them with reason `PAYMENT_TIMEOUT`.
+
+3. **Auto-complete:** Completes `DELIVERED` orders older than `AUTO_COMPLETE_AFTER`
+   (default 72 hours) with actor `system`, emitting `OrderCompleted`.
+
+4. **Idempotency keys:** Purges keys older than 24 hours.
 
 ### Order state machine
 
 ```mermaid
 stateDiagram-v2
   [*] --> PENDING: checkout (Tx A)
-  PENDING --> PENDING_CONFIRMATION: all stock reserved (Tx C)
-  PENDING --> CANCELLED: reservation failed / sweeper
+  PENDING --> PENDING_CONFIRMATION: all stock reserved (Tx C, COD)
+  PENDING --> AWAITING_PAYMENT: all stock reserved (Tx C, online)
+  PENDING --> CANCELLED: reservation failed / sweeper stale (PENDING_TIMEOUT)
+  AWAITING_PAYMENT --> PENDING_CONFIRMATION: payment captured (payment-svc)
+  AWAITING_PAYMENT --> CANCELLED: payment deadline passed (sweeper PAYMENT_TIMEOUT) or buyer cancels
   PENDING_CONFIRMATION --> CONFIRMED: seller confirms
   PENDING_CONFIRMATION --> CANCELLED: buyer or seller cancels
   CONFIRMED --> SHIPPING: seller ships
   CONFIRMED --> CANCELLED: seller cancels
   SHIPPING --> DELIVERED: seller marks delivered
-  DELIVERED --> COMPLETED: buyer confirms receipt
+  DELIVERED --> COMPLETED: buyer confirms receipt (or sweeper AUTO_COMPLETE_AFTER)
 ```
 
 Transitions are a pure domain function. Updates use optimistic locking
 (`WHERE id = … AND version = …`), so a concurrent confirm and cancel cannot
 both win. Every transition writes a history row and an `OrderStatusChanged`
-event.
+event. The `payment_status` field tracks `UNPAID` → `PAID` → `REFUNDED` for
+online orders independently of state.
 
 ## Authentication
 
@@ -320,7 +363,11 @@ spans, including `ReserveStock`.
 
 The marketplace ledger is a double-entry, append-only journal owned by
 ledger-svc. Every transaction balances to zero (sum of debits = sum of credits).
-Balances are derived by summing entries; no balance column is stored.
+Balances are derived by summing entries; no balance column is stored. See
+[ADR-0006](adr/0006-double-entry-ledger-service.md) (ledger design),
+[ADR-0007](adr/0007-escrow-release-policy.md) (escrow and auto-complete),
+and [ADR-0008](adr/0008-payment-provider-port-and-webhooks.md) (payment
+provider integration).
 
 ### Chart of accounts
 
@@ -341,16 +388,16 @@ Balances are derived by summing entries; no balance column is stored.
    commit. This is also validated in code by `domain.Journal.Validate`.
 2. **Append-only.** Triggers reject `UPDATE`, `DELETE`, and `TRUNCATE` on
    `journal_transactions` and `entries`. A correction is made with a reversing
-   transaction (ADR-0006).
+   transaction ([ADR-0006](adr/0006-double-entry-ledger-service.md)).
 3. **No liability in debit.** A posting that debits a liability account (seller
    wallet, escrow, suspense) locks that account's row, recomputes its balance
    from entries, and refuses the posting if the result would be negative. This
    makes "payout ≤ available" atomic and prevents an escrow from being both
    released and refunded.
 4. **Idempotent postings.** Each posting is keyed by a business idempotency key
-   (`pay:{payment_id}`, `capture:{checkout_id}:{order_id}`, `release:{order_id}`,
-   `refund:{refund_id}`, `payout_request:{payout_id}`, `payout_settle:{payout_id}`).
-   A duplicate event posts once.
+   (`pay:{payment_id}`, `capture:{payment_id}`, `release:{order_id}`,
+   `refund:{refund_id}`, `payout:{payout_id}:request`, `payout:{payout_id}:settle`,
+   `payout:{payout_id}:fail`). A duplicate event posts once.
 
 ### Trial balance
 
@@ -362,11 +409,15 @@ The trial balance is a command that sums entries by type and reports:
 The e2e suite runs it after every scenario:
 
 ```bash
-docker compose exec ledger /server trial-balance
+docker compose -f deploy/docker-compose.yml exec -T ledger /server trial-balance
 ```
 
-It exits 0 if the ledger is consistent and 1 otherwise. This is documented
-in `services/ledger/README.md` and ADRs 0006 and 0007.
+It exits 0 if the ledger is consistent and 1 otherwise. This is documented in
+`services/ledger/README.md` and [ADR-0006](adr/0006-double-entry-ledger-service.md).
+
+**Note:** COD orders never touch the ledger; their `OrderCompleted` events are
+ignored. Only online orders create ledger postings. Release amounts come from
+`escrow_allocations`, which record what was captured at payment time.
 
 ## Known limitations
 
