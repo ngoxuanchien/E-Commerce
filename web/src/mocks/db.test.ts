@@ -374,10 +374,14 @@ describe('payments', () => {
     vi.useRealTimers();
   });
 
-  test('STRIPE below minimum amount → 409 BELOW_PROVIDER_MINIMUM', () => {
-    db.setCartItem(SEED.users.an, SEED.skus.plate20, 1); // 85,000 + 30,000 = 115,000 > 10,000, so use vase for smaller amount
-    // Actually, let's be smarter: just create with an amount < 10,000 using a different approach
-    // For now, let's skip this and implement it after understanding better
+  test('STRIPE below minimum amount → 409 INVALID_STATE_TRANSITION reason=BELOW_PROVIDER_MINIMUM', () => {
+    const checkout = onlineCheckout('STRIPE');
+    // Set order totals to be < 10_000 each so sum is < 10_000
+    for (const order of db.state.orders.filter((o) => o.checkout_id === checkout.checkout_id)) {
+      order.total = 4_000;
+    }
+    const err = caught(() => db.createPayment(SEED.users.an, 'pay-stripe-min', { checkout_id: checkout.checkout_id }));
+    expect(err).toMatchObject({ status: 409, code: 'INVALID_STATE_TRANSITION', details: { reason: 'BELOW_PROVIDER_MINIMUM' } });
   });
 
   test('expired PENDING payment is marked EXPIRED when read', () => {
@@ -456,6 +460,23 @@ describe('payments', () => {
     db.submitMockPayment(p2.id, 'succeed');
     const result = db.payment(SEED.users.an, p2.id);
     expect(result.status).toBe('DUPLICATE');
+  });
+
+  test('late capture: succeed after orders cancelled → payment SUCCEEDED, orders refunded', () => {
+    const checkout = onlineCheckout();
+    const payment = db.createPayment(SEED.users.an, 'pay-late', { checkout_id: checkout.checkout_id });
+    const firstOrderId = checkout.orders[0].id;
+    // Cancel the orders before submitting payment
+    db.buyerAction(SEED.users.an, firstOrderId, 'cancel', 'Đổi ý');
+
+    db.submitMockPayment(payment.id, 'succeed');
+
+    const updatedPayment = db.payment(SEED.users.an, payment.id);
+    expect(updatedPayment.status).toBe('SUCCEEDED');
+
+    for (const order of db.buyerOrders(SEED.users.an).items.filter((o) => o.checkout_id === checkout.checkout_id)) {
+      expect(order.payment_status).toBe('REFUNDED');
+    }
   });
 
   test('payment() of another user → 404', () => {

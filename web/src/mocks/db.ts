@@ -632,6 +632,13 @@ export class MockDb {
     if (existingKey) {
       const existingPayment = this.state.payments.find((p) => p.id === existingKey.id);
       if (existingPayment && existingPayment.checkout_id === body.checkout_id) {
+        // Apply expiry logic on replay (same as payment() does)
+        if (existingPayment.status === 'PENDING' && Date.now() >= new Date(existingPayment.expires_at).getTime()) {
+          existingPayment.status = 'EXPIRED';
+          existingPayment.redirect_url = null;
+          existingPayment.updated_at = now();
+          this.save();
+        }
         return this.publicPayment(existingPayment);
       }
       throw new MockError(422, 'IDEMPOTENCY_KEY_REUSED', 'Idempotency-Key reused with a different checkout_id');
@@ -653,19 +660,22 @@ export class MockDb {
       throw new MockError(409, 'INVALID_STATE_TRANSITION', 'payment already succeeded for this checkout', { reason: 'ALREADY_PAID' });
     }
 
+    // Filter AWAITING_PAYMENT orders for rules 6, 7, 8
+    const awaiting = orders.filter((o) => o.status === 'AWAITING_PAYMENT');
+
     // Rule 6: at least one order must be AWAITING_PAYMENT
-    if (!orders.some((o) => o.status === 'AWAITING_PAYMENT')) {
+    if (awaiting.length === 0) {
       throw new MockError(409, 'INVALID_STATE_TRANSITION', 'no order is awaiting payment', { reason: 'NOT_AWAITING_PAYMENT' });
     }
 
-    // Rule 7: deadline not passed
-    const deadline = new Date(checkout.payment_deadline!).getTime();
+    // Rule 7: deadline not passed (use deadline from an AWAITING order)
+    const deadline = new Date(awaiting[0].payment_deadline!).getTime();
     if (Date.now() >= deadline) {
       throw new MockError(409, 'INVALID_STATE_TRANSITION', 'payment deadline has passed', { reason: 'DEADLINE_PASSED' });
     }
 
-    // Rule 8: amount check for STRIPE
-    const amount = orders.reduce((sum, o) => sum + o.total, 0);
+    // Rule 8: amount check for STRIPE (sum only AWAITING_PAYMENT orders)
+    const amount = awaiting.reduce((sum, o) => sum + o.total, 0);
     if (checkout.payment_method === 'STRIPE' && amount < STRIPE_MIN_AMOUNT) {
       throw new MockError(409, 'INVALID_STATE_TRANSITION', `amount must be at least ${STRIPE_MIN_AMOUNT}`, { reason: 'BELOW_PROVIDER_MINIMUM' });
     }

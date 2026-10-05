@@ -1,7 +1,7 @@
 import { HttpResponse, http as rawHttp } from 'msw';
 import type { CreatePaymentRequest } from '@/api/types';
 import type { MockDb } from '../db';
-import { MockError } from '../mock-error';
+import { MockError, validation } from '../mock-error';
 import { authorization, handle, http, jsonBody } from './http';
 
 export function paymentHandlers(db: () => MockDb) {
@@ -22,7 +22,7 @@ export function paymentHandlers(db: () => MockDb) {
         const id = params.id as string;
         const outcome = params.outcome as string;
         if (outcome !== 'succeed' && outcome !== 'fail') {
-          return HttpResponse.json({ error: { code: 'INVALID_REQUEST', message: 'outcome must be succeed or fail' } }, { status: 400 });
+          throw validation({ outcome: 'must be succeed or fail' });
         }
         db().submitMockPayment(id, outcome);
         return new HttpResponse(null, { status: 204 });
