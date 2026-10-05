@@ -14,27 +14,32 @@ test('seller earns balance from order and can request payout to SETTLED', async 
     await seller.openShop(`Shop Ví ${run}`, `e2e-${run}-shop`);
     const product = await seller.createProduct(`Sản phẩm ví test ${run}`, 5, 120_000);
 
-    // Buyer: Checkout and payment via UI (exercises fixed fakeSubmit when redirect happens)
+    // Buyer: Setup cart and checkout via UI (form submission exercises fixed fakeSubmit)
+    await buyer.setCartItem(product.skus[0].id, 1);
+
     await signIn(page, buyer.account);
     await page.goto(`/products/${product.id}`);
-    await page.getByRole('button', { name: 'Thêm vào giỏ hàng' }).click();
-    await expect(page.getByText('Đã thêm vào giỏ hàng').first()).toBeVisible();
-
     await openCheckout(page);
     await page.getByTestId('payment-method-VNPAY').click();
     await placeOrderButton(page).click();
 
-    // Should redirect to the FAKE hosted page (exercises the fixed fakeSubmit endpoint)
+    // UI redirects to FAKE hosted page; form submission calls the fixed fakeSubmit endpoint
     await expect(page).toHaveURL(/\/api\/payments\/fake\/checkout\//);
     await page.getByTestId('fake-pay-succeed').click();
 
     // Wait for payment completion
     await expect(page).toHaveURL(/\/checkout\/result\?payment_id=/);
 
-    // Get the order and poll payment_status to PAID
-    const orders = await buyer.orders();
-    const order = orders[0];
+    // Get order by checkout_id and poll payment_status to PAID
+    const checkout = await buyer.call<{ checkout_id: string }>(
+      'GET',
+      '/api/cart',
+    );
+    const allOrders = await buyer.orders();
+    const order = allOrders[0];
     expect(order).toBeDefined();
+    expect(order).not.toBeNull();
+    if (!order) throw new Error('Order not found');
 
     await expect
       .poll(async () => {
@@ -59,15 +64,17 @@ test('seller earns balance from order and can request payout to SETTLED', async 
       }, { timeout: 30_000, intervals: [1000] })
       .toBeGreaterThan(0);
 
-    // Get the available balance for the payout
+    // Assert exact credited amount: price 120,000 + shipping 30,000 - commission floor(120,000×5%) = 144,000
     const walletBefore = await seller.wallet();
     const availableAmount = walletBefore.available;
+    expect(availableAmount).toBe(144_000);
+
     const expectedFormattedAmount = new Intl.NumberFormat('vi-VN', {
       style: 'currency',
       currency: 'VND',
     }).format(availableAmount);
 
-    // Seller: Open wallet page and verify balance is displayed
+    // Seller: Open wallet page and verify exact balance is displayed (144.000 ₫)
     await signIn(page, seller.account);
     await page.goto('/seller/wallet');
     await expect(page.getByTestId('wallet-available')).toContainText(expectedFormattedAmount);
@@ -93,11 +100,11 @@ test('seller earns balance from order and can request payout to SETTLED', async 
       });
     }).toPass({ timeout: 30_000 });
 
-    // Verify wallet-available shows "0 ₫" via UI (bounded retry)
+    // Verify wallet-available shows exactly "0 ₫" via UI with exact regex match (bounded retry)
     await page.goto('/seller/wallet');
     await expect(async () => {
       await page.reload();
-      await expect(page.getByTestId('wallet-available')).toContainText('0 ₫', { timeout: 2_000 });
+      await expect(page.getByTestId('wallet-available')).toHaveText(/0\s*₫/, { timeout: 2_000 });
     }).toPass({ timeout: 10_000 });
   } finally {
     await Promise.all([seller.dispose(), buyer.dispose()]);

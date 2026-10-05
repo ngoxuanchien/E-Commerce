@@ -126,14 +126,30 @@ export class ApiUser {
     return (await this.ctx.fetch(path, { headers: auth })).status();
   }
 
-  async checkout(method: 'COD' | 'VNPAY' | 'STRIPE'): Promise<{ id: string }> {
+  async checkout(method: 'COD' | 'VNPAY' | 'STRIPE', shippingAddress?: {
+    full_name: string;
+    phone: string;
+    line1: string;
+    ward: string;
+    district: string;
+    province: string;
+  }): Promise<{ id: string }> {
     const idempotencyKey = crypto.randomUUID();
-    return this.call<{ id: string }>(
+    const address = shippingAddress || {
+      full_name: 'Test Buyer',
+      phone: '0901234567',
+      line1: '12 Lý Tự Trọng',
+      ward: 'Bến Nghé',
+      district: 'Quận 1',
+      province: 'TP. Hồ Chí Minh',
+    };
+    const res = await this.call<{ checkout_id: string; orders: { id: string }[] }>(
       'POST',
       '/api/checkout',
-      { payment_method: method },
+      { payment_method: method, shipping_address: address },
       { 'Idempotency-Key': idempotencyKey },
     );
+    return { id: res.checkout_id };
   }
 
   async startPayment(checkoutId: string): Promise<{ payment_id: string; hosted_url: string }> {
