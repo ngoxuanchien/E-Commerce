@@ -188,11 +188,12 @@ sequenceDiagram
 
 ## Payout request and settlement (P2)
 
-A seller can request a payout up to their available wallet balance using
-`POST /api/seller/payouts` with an Idempotency-Key header. The ledger-svc
-checks the balance against the minimum and moves the amount to the payout-pending
-account. A settle job then settles payouts via a simulated bank transfer, moving
-them from payout-pending to platform_cash, or fails and credits the wallet back.
+A seller can request a payout using `POST /api/seller/payouts` with an Idempotency-Key
+header. The ledger-svc checks that the amount is at least `PAYOUT_MIN_AMOUNT`
+(50,000 VND) and does not exceed the available wallet balance, then moves the
+amount to the payout-pending account. A settle job then settles payouts via a
+simulated bank transfer, moving them from payout-pending to platform_cash, or
+fails and credits the wallet back.
 
 ```mermaid
 sequenceDiagram
@@ -221,7 +222,7 @@ sequenceDiagram
       L->>LDB: one tx: seller_payout_pending -= amount, seller_wallet += amount, PayoutFailed to outbox
       LDB-->>K: emit payout.events PayoutFailed
     else bank unavailable
-      Note over L: retry with age backoff
+      Note over L: payout stays REQUESTED, retried next PAYOUT_SETTLE_INTERVAL
     end
   end
 ```
