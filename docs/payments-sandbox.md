@@ -17,17 +17,16 @@ dependencies). To run through a real sandbox, follow one of the sections below.
 1. Go to [Stripe Dashboard](https://dashboard.stripe.com/test/apikeys) and copy
    your **Secret key** (starts with `sk_test_`).
 
-2. Create `deploy/secrets/payment.env` (or edit if it exists):
+2. Copy and edit `deploy/secrets/payment.env`:
 
    ```bash
    cp deploy/secrets/payment.env.example deploy/secrets/payment.env
    ```
 
-   Add your secret key:
+   Fill in your secret key:
 
    ```
    STRIPE_SECRET_KEY=sk_test_...
-   PROVIDER_STRIPE=stripe
    ```
 
 3. In another terminal, start the webhook forwarder:
@@ -42,10 +41,11 @@ dependencies). To run through a real sandbox, follow one of the sections below.
    STRIPE_WEBHOOK_SECRET=whsec_...
    ```
 
-4. Restart the payment service:
+4. Set the provider in your shell and restart the stack:
 
    ```bash
-   docker compose restart payment
+   PROVIDER_STRIPE=stripe make up-app
+   # or: export PROVIDER_STRIPE=stripe && make up-app
    ```
 
    Wait for it to be ready (`docker compose logs payment` shows no errors).
@@ -60,13 +60,13 @@ dependencies). To run through a real sandbox, follow one of the sections below.
    (any future expiry date, any 3-digit CVC).
 
 4. Complete the payment. Expect:
-   - The checkout redirects to `/checkout/result?status=success`
+   - The checkout redirects to `/checkout/result?payment_id=<id>`
    - The order appears in the seller center as "Awaiting Confirmation"
    - The seller's wallet shows the amount in "In Escrow"
 
 5. Verify webhook delivery:
    - Check the payment service logs: `docker compose logs payment | grep -i stripe`
-   - Look for `checkout.session.completed` and `charge` events
+   - Look for `checkout.session.completed` and `charge.refunded` webhook events
 
 ### Testing failures (optional)
 
@@ -86,26 +86,26 @@ See [Stripe test card list](https://stripe.com/docs/testing) for more.
    - `Mã Merchant Code` (TMN Code)
    - Hash secret (for signing requests)
 
-3. Create or edit `deploy/secrets/payment.env`:
+3. Copy and edit `deploy/secrets/payment.env`:
 
    ```bash
    cp deploy/secrets/payment.env.example deploy/secrets/payment.env
    ```
 
-   Add your VNPay credentials:
+   Fill in your VNPay credentials:
 
    ```
    VNPAY_TMN_CODE=<your merchant code>
    VNPAY_HASH_SECRET=<your hash secret>
    VNPAY_PAY_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
    VNPAY_API_URL=https://sandbox.vnpayment.vn/merchant_webapi/api/transaction
-   PROVIDER_VNPAY=vnpay
    ```
 
-4. Restart the payment service:
+4. Set the provider in your shell and restart the stack:
 
    ```bash
-   docker compose restart payment
+   PROVIDER_VNPAY=vnpay make up-app
+   # or: export PROVIDER_VNPAY=vnpay && make up-app
    ```
 
    Wait for it to be ready.
@@ -123,7 +123,7 @@ payment verification, and the reconciler handles dropped webhooks.
    [VNPay sandbox docs](https://sandbox.vnpayment.vn/apis/) (e.g., NCB test card).
 
 4. Complete the payment. Expect:
-   - Redirect back to `/checkout/result?status=success`
+   - Redirect back to `/checkout/result?payment_id=<id>`
    - The order appears in the seller center
    - Wallet shows the amount in escrow
 
@@ -155,21 +155,21 @@ service will request a refund from VNPay. Check the logs for the refund response
 
 ## Switching providers
 
-You can mix and match providers independently:
+You can mix and match providers independently by setting `PROVIDER_VNPAY` and
+`PROVIDER_STRIPE` in your shell:
 
-```
-PROVIDER_VNPAY=fake  # Use FAKE for VNPay
-PROVIDER_STRIPE=stripe  # Use real Stripe
+```bash
+# Use FAKE for VNPay, real Stripe
+PROVIDER_VNPAY=fake PROVIDER_STRIPE=stripe make up-app
+
+# Use both real
+PROVIDER_VNPAY=vnpay PROVIDER_STRIPE=stripe make up-app
+
+# Back to both FAKE (default)
+make up-app
 ```
 
-Or both real:
-
-```
-PROVIDER_VNPAY=vnpay
-PROVIDER_STRIPE=stripe
-```
-
-Just restart the payment service after changing `deploy/secrets/payment.env`.
+Changes to `deploy/secrets/payment.env` are reloaded on the next `make up-app`.
 
 ## Manual verification checklist
 
@@ -200,21 +200,18 @@ For VNPay, check the payment service logs for the refund API response.
   hangs, restart it (Ctrl+C, then run again). VNPay webhooks require a tunnel if
   you want real IPN delivery (optional; the reconciler catches missed webhooks).
 
-- **"BELOW_PROVIDER_MINIMUM" error:** The checkout total is smaller than Stripe's
-  minimum (default 10,000 VND). Add more items or increase the product price in
-  the seed data.
-
-- **"CONFLICT" on create:** Two overlapping payment attempts for the same checkout.
-  This is retried automatically by the client; if it persists, check if a previous
-  attempt is still `PENDING` (ask the developer to query `SELECT * FROM payments WHERE
-  checkout_id = '...' ORDER BY created_at DESC`).
+- **"BELOW_PROVIDER_MINIMUM" error:** The checkout total is smaller than
+  `STRIPE_MIN_AMOUNT` (default 10,000 VND). Add more items or increase the product
+  price in the seed data. You can also set `STRIPE_MIN_AMOUNT` in
+  `deploy/secrets/payment.env`.
 
 ## Reverting to FAKE
 
-To go back to the FAKE provider (no external dependencies):
+To go back to the FAKE provider (no external dependencies), run:
 
-1. Edit or delete `deploy/secrets/payment.env`.
-2. Restart: `docker compose restart payment` or `make up-app`.
+```bash
+make up-app
+```
 
-The FAKE provider is always available and does not require any credentials or
-external setup.
+without setting `PROVIDER_VNPAY` or `PROVIDER_STRIPE` environment variables. They
+default to `fake`. The FAKE provider requires no credentials or external setup.

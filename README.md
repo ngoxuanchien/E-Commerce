@@ -24,10 +24,10 @@ with Docker Compose.
 ### P2: Online payment and seller payouts
 
 - Pay by **VNPay sandbox** or **Stripe test mode** (FAKE provider by default for local dev).
-- Payment goes through an escrow: captured on checkout, auto-complete after 72h, released on delivery.
-- **Seller wallet** tracks available balance (after 5% commission), escrow (pending orders), and payouts.
-- Payout to seller bank account (manual workflow with trial balance reconciliation).
-- Reconciler handles dropped webhooks; refund worker handles cancellations and duplicates.
+- Payment goes through an escrow: captured on checkout, auto-complete after delivery (72h by default), released on completion.
+- **Seller wallet** tracks available balance (after 5% commission), in-escrow (pending orders), and pending payouts.
+- Payouts are settled by the ledger service's settle job (simulates a bank transfer).
+- Reconciler handles dropped webhooks; refund worker handles cancellations and duplicate payments.
 
 ## Architecture
 
@@ -42,11 +42,16 @@ flowchart LR
   G --> L["ledger-svc<br/>:8085 / gRPC :9085"]
   C -- GrantRole --> I
   O -- GetSkus / ReserveStock / ReleaseStock --> C
+  O -- outbox --> K[("Kafka<br/>order.events")]
+  K -- OrderCancelled --> C
   O -- PaymentInternal --> P
-  P -- Callback, OrderCancelled --> K[("Kafka<br/>order.events, payment.events")]
-  L -- Callback, OrderCancelled --> K
+  P -- GetCheckout --> O
+  P -- outbox --> K
   K -- PaymentSucceeded, PaymentFailed, RefundFailed --> O
+  L -- outbox --> K
+  K -- PaymentSucceeded, PaymentFailed, RefundFailed --> L
   K -- OrderCancelled --> P
+  K -- OrderCancelled --> L
   P -- VNPay / Stripe / FAKE --> EX["Providers"]
   I --> PI[(identity_db)]
   C --> PC[(catalog_db)]
@@ -118,24 +123,27 @@ Seller 1 also has one settled payout from the seed data.
 ### Switching to the real sandboxes
 
 By default, payments use the FAKE provider (no external dependencies). To test
-with **Stripe test mode** or **VNPay sandbox**, copy `deploy/secrets/payment.env.example`
-to `deploy/secrets/payment.env`, set your credentials, and restart payment-svc.
+with **Stripe test mode** or **VNPay sandbox**:
 
-```bash
-cp deploy/secrets/payment.env.example deploy/secrets/payment.env
-# Edit deploy/secrets/payment.env with your credentials
-# Then either:
-docker compose restart payment  # if the stack is running
-# or:
-make up-app                      # restart everything
-```
+1. Copy credentials into `deploy/secrets/payment.env`:
+
+   ```bash
+   cp deploy/secrets/payment.env.example deploy/secrets/payment.env
+   # Edit and fill in: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, VNPAY_* variables
+   ```
+
+2. Set `PROVIDER_VNPAY=vnpay` and/or `PROVIDER_STRIPE=stripe` in the shell or `deploy/.env`:
+
+   ```bash
+   PROVIDER_STRIPE=stripe PROVIDER_VNPAY=vnpay make up-app
+   # or export them, then: make up-app
+   ```
 
 For step-by-step instructions and a verification checklist, see
 [docs/payments-sandbox.md](docs/payments-sandbox.md).
 
-**Note:** `make e2e` restarts order, payment and ledger services with fast
-timers for testing (PAYMENT_TIMEOUT=40s, AUTO_COMPLETE_AFTER=5s, etc.). A
-later `make up-app` restores the defaults.
+**Note:** `make e2e` restarts the stack with fast timers. A later `make up-app`
+restores the defaults.
 
 ### URLs
 

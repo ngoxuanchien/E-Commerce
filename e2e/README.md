@@ -90,17 +90,20 @@ timers to keep tests quick. A later `make up-app` restores the defaults.
 | `FAKE_WEBHOOK_DELAY` | 300 ms | 500 ms | Delay before FAKE webhook is sent |
 | `PAYOUT_SETTLE_INTERVAL` | 1 s | 30 s | Payout settlement checker period |
 | `PAYOUT_SETTLE_DELAY` | 2 s | 1 m | Delay before a payout is settled |
+| Refund worker | every 10 s | every 10 s | Retry failed refunds (not configurable) |
 
 ## P2 success criteria → tests
 
 | # | Criterion | Automated by |
 |---|---|---|
-| 1 | Checkout with online payment (VNPay, Stripe, FAKE); escrow captures and auto-completes | `api/online_test.go::TestOnlineCheckoutEscrowAndAutoComplete`, `api/stripe_test.go::TestStripeMethodUsesItsAdapter`, `playwright/tests/payment.spec.ts` |
+| 1 | Checkout with online payment (VNPay, Stripe, FAKE); escrow captures and auto-completes | `api/online_test.go::TestOnlineCheckoutEscrowAndAutoComplete`, `playwright/tests/payment.spec.ts` (online checkout, success and failure) |
 | 2 | Failed payment can be retried; payment timeout cancels and restocks | `api/payment_failure_test.go::TestFailedPaymentCanBeRetried`, `api/payment_failure_test.go::TestPaymentTimeoutCancelsAndRestocks` |
-| 3 | Seller cancel after payment refunds that order; COD never touches ledger | `api/refund_test.go::TestSellerCancelAfterPaymentRefundsThatOrder`, `api/refund_test.go::TestCODCheckoutNeverTouchesTheLedger` |
+| 3 | Seller cancel after payment refunds that order; duplicate payments are auto-refunded | `api/refund_test.go::TestSellerCancelAfterPaymentRefundsThatOrder`, `api/doublecharge_test.go::TestDoubleChargeIsRefunded` |
 | 4 | Payment method routing (VNPay vs Stripe) uses the correct adapter | `api/online_test.go::TestStripeMethodUsesItsAdapter` |
-| 5 | Payout settles and cannot overdraw | `api/payout_test.go::TestPayoutSettlesAndCannotOverdraw` |
-| 6 | Duplicate and stale webhooks apply once; dropped webhooks are recovered by reconciler; trial balance always zero | `api/callbacks_test.go::TestDuplicateAndStaleWebhooksApplyOnce`, `api/callbacks_test.go::TestDroppedWebhookIsRecovered`, `api/ledger_test.go` (trial balance check) |
+| 5 | Payout settles and cannot overdraw | `api/payout_test.go::TestPayoutSettlesAndCannotOverdraw`, `playwright/tests/wallet.spec.ts` (payout settles to SETTLED) |
+| 6 | Duplicate and stale webhooks apply once; dropped webhooks recovered by reconciler; late success and double-charge handled; trial balance always zero | `api/callbacks_test.go::TestDuplicateAndStaleWebhooksApplyOnce`, `api/callbacks_test.go::TestDroppedWebhookIsRecovered`, `api/doublecharge_test.go::TestLateSuccessAfterDeadlineRefundsBothOrders`, `api/ledger_test.go::TestMain` (trial balance zero at suite end) |
+| 6a | COD orders never touch the ledger (regression) | `api/refund_test.go::TestCODCheckoutNeverTouchesTheLedger` |
+| 6b | Payment traces cross gateway → payment → order and ledger via Kafka | `api/trace_test.go::TestPaymentTraceCrossesGatewayPaymentOrder`, `api/trace_test.go::TestFakeWebhookTraceReachesConsumers` |
 | 7 | Real VNPay sandbox / Stripe test mode (manual): checkout paid, refund on cancel | `docs/payments-sandbox.md` (manual runbook) |
 
 ## P2 decisions
@@ -121,12 +124,13 @@ here for future maintainers and changes.
    is checked through the seller wallet's `in_escrow` field (drops back by the order total)
    and the zero trial balance.
 
-4. **e2e stack recreation.** `make e2e` re-runs `make up-app` with fast timers
-   (`E2E_TIMERS=1`), so the compose stack recreates order, payment and ledger services.
-   A later `make up-app` (without `E2E_TIMERS`) restores the default timers.
+4. **e2e stack recreation.** `make e2e` runs `$(E2E_TIMERS) $(MAKE) up-app` first
+   (Makefile:96-98), which sets environment variables for fast timers, so the compose stack
+   recreates order, payment and ledger services. A later `make up-app` (without those vars)
+   restores the default timers.
 
-5. **Sequential test execution.** API tests run in sequence (`t.Sequential`) because the
-   10/min login rate limiter is shared per IP, and wallet baselines assume no other money
+5. **Sequential test execution.** API tests are sequential because none calls `t.Parallel()`:
+   the 10/min login rate limiter is shared per IP, and wallet baselines assume no other money
    is moving. Only one `go test` process may use the stack at a time.
 
 6. **Client HTTP timeout.** The test client's HTTP timeout is 4 minutes, covering the
