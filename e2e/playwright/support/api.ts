@@ -25,6 +25,7 @@ export interface Order {
   id: string;
   checkout_id: string;
   status: string;
+  payment_status?: string;
   shop: { id: string; name: string };
 }
 interface Category {
@@ -123,6 +124,49 @@ export class ApiUser {
   async status(path: string): Promise<number> {
     const auth: Record<string, string> = this.token ? { Authorization: `Bearer ${this.token}` } : {};
     return (await this.ctx.fetch(path, { headers: auth })).status();
+  }
+
+  async checkout(method: 'COD' | 'VNPAY' | 'STRIPE'): Promise<{ id: string }> {
+    const idempotencyKey = crypto.randomUUID();
+    return this.call<{ id: string }>(
+      'POST',
+      '/api/checkout',
+      { payment_method: method },
+      { 'Idempotency-Key': idempotencyKey },
+    );
+  }
+
+  async startPayment(checkoutId: string): Promise<{ payment_id: string; hosted_url: string }> {
+    return this.call<{ payment_id: string; hosted_url: string }>('POST', `/api/checkout/${checkoutId}/start-payment`);
+  }
+
+  async fakeSubmit(paymentId: string, outcome: 'succeed' | 'fail'): Promise<string> {
+    const res = await this.ctx.fetch(`/api/payments/fake/return`, {
+      method: 'POST',
+      form: { payment_id: paymentId, outcome },
+      maxRedirects: 0,
+    });
+    if (res.status() !== 302) throw new Error(`Expected 302, got ${res.status()}`);
+    const location = res.headers()['location'];
+    if (!location) throw new Error('No Location header in 302 response');
+    return location;
+  }
+
+  async order(id: string): Promise<Order> {
+    return this.call<Order>('GET', `/api/orders/${id}`);
+  }
+
+  async sellerAction(orderId: string, action: 'confirm' | 'ship' | 'deliver'): Promise<void> {
+    const actionMap = { confirm: 'confirm-order', ship: 'ship-order', deliver: 'confirm-delivery' };
+    await this.call('POST', `/api/seller/orders/${orderId}/${actionMap[action]}`);
+  }
+
+  async complete(orderId: string): Promise<void> {
+    await this.call('POST', `/api/orders/${orderId}/receive`);
+  }
+
+  async wallet(): Promise<{ available: number; in_escrow: number; pending_payout: number }> {
+    return this.call<{ available: number; in_escrow: number; pending_payout: number }>('GET', '/api/seller/wallet');
   }
 
   dispose(): Promise<void> {
