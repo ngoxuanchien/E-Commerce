@@ -518,3 +518,109 @@ func TestMiddlewareStripsSpoofedHeaders(t *testing.T) {
 		assert.Equal(t, []string{"buyer"}, (*seen).Header.Values(authctx.HeaderUserRoles))
 	})
 }
+
+func TestMiddlewareCallbackIgnoresAuthorization(t *testing.T) {
+	k1 := authtest.NewKey(t, "k1")
+	v, _ := newTestVerifier(t, k1)
+	buyerToken := k1.Sign(t, authtest.ValidClaims("u-buyer", "buyer"))
+
+	// Expired token for testing bad credentials.
+	expired := k1.Sign(t, func() authtest.Claims {
+		c := authtest.ValidClaims("u1", "buyer")
+		c.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-1 * time.Hour))
+		return c
+	}())
+
+	t.Run("no Authorization passes through with no identity", func(t *testing.T) {
+		next, called, seen := newRecordingHandler()
+		h := Middleware(v, routes.Callback)(next)
+
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		require.True(t, *called)
+		assert.Empty(t, (*seen).Header.Get(authctx.HeaderUserID))
+		assert.Empty(t, (*seen).Header.Get(authctx.HeaderUserRoles))
+		_, ok := authctx.FromContext((*seen).Context())
+		assert.False(t, ok)
+	})
+
+	t.Run("expired token is ignored", func(t *testing.T) {
+		next, called, seen := newRecordingHandler()
+		h := Middleware(v, routes.Callback)(next)
+
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Header.Set("Authorization", "Bearer "+expired)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		require.True(t, *called)
+		assert.Empty(t, (*seen).Header.Get(authctx.HeaderUserID))
+		assert.Empty(t, (*seen).Header.Get(authctx.HeaderUserRoles))
+	})
+
+	t.Run("garbage token is ignored", func(t *testing.T) {
+		next, called, seen := newRecordingHandler()
+		h := Middleware(v, routes.Callback)(next)
+
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Header.Set("Authorization", "Bearer not-a-jwt")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		require.True(t, *called)
+		assert.Empty(t, (*seen).Header.Get(authctx.HeaderUserID))
+		assert.Empty(t, (*seen).Header.Get(authctx.HeaderUserRoles))
+	})
+
+	t.Run("malformed Authorization header is ignored", func(t *testing.T) {
+		next, called, seen := newRecordingHandler()
+		h := Middleware(v, routes.Callback)(next)
+
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		require.True(t, *called)
+		assert.Empty(t, (*seen).Header.Get(authctx.HeaderUserID))
+		assert.Empty(t, (*seen).Header.Get(authctx.HeaderUserRoles))
+	})
+
+	t.Run("valid token is not verified or injected", func(t *testing.T) {
+		next, called, seen := newRecordingHandler()
+		h := Middleware(v, routes.Callback)(next)
+
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Header.Set("Authorization", "Bearer "+buyerToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		require.True(t, *called)
+		assert.Empty(t, (*seen).Header.Get(authctx.HeaderUserID))
+		assert.Empty(t, (*seen).Header.Get(authctx.HeaderUserRoles))
+		userID := authctx.UserID((*seen).Context())
+		assert.Equal(t, "", userID)
+	})
+
+	t.Run("spoofed identity headers are stripped", func(t *testing.T) {
+		next, called, seen := newRecordingHandler()
+		h := Middleware(v, routes.Callback)(next)
+
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Header.Set("X-User-Id", "admin")
+		req.Header.Set("X-User-Roles", "seller")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		require.True(t, *called)
+		assert.Empty(t, (*seen).Header.Get(authctx.HeaderUserID))
+		assert.Empty(t, (*seen).Header.Get(authctx.HeaderUserRoles))
+	})
+}
