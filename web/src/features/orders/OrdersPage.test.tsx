@@ -1,5 +1,8 @@
 import { screen, within } from '@testing-library/react';
 import { expect, test, vi, beforeEach } from 'vitest';
+import { waitFor } from '@testing-library/react';
+import { http } from 'msw';
+import { server } from '@/test/server';
 import { SEED } from '@/mocks/seed';
 import { getDb } from '@/mocks/state';
 import { currentPath, renderApp } from '@/test/render';
@@ -61,11 +64,11 @@ test('shows awaiting payment orders with payment status and countdown', async ()
   }
 });
 
-test('clicking pay button sends payment request and redirects', async () => {
+test('clicking pay button sends payment request with different idempotency keys', async () => {
   const db = getDb();
   db.setCartItem(SEED.users.an, SEED.skus.bowl11, 1);
   db.setCartItem(SEED.users.an, SEED.skus.teeM, 1);
-  db.checkout(SEED.users.an, 'test-checkout-2', {
+  const checkout = db.checkout(SEED.users.an, 'test-checkout-2', {
     sku_ids: [SEED.skus.bowl11, SEED.skus.teeM],
     shipping_address: {
       full_name: 'An Nguyễn',
@@ -78,14 +81,31 @@ test('clicking pay button sends payment request and redirects', async () => {
     payment_method: 'VNPAY',
   });
 
+  const requests: Array<{ key: string | null; body: { checkout_id: string } }> = [];
+  server.use(
+    http.post('*/api/payments', async ({ request }) => {
+      requests.push({
+        key: request.headers.get('Idempotency-Key'),
+        body: (await request.clone().json()) as { checkout_id: string },
+      });
+      return undefined;
+    }),
+  );
+
   const { user } = renderApp('/orders?status=AWAITING_PAYMENT', { as: 'an@example.com' });
   const buttons = await screen.findAllByTestId('order-pay-button');
   expect(buttons).toHaveLength(2);
 
   await user.click(buttons[0]);
-  expect(vi.mocked(redirectTo)).toHaveBeenCalled();
-  vi.mocked(redirectTo).mockClear();
+  await waitFor(() => expect(vi.mocked(redirectTo)).toHaveBeenCalledTimes(1));
 
   await user.click(buttons[1]);
-  expect(vi.mocked(redirectTo)).toHaveBeenCalled();
+  await waitFor(() => expect(vi.mocked(redirectTo)).toHaveBeenCalledTimes(2));
+
+  expect(requests).toHaveLength(2);
+  expect(requests[0].body.checkout_id).toBe(checkout.checkout_id);
+  expect(requests[1].body.checkout_id).toBe(checkout.checkout_id);
+  expect(requests[0].key).not.toBeNull();
+  expect(requests[1].key).not.toBeNull();
+  expect(requests[0].key).not.toBe(requests[1].key);
 });

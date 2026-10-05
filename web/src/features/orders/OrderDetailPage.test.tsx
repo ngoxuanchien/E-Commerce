@@ -161,3 +161,34 @@ test('deadline passed error shows appropriate message', async () => {
   await user.click(await screen.findByTestId('order-pay-button'));
   expect(await screen.findByText('Đã quá hạn thanh toán, đơn hàng sẽ bị huỷ.')).toBeInTheDocument();
 });
+
+test('already paid order shows success message and refetch on pay click', async () => {
+  const db = getDb();
+  db.setCartItem(SEED.users.an, SEED.skus.bowl11, 1);
+  const checkout = db.checkout(SEED.users.an, 'test-already-paid', {
+    sku_ids: [SEED.skus.bowl11],
+    shipping_address: {
+      full_name: 'An Nguyễn',
+      phone: '0901234567',
+      line1: '12 Lý Tự Trọng',
+      ward: 'Bến Nghé',
+      district: 'Quận 1',
+      province: 'TP. Hồ Chí Minh',
+    },
+    payment_method: 'VNPAY',
+  });
+  const orderId = checkout.orders[0].id;
+
+  const { user } = renderApp(`/orders/${orderId}`, { as: 'an@example.com' });
+  await screen.findByRole('button', { name: 'Thanh toán' });
+
+  // Simulate payment already created and succeeded
+  const p = db.createPayment(SEED.users.an, 'pre', { checkout_id: checkout.checkout_id });
+  db.submitMockPayment(p.id, 'succeed');
+
+  // Click pay button again
+  await user.click(await screen.findByRole('button', { name: 'Thanh toán' }));
+  expect(await screen.findByText('Đơn hàng đã được thanh toán.')).toBeInTheDocument();
+  expect(await screen.findByText('Đã thanh toán')).toBeInTheDocument();
+  expect(vi.mocked(redirectTo)).not.toHaveBeenCalled();
+});
