@@ -37,7 +37,8 @@ test('a stale action reports the state change and refreshes the list', async () 
 
 test('status tabs filter the seller orders', async () => {
   const { user } = renderApp('/seller/orders', { as: 'binh@example.com' });
-  await screen.findByRole('article', { name: 'Đơn hàng của Gốm Bát Tràng Cô Bình' });
+  const articles = await screen.findAllByRole('article', { name: 'Đơn hàng của Gốm Bát Tràng Cô Bình' });
+  expect(articles.length).toBeGreaterThan(0);
   await user.click(screen.getByRole('button', { name: 'Chờ xác nhận' }));
   expect(await screen.findByText('Chưa có đơn hàng nào ở trạng thái này.')).toBeInTheDocument();
 });

@@ -15,6 +15,8 @@ export const COMMISSION_RATE_BPS = 500;
 export const STRIPE_MIN_AMOUNT = 10_000;
 /** Stand-in for order-svc's SHIPPING_FEE_FLAT: reported per cart shop and charged per order. */
 export const SHIPPING_FEE_FLAT = 30_000;
+export const PAYOUT_MIN_AMOUNT = 50_000;
+export const PAYOUT_SETTLE_DELAY_MS = 3_000;
 export const MOCK_ASSET_BASE = 'http://localhost:9000/product-images';
 const RESERVED_SLUGS = ['me', 'new', 'admin', 'seller'];
 const MAX_CART_LINES = 50;
@@ -608,6 +610,25 @@ export class MockDb {
           sibling.history.push({ from: 'AWAITING_PAYMENT', to: 'CANCELLED', actor_role: 'system', note: note || null, created_at: sibling.updated_at });
         }
       }
+      // Refund if paid
+      if (order.payment_status === 'PAID') {
+        order.payment_status = 'REFUNDED';
+      }
+    }
+    // When completing a paid online order, add RELEASE entry
+    if (rule.to === 'COMPLETED' && order.payment_status === 'PAID') {
+      const releaseAmount = order.total - order.commission_amount;
+      const entry: MockWalletEntry = {
+        id: uuid(),
+        transaction_id: uuid(),
+        kind: 'RELEASE',
+        amount: releaseAmount,
+        order_id: order.id,
+        payout_id: null,
+        seller_user_id: order.seller_user_id,
+        created_at: order.updated_at,
+      };
+      this.state.walletEntries.push(entry);
     }
     order.history.push({ from, to: rule.to, actor_role: actor, note: note || null, created_at: order.updated_at });
     this.save();
@@ -766,5 +787,126 @@ export class MockDb {
       }
     }
     this.save();
+  }
+
+  // ---- ledger ----
+
+  private settlePayouts(): void {
+    const now_ms = Date.now();
+    for (const payout of this.state.payouts) {
+      if (payout.status === 'REQUESTED') {
+        const requestedMs = new Date(payout.requested_at).getTime();
+        if (now_ms >= requestedMs + PAYOUT_SETTLE_DELAY_MS) {
+          payout.status = 'SETTLED';
+          payout.settled_at = now();
+        }
+      }
+    }
+  }
+
+  wallet(userId: string): import('@/api/types').Wallet {
+    this.settlePayouts();
+
+    // Compute available = Σ walletEntries amount for this seller
+    const available = this.state.walletEntries
+      .filter((e) => e.seller_user_id === userId)
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    // Compute pending_payout = Σ amount of REQUESTED payouts
+    const pending_payout = this.state.payouts
+      .filter((p) => p.seller_user_id === userId && p.status === 'REQUESTED')
+      .reduce((sum, p) => sum + p.amount, 0);
+
+    // Compute in_escrow = Σ total of orders with payment_status === 'PAID' and status not COMPLETED/CANCELLED
+    const in_escrow = this.state.orders
+      .filter((o) => o.seller_user_id === userId && o.payment_status === 'PAID' && o.status !== 'COMPLETED' && o.status !== 'CANCELLED')
+      .reduce((sum, o) => sum + o.total, 0);
+
+    return { available, pending_payout, in_escrow, currency: 'VND' };
+  }
+
+  walletEntries(userId: string, limit?: number | null, cursor?: string | null): import('@/api/types').WalletEntryPage {
+    const items = this.state.walletEntries.filter((e) => e.seller_user_id === userId).sort(newestFirst);
+    return paginate(items.map((e) => {
+      const copy: Partial<typeof e> = structuredClone(e);
+      delete copy.seller_user_id;
+      return copy as import('@/api/types').WalletEntry;
+    }), limit, cursor);
+  }
+
+  createPayout(userId: string, key: string, body: import('@/api/types').PayoutRequest): import('@/api/types').Payout {
+    // Validate key
+    if (!key || key.length > 100) throw validation({ 'Idempotency-Key': 'required, 1-100 characters' });
+
+    // Check for replayed key
+    const payoutKey = `payout:${userId}:${key}`;
+    const existingKey = this.state.keys[payoutKey];
+    if (existingKey) {
+      const existingPayout = this.state.payouts.find((p) => p.id === existingKey.id);
+      if (existingPayout && JSON.stringify(body) === existingKey.hash) {
+        return this.publicPayout(existingPayout);
+      }
+      throw new MockError(422, 'IDEMPOTENCY_KEY_REUSED', 'Idempotency-Key reused with different request body');
+    }
+
+    // Validate amount
+    const fields: Record<string, string> = {};
+    if (!Number.isInteger(body.amount) || body.amount < PAYOUT_MIN_AMOUNT) {
+      fields.amount = `must be an integer >= ${PAYOUT_MIN_AMOUNT}`;
+    }
+    fail(fields);
+
+    // Check available balance
+    const wallet = this.wallet(userId);
+    if (body.amount > wallet.available) {
+      throw new MockError(409, 'INSUFFICIENT_FUNDS', 'insufficient available balance', { available: wallet.available });
+    }
+
+    // Create payout and entry
+    const payoutId = uuid();
+    const ts = now();
+    const payout: MockPayout = {
+      id: payoutId,
+      amount: body.amount,
+      status: 'REQUESTED',
+      failure_reason: null,
+      requested_at: ts,
+      settled_at: null,
+      seller_user_id: userId,
+    };
+    const entry: MockWalletEntry = {
+      id: uuid(),
+      transaction_id: uuid(),
+      kind: 'PAYOUT_REQUEST',
+      amount: -body.amount,
+      order_id: null,
+      payout_id: payoutId,
+      seller_user_id: userId,
+      created_at: ts,
+    };
+
+    this.state.payouts.push(payout);
+    this.state.walletEntries.push(entry);
+    this.state.keys[payoutKey] = { hash: JSON.stringify(body), id: payoutId };
+    this.save();
+    return this.publicPayout(payout);
+  }
+
+  payouts(userId: string, status?: string | null, limit?: number | null, cursor?: string | null): import('@/api/types').PayoutPage {
+    this.settlePayouts();
+    const validStatuses = ['REQUESTED', 'SETTLED', 'FAILED'];
+    if (status && !validStatuses.includes(status)) {
+      throw validation({ status: 'must be REQUESTED, SETTLED or FAILED' });
+    }
+    const items = this.state.payouts
+      .filter((p) => p.seller_user_id === userId && (!status || p.status === status))
+      .sort((a, b) => b.requested_at.localeCompare(a.requested_at) || b.id.localeCompare(a.id));
+    return paginate(items.map((p) => this.publicPayout(p)), limit, cursor);
+  }
+
+  private publicPayout(p: MockPayout): import('@/api/types').Payout {
+    const copy: Partial<MockPayout> = structuredClone(p);
+    delete copy.seller_user_id;
+    return copy as import('@/api/types').Payout;
   }
 }

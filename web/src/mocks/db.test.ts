@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CheckoutRequest } from '@/api/types';
-import { MockDb, SHIPPING_FEE_FLAT, PAYMENT_TTL_MS, COMMISSION_RATE_BPS } from './db';
+import { MockDb, SHIPPING_FEE_FLAT, PAYMENT_TTL_MS, COMMISSION_RATE_BPS, PAYOUT_SETTLE_DELAY_MS } from './db';
 import { SEED } from './seed';
 
 let db: MockDb;
@@ -291,7 +291,7 @@ describe('order lifecycle', () => {
   test('buyer and seller lists are scoped, newest first and filterable by status', () => {
     expect(db.buyerOrders(SEED.users.an).items.map((o) => o.id)).toEqual([SEED.orders.pending, SEED.orders.delivered]);
     expect(db.buyerOrders(SEED.users.an, 'DELIVERED').items).toHaveLength(1);
-    expect(db.sellerOrders(SEED.users.binh).items.map((o) => o.id)).toEqual([SEED.orders.delivered]);
+    expect(db.sellerOrders(SEED.users.binh).items.map((o) => o.id)).toEqual([SEED.orders.paidCompleted, SEED.orders.delivered]);
     expect(db.sellerOrders(SEED.users.an).items).toEqual([]);
   });
 });
@@ -496,6 +496,183 @@ describe('payments', () => {
     const payment = db.createPayment(SEED.users.an, 'pay-14', { checkout_id: checkout.checkout_id });
     db.submitMockPayment(payment.id, 'succeed');
     expect(() => db.submitMockPayment(payment.id, 'succeed')).not.toThrow();
+  });
+});
+
+describe('ledger (wallet, entries, payouts)', () => {
+  test('seeded wallet: binh has 457,500 available from the paidCompleted order', () => {
+    const binh = SEED.users.binh;
+    const wallet = db.wallet(binh);
+    expect(wallet).toMatchObject({
+      available: 457_500,
+      pending_payout: 0,
+      in_escrow: 0,
+      currency: 'VND',
+    });
+  });
+
+  test('seeded wallet: chi (buyer only) has zero balance', () => {
+    const chi = SEED.users.chi;
+    const wallet = db.wallet(chi);
+    expect(wallet).toMatchObject({
+      available: 0,
+      pending_payout: 0,
+      in_escrow: 0,
+      currency: 'VND',
+    });
+  });
+
+  test('online checkout by an → pay (succeed) → binh in_escrow increases; deliver → available increases and in_escrow clears', () => {
+    db.setCartItem(SEED.users.an, SEED.skus.bowl11, 1); // 45,000
+    const checkout = db.checkout(SEED.users.an, 'key-online-ledger', { shipping_address: address, payment_method: 'VNPAY' });
+    const bowlOrder = checkout.orders[0];
+
+    // Before payment: binh's in_escrow is 0 (paidCompleted is COMPLETED, not in escrow)
+    let wallet = db.wallet(SEED.users.binh);
+    expect(wallet.in_escrow).toBe(0);
+
+    // Pay
+    const payment = db.createPayment(SEED.users.an, 'pay-ledger-1', { checkout_id: checkout.checkout_id });
+    db.submitMockPayment(payment.id, 'succeed');
+
+    // After payment: in_escrow includes new order (45k + 30k = 75k)
+    wallet = db.wallet(SEED.users.binh);
+    expect(wallet.in_escrow).toBe(75_000);
+    expect(wallet.available).toBe(457_500);
+
+    // Confirm, ship, deliver
+    db.sellerAction(SEED.users.binh, bowlOrder.id, 'confirm');
+    db.sellerAction(SEED.users.binh, bowlOrder.id, 'ship');
+    db.sellerAction(SEED.users.binh, bowlOrder.id, 'deliver');
+
+    // Complete (buyer)
+    db.buyerAction(SEED.users.an, bowlOrder.id, 'complete');
+
+    // After complete: new RELEASE entry, in_escrow clears for this order, available increases
+    // Bowl: subtotal 45k, shipping 30k, total 75k. Commission on subtotal: 500 bps of 45k = 2,250, release = 75k - 2,250 = 72,750
+    wallet = db.wallet(SEED.users.binh);
+    expect(wallet.available).toBe(457_500 + 72_750);
+    expect(wallet.in_escrow).toBe(0); // no more orders in escrow
+
+    // Verify newest entry is RELEASE for this order
+    const entries = db.walletEntries(SEED.users.binh);
+    expect(entries.items[0]).toMatchObject({
+      kind: 'RELEASE',
+      amount: 72_750,
+      order_id: bowlOrder.id,
+    });
+  });
+
+  test('paid then cancelled by seller → payment_status becomes REFUNDED, in_escrow clears, no entry added', () => {
+    db.setCartItem(SEED.users.an, SEED.skus.vase, 1); // 320,000
+    const checkout = db.checkout(SEED.users.an, 'key-cancel-ledger', { shipping_address: address, payment_method: 'VNPAY' });
+    const vaseOrder = checkout.orders[0];
+
+    const payment = db.createPayment(SEED.users.an, 'pay-cancel', { checkout_id: checkout.checkout_id });
+    db.submitMockPayment(payment.id, 'succeed');
+
+    let wallet = db.wallet(SEED.users.binh);
+    const beforeCancel = wallet.in_escrow;
+    expect(beforeCancel).toBeGreaterThan(0); // includes vase order (320k + 30k = 350k)
+
+    db.sellerAction(SEED.users.binh, vaseOrder.id, 'cancel', 'sold');
+
+    const cancelled = db.order(SEED.users.binh, vaseOrder.id);
+    expect(cancelled.payment_status).toBe('REFUNDED');
+
+    wallet = db.wallet(SEED.users.binh);
+    expect(wallet.in_escrow).toBe(0); // vase order was cancelled, no other escrow orders
+    expect(wallet.available).toBe(457_500); // unchanged
+
+    // No new entry added
+    const entries = db.walletEntries(SEED.users.binh);
+    expect(entries.items[0]).not.toMatchObject({ kind: 'RELEASE', order_id: vaseOrder.id });
+  });
+
+  test('createPayout idempotency: same key returns same payout id', () => {
+    const payout1 = db.createPayout(SEED.users.binh, 'k1', { amount: 100_000 });
+    expect(payout1.status).toBe('REQUESTED');
+    expect(payout1.amount).toBe(100_000);
+
+    const payout2 = db.createPayout(SEED.users.binh, 'k1', { amount: 100_000 });
+    expect(payout2.id).toBe(payout1.id);
+  });
+
+  test('createPayout validation: amount must be integer >= PAYOUT_MIN_AMOUNT', () => {
+    const err = caught(() => db.createPayout(SEED.users.binh, 'k-bad', { amount: 49_999 }));
+    expect(err).toMatchObject({ code: 'VALIDATION_ERROR', details: { fields: { amount: expect.any(String) } } });
+  });
+
+  test('createPayout insufficient funds: amount > available → 409 INSUFFICIENT_FUNDS with available in details', () => {
+    const err = caught(() => db.createPayout(SEED.users.binh, 'k-over', { amount: 1_000_000 }));
+    expect(err).toMatchObject({ status: 409, code: 'INSUFFICIENT_FUNDS', details: { available: 457_500 } });
+  });
+
+  test('createPayout success: creates REQUESTED payout and PAYOUT_REQUEST entry', () => {
+    const payout = db.createPayout(SEED.users.binh, 'k-new', { amount: 100_000 });
+    expect(payout.status).toBe('REQUESTED');
+    expect(payout.failure_reason).toBeNull();
+    expect(payout.requested_at).toBeDefined();
+    expect(payout.settled_at).toBeNull();
+
+    const wallet = db.wallet(SEED.users.binh);
+    expect(wallet.available).toBe(457_500 - 100_000);
+    expect(wallet.pending_payout).toBe(100_000);
+
+    const entries = db.walletEntries(SEED.users.binh);
+    expect(entries.items[0]).toMatchObject({
+      kind: 'PAYOUT_REQUEST',
+      amount: -100_000,
+      payout_id: payout.id,
+    });
+  });
+
+  test('payouts() filters by status REQUESTED|SETTLED|FAILED', () => {
+    const p1 = db.createPayout(SEED.users.binh, 'k-filter1', { amount: 50_000 });
+    const p2 = db.createPayout(SEED.users.binh, 'k-filter2', { amount: 60_000 });
+
+    const requested = db.payouts(SEED.users.binh, 'REQUESTED');
+    expect(requested.items).toHaveLength(2);
+    expect(requested.items.map((p) => p.id).sort()).toEqual([p1.id, p2.id].sort());
+
+    // Settled: should be 0 initially, then 2 after delay
+    let settled = db.payouts(SEED.users.binh, 'SETTLED');
+    expect(settled.items).toHaveLength(0);
+
+    // Advance time, then settle
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + PAYOUT_SETTLE_DELAY_MS + 100);
+    settled = db.payouts(SEED.users.binh, 'SETTLED');
+    expect(settled.items).toHaveLength(2);
+    vi.useRealTimers();
+  });
+
+  test('payouts and wallet auto-settle old REQUESTED payouts', () => {
+    const payout = db.createPayout(SEED.users.binh, 'k-settle', { amount: 100_000 });
+    const requestedTime = new Date(payout.requested_at).getTime();
+
+    // Before settling
+    let p = db.payouts(SEED.users.binh, 'REQUESTED');
+    expect(p.items).toHaveLength(1);
+    expect(p.items[0].status).toBe('REQUESTED');
+
+    // Advance time past PAYOUT_SETTLE_DELAY_MS
+    vi.useFakeTimers();
+    vi.setSystemTime(requestedTime + PAYOUT_SETTLE_DELAY_MS + 100);
+
+    // Call payouts() triggers settle
+    p = db.payouts(SEED.users.binh, 'REQUESTED');
+    expect(p.items).toHaveLength(0);
+
+    p = db.payouts(SEED.users.binh, 'SETTLED');
+    expect(p.items).toHaveLength(1);
+    expect(p.items[0].settled_at).toBeDefined();
+
+    // Wallet shows pending_payout = 0
+    const wallet = db.wallet(SEED.users.binh);
+    expect(wallet.pending_payout).toBe(0);
+
+    vi.useRealTimers();
   });
 });
 
