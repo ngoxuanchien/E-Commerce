@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
-import { useForm, type FieldValues } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { useCreatePayout } from '@/api/hooks/wallet';
 import { ApiError, applyFieldErrors, errorMessage, isRetryable, paymentErrorMessage } from '@/api/errors';
@@ -8,20 +8,18 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Field, controlProps } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { payoutSchema, type PayoutFormInput } from './payout-schema';
+import { payoutSchema, type PayoutFormInput, type PayoutFormValues } from './payout-schema';
 
 export function PayoutForm({ available }: { available: number }) {
   const [key, setKey] = useState(() => crypto.randomUUID());
-  const form = useForm<PayoutFormInput>({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(payoutSchema(available)) as any,
+  const form = useForm<PayoutFormInput, unknown, PayoutFormValues>({
+    resolver: zodResolver(payoutSchema(available)),
     defaultValues: { amount: '' },
   });
   const createPayout = useCreatePayout();
   const { errors } = form.formState;
 
-  const onSubmit = (values: FieldValues) => {
-    const amount = typeof values.amount === 'number' ? values.amount : parseInt(values.amount as string, 10);
+  const onSubmit = ({ amount }: PayoutFormValues) => {
     createPayout.mutate(
       { idempotencyKey: key, amount },
       {

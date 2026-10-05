@@ -3,6 +3,7 @@ import { HttpResponse, http } from 'msw';
 import { expect, test } from 'vitest';
 import { server } from '@/test/server';
 import { renderApp } from '@/test/render';
+import { formatVnd } from '@/lib/format';
 
 test('typing 100000 and submitting → toast and key sent', async () => {
   const requests: string[] = [];
@@ -23,6 +24,12 @@ test('typing 100000 and submitting → toast and key sent', async () => {
   expect(await screen.findByText('Đã gửi yêu cầu rút tiền')).toBeInTheDocument();
   expect(requests.length).toBe(1);
   expect(requests[0]).toBeTruthy();
+
+  const pendingPayoutCard = screen.getByTestId('wallet-pending-payout');
+  await waitFor(() => {
+    const content = pendingPayoutCard.textContent || '';
+    expect(content).toContain(formatVnd(100_000));
+  });
 });
 
 test('second payout sends a different key', async () => {
@@ -103,8 +110,8 @@ test('INSUFFICIENT_FUNDS error → alert with available balance', async () => {
   const submitBtn = screen.getByTestId('payout-submit');
   await user.click(submitBtn);
 
-  // Check for the error message with flexible text matching
-  await screen.findByText((content) =>
-    content.includes('Số dư không đủ') && content.includes('12.000')
-  );
+  // Wait for the error message to appear (the api call and error handler should run)
+  const alert = await screen.findByRole('alert');
+  expect(alert.textContent).toContain('Số dư không đủ');
+  expect(alert.textContent).toContain(formatVnd(12_000));
 });
