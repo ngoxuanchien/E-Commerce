@@ -1,6 +1,8 @@
 package api_test
 
 import (
+	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -101,7 +103,7 @@ func TestPaymentTimeoutCancelsAndRestocks(t *testing.T) {
 	w := getWorld(t)
 
 	// Step 1: Create product with stock=5, baseline for stock verification
-	productA := newProduct(t, w.sellerA, w.categoryID, "Product Timeout", 5)
+	productA := newProduct(t, w.sellerA, w.categoryID, "Product Timeout "+w.run, 5)
 	skuA := productA.Skus[0]
 	initialStock := 5
 
@@ -147,4 +149,13 @@ func TestPaymentTimeoutCancelsAndRestocks(t *testing.T) {
 	require.Error(t, err, "CreatePayment on cancelled checkout should fail")
 	require.Equal(t, http.StatusConflict, client.StatusOf(err), "should be 409 Conflict")
 	require.True(t, client.IsCode(err, "INVALID_STATE_TRANSITION"), "should be INVALID_STATE_TRANSITION")
+
+	// Verify the exact reason is NOT_AWAITING_PAYMENT (all orders cancelled by timeout)
+	var ae *client.APIError
+	require.True(t, errors.As(err, &ae), "error should be an APIError")
+	var details struct {
+		Reason string `json:"reason"`
+	}
+	require.NoError(t, json.Unmarshal(ae.Details, &details), "should unmarshal Details as JSON")
+	require.Equal(t, "NOT_AWAITING_PAYMENT", details.Reason, "reason should be NOT_AWAITING_PAYMENT when orders are cancelled")
 }
