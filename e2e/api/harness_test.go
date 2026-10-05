@@ -26,11 +26,15 @@ const (
 
 // contractRouter validates each call against the OpenAPI document of the
 // service that owns its path (WS4 §2 routing table).
-type contractRouter struct{ identity, catalog, order http.RoundTripper }
+type contractRouter struct{ identity, catalog, order, payment, ledger http.RoundTripper }
 
 func (c contractRouter) RoundTrip(r *http.Request) (*http.Response, error) {
 	p := r.URL.Path
 	switch {
+	case strings.HasPrefix(p, "/api/payments"):
+		return c.payment.RoundTrip(r)
+	case strings.HasPrefix(p, "/api/seller/wallet"), strings.HasPrefix(p, "/api/seller/payouts"):
+		return c.ledger.RoundTrip(r)
 	case strings.HasPrefix(p, "/api/auth/"), strings.HasPrefix(p, "/api/users/"):
 		return c.identity.RoundTrip(r)
 	case strings.HasPrefix(p, "/api/cart"), p == "/api/checkout",
@@ -49,7 +53,13 @@ func newTransport(t *testing.T) http.RoundTripper {
 	spec := func(name string) http.RoundTripper {
 		return testutil.ContractTransport(t, filepath.Join("..", "..", "api", "openapi", name), base)
 	}
-	return contractRouter{identity: spec("identity.yaml"), catalog: spec("catalog.yaml"), order: spec("order.yaml")}
+	return contractRouter{
+		identity: spec("identity.yaml"),
+		catalog:  spec("catalog.yaml"),
+		order:    spec("order.yaml"),
+		payment:  spec("payment.yaml"),
+		ledger:   spec("ledger.yaml"),
+	}
 }
 
 type actor struct {
@@ -133,7 +143,10 @@ type world struct {
 	run          string
 	sellerA      actor
 	sellerB      actor
+	sellerC      actor
 	shopA, shopB client.Shop
+	shopC        client.Shop
+	payer        actor
 	buyers       []actor
 	categoryID   string
 }
@@ -149,6 +162,7 @@ func getWorld(t *testing.T) *world {
 	if theWorld == nil {
 		t.Fatal("shared world could not be built (see the first failing test)")
 	}
+	t.Cleanup(func() { assertTrialBalance(t) })
 	return theWorld
 }
 
@@ -156,6 +170,8 @@ func buildWorld(t *testing.T) *world {
 	w := &world{run: runID()}
 	w.sellerA, w.shopA = newSeller(t, w.run, "a")
 	w.sellerB, w.shopB = newSeller(t, w.run, "b")
+	w.sellerC, w.shopC = newSeller(t, w.run, "c")
+	w.payer = newActor(t, fmt.Sprintf("e2e-%s-payer@example.test", w.run), "Người thanh toán")
 	for i := range 5 {
 		w.buyers = append(w.buyers, newActor(t, fmt.Sprintf("e2e-%s-buyer%d@example.test", w.run, i), fmt.Sprintf("Người mua %d", i)))
 	}

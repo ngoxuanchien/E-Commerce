@@ -22,7 +22,13 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	out, err := trialBalance(context.Background())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "trial balance after suite:", out)
+		os.Exit(1)
+	}
+	os.Exit(code)
 }
 
 func waitReady(url string, timeout time.Duration) error {
