@@ -29,10 +29,31 @@ type recordingUpstream struct {
 func (r *recordingUpstream) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	body, _ := io.ReadAll(req.Body)
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	r.body = body
 	r.rawQuery = req.URL.RawQuery
 	r.headers = req.Header.Clone()
+}
+
+// snapshot returns a thread-safe copy of the recorded request data.
+func (r *recordingUpstream) snapshot() (body []byte, rawQuery string, headers http.Header) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.body, r.rawQuery, r.headers
+}
+
+// newPaymentHarness creates a test harness with a custom payment upstream handler.
+func newPaymentHarness(t *testing.T, h http.Handler) *harness {
+	t.Helper()
+	stub := httptest.NewServer(h)
+	t.Cleanup(stub.Close)
+	target, err := proxy.ParseTarget(stub.URL)
+	require.NoError(t, err)
+	return newHarness(t, withUpstream(routes.Payment, proxy.New(target, proxy.NewTransport(time.Second))))
 }
 
 func TestCallbackBodyQueryAndHeadersPassThrough(t *testing.T) {
@@ -41,12 +62,7 @@ func TestCallbackBodyQueryAndHeadersPassThrough(t *testing.T) {
 
 	t.Run("POST with binary body and signature headers", func(t *testing.T) {
 		rec := &recordingUpstream{}
-		stub := httptest.NewServer(rec)
-		t.Cleanup(stub.Close)
-		target, err := proxy.ParseTarget(stub.URL)
-		require.NoError(t, err)
-
-		h := newHarness(t, withUpstream(routes.Payment, proxy.New(target, proxy.NewTransport(time.Second))))
+		h := newPaymentHarness(t, rec)
 
 		resp := h.do("POST", "/api/payments/stripe/webhook",
 			withHeader("Content-Type", "application/json"),
@@ -55,39 +71,31 @@ func TestCallbackBodyQueryAndHeadersPassThrough(t *testing.T) {
 			withBody(body, false))
 
 		require.Equal(t, http.StatusOK, resp.Code)
-		assert.Equal(t, body, rec.body)
-		assert.Equal(t, expectedHash, sha256.Sum256(rec.body))
-		assert.Equal(t, []string{"t=1,v1=abc"}, rec.headers["Stripe-Signature"])
-		assert.Equal(t, []string{"t=1,v1=def"}, rec.headers["X-Fake-Signature"])
+		recBody, _, recHeaders := rec.snapshot()
+		assert.Equal(t, body, recBody)
+		assert.Equal(t, expectedHash, sha256.Sum256(recBody))
+		assert.Equal(t, []string{"t=1,v1=abc"}, recHeaders["Stripe-Signature"])
+		assert.Equal(t, []string{"t=1,v1=def"}, recHeaders["X-Fake-Signature"])
 	})
 
 	t.Run("GET with query string pass-through", func(t *testing.T) {
 		rec := &recordingUpstream{}
-		stub := httptest.NewServer(rec)
-		t.Cleanup(stub.Close)
-		target, err := proxy.ParseTarget(stub.URL)
-		require.NoError(t, err)
-
-		h := newHarness(t, withUpstream(routes.Payment, proxy.New(target, proxy.NewTransport(time.Second))))
+		h := newPaymentHarness(t, rec)
 
 		resp := h.do("GET", "/api/payments/vnpay/ipn?vnp_B=2&vnp_A=%C3%A1+x")
 
 		require.Equal(t, http.StatusOK, resp.Code)
-		assert.Equal(t, "vnp_B=2&vnp_A=%C3%A1+x", rec.rawQuery)
+		_, recQuery, _ := rec.snapshot()
+		assert.Equal(t, "vnp_B=2&vnp_A=%C3%A1+x", recQuery)
 	})
 }
 
 func TestCallbackRedirectAndHTMLPassThrough(t *testing.T) {
 	t.Run("302 redirect with Location header", func(t *testing.T) {
-		stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		h := newPaymentHarness(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Location", "http://localhost:3000/orders/o1?paid=1")
 			w.WriteHeader(http.StatusFound)
 		}))
-		t.Cleanup(stub.Close)
-		target, err := proxy.ParseTarget(stub.URL)
-		require.NoError(t, err)
-
-		h := newHarness(t, withUpstream(routes.Payment, proxy.New(target, proxy.NewTransport(time.Second))))
 
 		resp := h.do("GET", "/api/payments/fake/return")
 
@@ -97,16 +105,11 @@ func TestCallbackRedirectAndHTMLPassThrough(t *testing.T) {
 
 	t.Run("200 HTML response", func(t *testing.T) {
 		htmlBody := "<html><body>Checkout</body></html>"
-		stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		h := newPaymentHarness(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(htmlBody))
 		}))
-		t.Cleanup(stub.Close)
-		target, err := proxy.ParseTarget(stub.URL)
-		require.NoError(t, err)
-
-		h := newHarness(t, withUpstream(routes.Payment, proxy.New(target, proxy.NewTransport(time.Second))))
 
 		resp := h.do("GET", "/api/payments/fake/checkout/p1")
 
@@ -117,14 +120,9 @@ func TestCallbackRedirectAndHTMLPassThrough(t *testing.T) {
 }
 
 func TestCallbackAccessLogOmitsQuery(t *testing.T) {
-	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := newPaymentHarness(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
-	t.Cleanup(stub.Close)
-	target, err := proxy.ParseTarget(stub.URL)
-	require.NoError(t, err)
-
-	h := newHarness(t, withUpstream(routes.Payment, proxy.New(target, proxy.NewTransport(time.Second))))
 
 	h.do("GET", "/api/payments/vnpay/return?vnp_TxnRef=p1&vnp_SecureHash=deadbeef")
 
@@ -159,8 +157,10 @@ func TestCallbacksShareTheGeneralBucket(t *testing.T) {
 	requireError(t, rec, http.StatusTooManyRequests, httpx.CodeRateLimited)
 }
 
+// Note: This test cannot use newPaymentHarness because it needs to pass withProductionLimits() to newHarness.
+
 func TestCallbackStripsSpoofedIdentityHeaders(t *testing.T) {
-	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := newPaymentHarness(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(echoed{
 			Upstream: routes.Payment,
@@ -168,11 +168,6 @@ func TestCallbackStripsSpoofedIdentityHeaders(t *testing.T) {
 			Headers:  r.Header,
 		})
 	}))
-	t.Cleanup(stub.Close)
-	target, err := proxy.ParseTarget(stub.URL)
-	require.NoError(t, err)
-
-	h := newHarness(t, withUpstream(routes.Payment, proxy.New(target, proxy.NewTransport(time.Second))))
 	buyer := h.token("u-buyer", "buyer")
 
 	rec := h.do("POST", "/api/payments/stripe/webhook",
