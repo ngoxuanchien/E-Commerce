@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -60,6 +61,45 @@ func earn(t *testing.T, w *world) int64 {
 	return credit(order)
 }
 
+// waitPayoutSettled polls until the payout reaches SETTLED or within times out.
+// Returns the final observed payout state; no require calls inside the loop.
+func waitPayoutSettled(t *testing.T, seller actor, payoutID string, within time.Duration) client.Payout {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	var lastPayout client.Payout
+	var lastErr error
+	for {
+		payouts, err := seller.Payouts(ctx(t), "")
+		if err == nil {
+			for _, p := range payouts.Items {
+				if p.ID == payoutID {
+					lastPayout = p
+					if p.Status == "SETTLED" {
+						return lastPayout
+					}
+					lastErr = nil
+					break
+				}
+			}
+		} else {
+			lastErr = err
+		}
+		select {
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				var errMsg string
+				if lastErr != nil {
+					errMsg = fmt.Sprintf(" (last fetch error: %v)", lastErr)
+				}
+				require.Failf(t, "waitPayoutSettled", "payout %s did not reach SETTLED, last status: %s%s", payoutID, lastPayout.Status, errMsg)
+				return lastPayout
+			}
+		}
+	}
+}
+
 // TestPayoutSettlesAndCannotOverdraw verifies the payout settlement flow:
 // 1. Seller earns credit and requests a payout for the full amount → REQUESTED
 // 2. Payout settles automatically → SETTLED
@@ -70,6 +110,7 @@ func TestPayoutSettlesAndCannotOverdraw(t *testing.T) {
 
 	// Step 1: Earn and capture the available balance
 	amount1 := earn(t, w)
+	require.Equal(t, int64(125_000), amount1, "earn should return exactly 125000")
 	wallet1 := walletOf(t, w.sellerC)
 	require.Greater(t, wallet1.Available, int64(0), "wallet should have available balance after earn")
 	require.Equal(t, wallet1.Available, amount1, "available balance should equal earned credit")
@@ -87,36 +128,7 @@ func TestPayoutSettlesAndCannotOverdraw(t *testing.T) {
 
 	// Step 3: Poll Payouts until payout is SETTLED
 	settleTimeout := payoutSettleDelay + 3*payoutSettleInterval + 5*time.Second
-	deadline := time.Now().Add(settleTimeout)
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-
-	var settledPayout client.Payout
-	for {
-		payouts, err := w.sellerC.Payouts(ctx(t), "")
-		require.NoError(t, err, "Payouts fetch should succeed")
-		require.NotEmpty(t, payouts.Items, "payouts list should not be empty")
-
-		// Find our payout
-		for _, p := range payouts.Items {
-			if p.ID == payoutID1 {
-				settledPayout = p
-				if p.Status == "SETTLED" {
-					goto settled
-				}
-				break
-			}
-		}
-
-		select {
-		case <-ticker.C:
-			if time.Now().After(deadline) {
-				t.Fatalf("payout %s did not settle within %v, last status: %s", payoutID1, settleTimeout, settledPayout.Status)
-			}
-		}
-	}
-
-settled:
+	settledPayout := waitPayoutSettled(t, w.sellerC, payoutID1, settleTimeout)
 	require.Equal(t, "SETTLED", settledPayout.Status, "payout should be SETTLED")
 
 	// Verify wallet after settlement
@@ -156,6 +168,11 @@ settled:
 	require.Equal(t, amount2, wallet2.Available, "wallet should have new earned credit")
 
 	// Two concurrent CreatePayout calls with 70,000 each
+	// Create idempotency keys before launching goroutines to ensure they're distinct
+	key2 := newKey()
+	key3 := newKey()
+
+	start := make(chan struct{})
 	var wg sync.WaitGroup
 	var payout2Res client.Payout
 	var payout2Err error
@@ -165,15 +182,19 @@ settled:
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		payout2Res, payout2Err = w.sellerC.CreatePayout(ctx(t), newKey(), 70_000)
+		<-start
+		payout2Res, payout2Err = w.sellerC.CreatePayout(ctx(t), key2, 70_000)
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		payout3Res, payout3Err = w.sellerC.CreatePayout(ctx(t), newKey(), 70_000)
+		<-start
+		payout3Res, payout3Err = w.sellerC.CreatePayout(ctx(t), key3, 70_000)
 	}()
 
+	// Launch both goroutines by closing the start channel
+	close(start)
 	wg.Wait()
 
 	// Exactly one should succeed (201 REQUESTED), one should fail (409 INSUFFICIENT_FUNDS)
@@ -184,6 +205,7 @@ settled:
 	if payout2Err != nil {
 		failCount++
 		require.True(t, client.IsCode(payout2Err, "INSUFFICIENT_FUNDS"), "payout2 error should be INSUFFICIENT_FUNDS, got: %v", payout2Err)
+		require.Equal(t, 409, client.StatusOf(payout2Err), "payout2 error should be status 409")
 	} else {
 		successCount++
 		require.Equal(t, "REQUESTED", payout2Res.Status, "successful payout should be REQUESTED")
@@ -193,6 +215,7 @@ settled:
 	if payout3Err != nil {
 		failCount++
 		require.True(t, client.IsCode(payout3Err, "INSUFFICIENT_FUNDS"), "payout3 error should be INSUFFICIENT_FUNDS, got: %v", payout3Err)
+		require.Equal(t, 409, client.StatusOf(payout3Err), "payout3 error should be status 409")
 	} else {
 		successCount++
 		require.Equal(t, "REQUESTED", payout3Res.Status, "successful payout should be REQUESTED")
@@ -203,33 +226,6 @@ settled:
 	require.Equal(t, 1, failCount, "exactly one concurrent payout should fail")
 
 	// Wait for the successful payout to settle
-	deadline = time.Now().Add(settleTimeout)
-	ticker2 := time.NewTicker(200 * time.Millisecond)
-	defer ticker2.Stop()
-
-	var winnerSettled client.Payout
-	for {
-		payouts, err := w.sellerC.Payouts(ctx(t), "")
-		require.NoError(t, err)
-
-		for _, p := range payouts.Items {
-			if p.ID == successPayout.ID {
-				winnerSettled = p
-				if p.Status == "SETTLED" {
-					goto winnerSettled
-				}
-				break
-			}
-		}
-
-		select {
-		case <-ticker2.C:
-			if time.Now().After(deadline) {
-				t.Fatalf("winner payout %s did not settle within %v", successPayout.ID, settleTimeout)
-			}
-		}
-	}
-
-winnerSettled:
+	winnerSettled := waitPayoutSettled(t, w.sellerC, successPayout.ID, settleTimeout)
 	require.Equal(t, "SETTLED", winnerSettled.Status, "winner payout should be SETTLED")
 }
