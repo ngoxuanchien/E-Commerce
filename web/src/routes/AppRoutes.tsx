@@ -9,6 +9,8 @@ import { SearchPage } from '@/features/catalog/SearchPage';
 import { ShopPage } from '@/features/shop/ShopPage';
 import { CartPage } from '@/features/cart/CartPage';
 import { CheckoutPage } from '@/features/checkout/CheckoutPage';
+import { PaymentResultPage } from '@/features/payment/PaymentResultPage';
+import { MockPayPage } from '@/features/payment/MockPayPage';
 import { OrderDetailPage } from '@/features/orders/OrderDetailPage';
 import { OrdersPage } from '@/features/orders/OrdersPage';
 import { SellerLayout } from '@/components/layout/SellerLayout';
@@ -31,9 +33,11 @@ export function AppRoutes() {
           <Route path="search" element={<SearchPage />} />
           <Route path="products/:id" element={<ProductPage />} />
           <Route path="shops/:slug" element={<ShopPage />} />
+          <Route path="__mock/pay/:id" element={<MockPayPage />} />
           <Route element={<RequireAuth />}>
             <Route path="cart" element={<CartPage />} />
             <Route path="checkout" element={<CheckoutPage />} />
+            <Route path="checkout/result" element={<PaymentResultPage />} />
             <Route path="orders" element={<OrdersPage />} />
             <Route path="orders/:id" element={<OrderDetailPage />} />
             <Route path="seller/open-shop" element={<OpenShopPage />} />
