@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
-	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -87,14 +86,25 @@ func TestPaymentTraceCrossesGatewayPaymentOrder(t *testing.T) {
 		http.Header{"Traceparent": {"00-" + traceID + "-" + spanID + "-01"}})
 	require.NoError(t, err)
 
+	// Compute the order before polling (orderFor uses require internally)
+	o := orderFor(t, res, w.shopA.ID)
+	t.Cleanup(func() {
+		if err := ctx(t).Err(); err == nil {
+			// Test passed, clean up checkout
+			if _, err := buyer.CancelOrder(ctx(t), o.ID, ""); err != nil {
+				t.Logf("cleanup: cancel order %s: %v", o.ID, err)
+			}
+		}
+	})
+
 	// Poll for trace with gateway, payment, and order services + GetCheckout operation on order
 	deadline := time.Now().Add(30 * time.Second)
 	var services map[string]bool
-	var orderOps []string
+	var ops map[string][]string
 	var foundGetCheckout bool
 	for time.Now().Before(deadline) {
-		services, ops, _ := fetchTrace(t, traceID)
-		orderOps = ops["order"]
+		services, ops, _ = fetchTrace(t, traceID)
+		orderOps := ops["order"]
 		for _, op := range orderOps {
 			if strings.Contains(op, "GetCheckout") {
 				foundGetCheckout = true
@@ -102,9 +112,6 @@ func TestPaymentTraceCrossesGatewayPaymentOrder(t *testing.T) {
 			}
 		}
 		if services["gateway"] && services["payment"] && services["order"] && foundGetCheckout {
-			// Cancel the checkout as buyer so it doesn't wait for the timeout
-			o := orderFor(t, res, w.shopA.ID)
-			_, _ = buyer.CancelOrder(ctx(t), o.ID, "")
 			return
 		}
 		time.Sleep(time.Second)
@@ -114,6 +121,15 @@ func TestPaymentTraceCrossesGatewayPaymentOrder(t *testing.T) {
 		names = append(names, s)
 	}
 	sort.Strings(names)
+
+	// Include order operations in failure message
+	opDesc := []string{}
+	for svc, opList := range ops {
+		opDesc = append(opDesc, svc+": "+strings.Join(opList, ", "))
+	}
+	sort.Strings(opDesc)
+	t.Logf("trace %s operations:\n  %s", traceID, strings.Join(opDesc, "\n  "))
+
 	t.Fatalf("trace %s: services %v, order GetCheckout found: %v (want gateway, payment, order + GetCheckout)", traceID, names, foundGetCheckout)
 }
 
@@ -139,12 +155,9 @@ func TestFakeWebhookTraceReachesConsumers(t *testing.T) {
 	paymentData := payFake(t, buyer, checkoutID, "succeed", url.Values{"hook_webhook": {"drop"}})
 
 	// Immediately post the webhook with traceparent header BEFORE the reconciler processes the outbox
-	// (reconciler runs every RECONCILE_INTERVAL=2s and processes rows older than RECONCILE_MIN_AGE=3s)
+	// (reconciler processes rows older than reconcileMinAge, so webhook must arrive sooner)
 	traceID, spanID := randHex(16), randHex(8)
-	fakeSecret := os.Getenv("FAKE_WEBHOOK_SECRET")
-	if fakeSecret == "" {
-		fakeSecret = "dev-fake-secret"
-	}
+	fakeSecret := envOr("FAKE_WEBHOOK_SECRET", "dev-fake-secret")
 	eventID := "e2e-" + newKey()
 	err := buyer.FakeWebhook(ctx(t), fakeSecret, client.FakeEvent{
 		EventID:   eventID,
