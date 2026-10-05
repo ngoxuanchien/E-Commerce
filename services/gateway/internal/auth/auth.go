@@ -142,8 +142,11 @@ func bearerToken(h http.Header) (token string, present, ok bool) {
 }
 
 // Middleware builds the gateway's auth gate for a route at the given level.
-// It always strips client-supplied identity headers first. If an
-// Authorization header is present, it must be a single well-formed bearer
+// It always strips client-supplied identity headers first. Callback routes
+// skip all token handling and are forwarded immediately (provider callbacks
+// never carry a token, and a browser returning from a provider may carry a
+// stale one; the token is neither verified nor trusted). If an Authorization
+// header is present on other routes, it must be a single well-formed bearer
 // token that verifies — otherwise the request is rejected even on a Public
 // route, since a client should never be able to smuggle a bad credential
 // past the gateway. A route at User or Seller level then requires an
@@ -155,6 +158,12 @@ func Middleware(v *Verifier, level routes.Level) func(http.Handler) http.Handler
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			StripIdentityHeaders(r.Header)
+
+			// Callback routes skip token verification and identity injection.
+			if level == routes.Callback {
+				next.ServeHTTP(w, r)
+				return
+			}
 
 			var identity authctx.Identity
 			var authenticated bool
