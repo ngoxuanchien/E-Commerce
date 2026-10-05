@@ -133,6 +133,7 @@ func TestCallbackAccessLogOmitsQuery(t *testing.T) {
 	assert.NotContains(t, logs, "deadbeef")
 }
 
+// Note: This test cannot use newPaymentHarness because it needs to pass withProductionLimits() to newHarness.
 func TestCallbacksShareTheGeneralBucket(t *testing.T) {
 	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -156,8 +157,6 @@ func TestCallbacksShareTheGeneralBucket(t *testing.T) {
 
 	requireError(t, rec, http.StatusTooManyRequests, httpx.CodeRateLimited)
 }
-
-// Note: This test cannot use newPaymentHarness because it needs to pass withProductionLimits() to newHarness.
 
 func TestCallbackStripsSpoofedIdentityHeaders(t *testing.T) {
 	h := newPaymentHarness(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -52,7 +52,7 @@ The static route table (`internal/routes/routes.go`) lists method, path pattern,
 - **Trust boundary:** gateway strips all incoming `X-User-Id` and `X-User-Roles` headers (case-insensitive, including `_` variants) before processing; only the gateway's own verified identity is trusted by upstreams.
 - **Rate limit:** shared bucket across all routes within its category (login vs general); client IP is the requesting peer unless `TRUSTED_PROXIES` is set and the peer is trusted, in which case the rightmost non-trusted hop of `X-Forwarded-For` is used.
 - **`/api/shops/me` auth:** Seller-only (routes to catalog-svc), precedes the public `GET /api/shops/{slug}` in the table to prevent "me" being treated as a slug.
-- **Access log:** records the matched route pattern only, never the raw path or query string (important for callbacks, which may carry sensitive VNPay transaction IDs or Stripe signatures in the query).
+- **Access log:** records the matched route pattern only, never the raw path or query string (important for callbacks, which may carry sensitive VNPay transaction data in the query).
 
 **P2 additions:**
 

@@ -15,10 +15,11 @@ const (
 	User
 	// Seller routes need a valid access token whose roles include "seller".
 	Seller
-	// Callback is a public provider-callback route; no token is verified and no
-	// identity is injected, so an invalid Authorization header is ignored rather
-	// than rejected. It is appended last so that level >= User checks do not
-	// apply to it (auth handles it with an early return).
+	// Callback is a public provider-callback route; auth.Middleware handles it
+	// with an early return before checking the level, so no token is verified and
+	// no identity is injected. Invalid Authorization headers are ignored rather
+	// than rejected. It is appended last so that without this early return, the
+	// level >= User check would demand a token (failing closed).
 	Callback
 )
 
