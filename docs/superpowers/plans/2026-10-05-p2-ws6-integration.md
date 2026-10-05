@@ -69,7 +69,7 @@
 - Modify: `Makefile` (lines 95–100, `e2e` target)
 - Modify: `.github/workflows/ci.yml` (`e2e` job, lines 102–144)
 
-- [ ] **Step 1: Makefile.** Add above `seed:`:
+- [x] **Step 1: Makefile.** Add above `seed:`:
 
 ```make
 # Fast timers for the e2e stack (P2 WS6' §2); `make up-app` alone keeps the defaults.
@@ -80,11 +80,11 @@ E2E_TIMERS := PAYMENT_TIMEOUT=40s SWEEPER_INTERVAL=2s AUTO_COMPLETE_AFTER=5s \
 
 Make the `e2e` recipe start with `$(E2E_TIMERS) $(MAKE) up-app` (compose recreates only the services whose env changed: order, payment, ledger), then keep the two existing lines. Update its `##` help text: "(Re)start the stack with fast timers, then API tests + Playwright (make up-app seed first)".
 
-- [ ] **Step 2: CI.** In the `e2e` job add a job-level `env:` block with the eight timer variables (same values), so `make keys up-app` already starts fast and `make e2e`'s `up-app` is a no-op. Bump `timeout-minutes` to 60. In "collect service logs" also write `docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.web.yml --profile app logs --no-color payment > e2e-payment-logs.txt` and the same for `ledger` (`e2e-ledger-logs.txt`), and add both files to the artifact `path`.
+- [x] **Step 2: CI.** In the `e2e` job add a job-level `env:` block with the eight timer variables (same values), so `make keys up-app` already starts fast and `make e2e`'s `up-app` is a no-op. Bump `timeout-minutes` to 60. In "collect service logs" also write `docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.web.yml --profile app logs --no-color payment > e2e-payment-logs.txt` and the same for `ledger` (`e2e-ledger-logs.txt`), and add both files to the artifact `path`.
 
-- [ ] **Step 3: Verify.** `make -n e2e` prints the env-prefixed `make up-app`. `AUTO_COMPLETE_AFTER=5s docker compose -f deploy/docker-compose.yml --profile app config | grep AUTO_COMPLETE_AFTER` shows `5s`. CI YAML parses: `python3 -c 'import yaml;yaml.safe_load(open(".github/workflows/ci.yml"))'`.
+- [x] **Step 3: Verify.** `make -n e2e` prints the env-prefixed `make up-app`. `AUTO_COMPLETE_AFTER=5s docker compose -f deploy/docker-compose.yml --profile app config | grep AUTO_COMPLETE_AFTER` shows `5s`. CI YAML parses: `python3 -c 'import yaml;yaml.safe_load(open(".github/workflows/ci.yml"))'`.
 
-- [ ] **Step 4: Commit** `ci(e2e): run the e2e stack with fast P2 timers`.
+- [x] **Step 4: Commit** `ci(e2e): run the e2e stack with fast P2 timers`.
 
 ---
 
@@ -159,15 +159,15 @@ func (c *Client) Payouts(ctx context.Context, status string) (Page[Payout], erro
 
 Implementation notes: extract the error-envelope decoding at the end of `Do` into `func apiError(status int, data []byte) *APIError` and reuse it. FAKE submit/return copy `*c.HTTP` and set `CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }`; any status other than 302 becomes `apiError`. `FakeSubmit` sends `application/x-www-form-urlencoded` with `outcome` plus every `hooks` value. These callback routes need no bearer token; sending it anyway is harmless (the gateway ignores it on callback routes).
 
-- [ ] **Step 1: Write failing tests** in `client_test.go`:
+- [x] **Step 1: Write failing tests** in `client_test.go`:
   - `TestSignFakeKnownVector`: `SignFake("dev-fake-secret", time.Unix(1700000000, 0), []byte(`{"event_id":"e1","payment_id":"p1","outcome":"succeed"}`))` == `"t=1700000000,v1=8646cea7fb3478995ffb48101262589e62191e8e6e9a1a65a6288294306b4388"` (computed with `openssl dgst -sha256 -hmac`).
   - `TestFakeSubmitDoesNotFollowRedirect`: an httptest server answers `POST /api/payments/fake/checkout/p1` with 302 `Location: /api/payments/fake/return?payment_id=p1` and fails the test if `/api/payments/fake/return` is ever hit; assert the form had `outcome=fail` and `hook_webhook=drop`, and the returned location.
   - `TestFakeSubmitNon302IsAPIError`: the server answers 404 with `{"error":{"code":"NOT_FOUND","message":"x"}}` → `IsCode(err, "NOT_FOUND")`.
   - `TestCreatePayoutSendsIdempotencyKey`: the server checks `Idempotency-Key: k1` and body `{"amount":50000}`, answers 201 with a payout JSON; the decoded `Status` is `REQUESTED`.
-- [ ] **Step 2:** `cd e2e && GOWORK=off go test ./client/` → FAIL (undefined).
-- [ ] **Step 3:** Implement the types and `payments.go`.
-- [ ] **Step 4:** `GOWORK=off go test ./client/` passes; `GOWORK=off go vet ./...` clean.
-- [ ] **Step 5: Commit** `feat(e2e): client for payments, FAKE provider, wallet and payouts`.
+- [x] **Step 2:** `cd e2e && GOWORK=off go test ./client/` → FAIL (undefined).
+- [x] **Step 3:** Implement the types and `payments.go`.
+- [x] **Step 4:** `GOWORK=off go test ./client/` passes; `GOWORK=off go vet ./...` clean.
+- [x] **Step 5: Commit** `feat(e2e): client for payments, FAKE provider, wallet and payouts`.
 
 ---
 
@@ -217,8 +217,8 @@ Polling helpers poll every 200 ms and must not call `require` inside the `Eventu
 
 In `TestMain` (`main_test.go`), after `m.Run()`, run `trialBalance` once more; on error print its output and exit 1 (global invariant after the suite).
 
-- [ ] **Step 1: Failing tests** in `ledger_test.go`: `TestTrialBalanceFailsLoudlyWithoutStack` sets `t.Setenv("COMPOSE_PROJECT_NAME", "no-such-stack-"+runID())` and asserts `trialBalance(ctx)` returns an error; `TestTrialBalanceIsZero` calls `assertTrialBalance(t)`.
-- [ ] **Step 2:** Bring up the stack once for the rest of the plan and run:
+- [x] **Step 1: Failing tests** in `ledger_test.go`: `TestTrialBalanceFailsLoudlyWithoutStack` sets `t.Setenv("COMPOSE_PROJECT_NAME", "no-such-stack-"+runID())` and asserts `trialBalance(ctx)` returns an error; `TestTrialBalanceIsZero` calls `assertTrialBalance(t)`.
+- [x] **Step 2:** Bring up the stack once for the rest of the plan and run:
 
 ```bash
 docker compose ls   # take any other stack down WITHOUT -v first
@@ -230,9 +230,9 @@ cd e2e && GOWORK=off go test -count=1 -run TestTrialBalance ./api/
 ```
 
 Expected: FAIL (undefined).
-- [ ] **Step 3:** Implement the five files.
-- [ ] **Step 4:** The same command passes, and the whole existing suite still passes: `GOWORK=off go test -count=1 ./api/`.
-- [ ] **Step 5: Commit** `test(e2e): P2 harness — contracts, trial balance after each test, online helpers`.
+- [x] **Step 3:** Implement the five files.
+- [x] **Step 4:** The same command passes, and the whole existing suite still passes: `GOWORK=off go test -count=1 ./api/`.
+- [x] **Step 5: Commit** `test(e2e): P2 harness — contracts, trial balance after each test, online helpers`.
 
 ---
 
@@ -252,9 +252,9 @@ Expected: FAIL (undefined).
 
 `TestStripeMethodUsesItsAdapter`: one shopA line, `checkoutOnline(payer, "STRIPE", …)`, `payFake succeed` → `waitPayment SUCCEEDED` with `Method == "STRIPE"` and `Provider == "fake"`; order `PAID`. Deliver + buyer complete; wait for seller A's credit.
 
-- [ ] **Step 1:** Write the tests.
-- [ ] **Step 2:** `cd e2e && GOWORK=off go test -count=1 -v -run 'TestOnline|TestStripe' ./api/` → PASS. These test existing behavior: a failure is a test bug or a finding (see "Findings protocol").
-- [ ] **Step 3: Commit** `test(e2e): online checkout, escrow, auto-complete and Stripe routing`.
+- [x] **Step 1:** Write the tests.
+- [x] **Step 2:** `cd e2e && GOWORK=off go test -count=1 -v -run 'TestOnline|TestStripe' ./api/` → PASS. These test existing behavior: a failure is a test bug or a finding (see "Findings protocol").
+- [x] **Step 3: Commit** `test(e2e): online checkout, escrow, auto-complete and Stripe routing`.
 
 ---
 
