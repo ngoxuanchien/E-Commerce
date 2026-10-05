@@ -52,3 +52,18 @@ test('mutation with meta.silent=true does not show error toast', async () => {
   // The toast should NOT be visible because meta.silent=true
   expect(screen.queryByText(ERROR_MESSAGES.UPSTREAM_UNAVAILABLE)).not.toBeInTheDocument();
 });
+
+test('mutation without meta.silent shows error toast with retry button', async () => {
+  function NormalMut() {
+    const mut = useMutation({
+      mutationFn: () => Promise.reject(new ApiError(503, 'UPSTREAM_UNAVAILABLE', 'x')),
+    });
+    return <button onClick={() => mut.mutate()}>Go</button>;
+  }
+
+  const { user } = renderWithProviders(<NormalMut />);
+  await user.click(screen.getByRole('button', { name: 'Go' }));
+  // Without meta.silent, the error toast is shown with a retry button
+  expect(await screen.findByText(ERROR_MESSAGES.UPSTREAM_UNAVAILABLE)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Thử lại' })).toBeInTheDocument();
+});
