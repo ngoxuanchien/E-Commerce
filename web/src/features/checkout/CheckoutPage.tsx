@@ -177,11 +177,13 @@ export function CheckoutPage() {
           </Alert>
         ) : null}
         <Button type="submit" size="lg" className="w-full" disabled={checkout.isPending || startPayment.isPending}>
-          {checkout.isPending || startPayment.isPending
-            ? 'Đang chuyển đến trang thanh toán…'
-            : paymentMethod === 'COD'
-              ? 'Đặt hàng'
-              : 'Đặt hàng và thanh toán'}
+          {checkout.isPending
+            ? 'Đang đặt hàng…'
+            : startPayment.isPending
+              ? 'Đang chuyển đến trang thanh toán…'
+              : paymentMethod === 'COD'
+                ? 'Đặt hàng'
+                : 'Đặt hàng và thanh toán'}
         </Button>
       </aside>
     </form>

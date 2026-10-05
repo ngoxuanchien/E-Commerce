@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { HttpResponse, delay, http } from 'msw';
 import { expect, test, vi } from 'vitest';
 import { SEED } from '@/mocks/seed';
@@ -191,45 +191,92 @@ test('payment method radios default to COD', async () => {
 
 test('choosing VNPAY and submitting calls startPayment with correct idempotency key', async () => {
   getDb().state.carts[SEED.users.an] = { [SEED.skus.bowl11]: 1 };
-  let checkoutPaymentMethod: string | undefined;
-  let paymentIdempotencyKey: string | undefined;
-  
+  let capturedPaymentRequest: { checkout_id?: string } & Record<string, unknown> = {};
+  let capturedIdempotencyKey: string | undefined;
+  let capturedCheckoutId: string | undefined;
+
   server.use(
     http.post('*/api/checkout', async ({ request }) => {
       const idemKey = request.headers.get('Idempotency-Key') ?? '';
-      const body = await request.json() as { payment_method?: string };
-      checkoutPaymentMethod = body.payment_method;
-      const response = getDb().checkout(SEED.users.an, idemKey, body as any);
+      const body = (await request.json()) as Record<string, unknown>;
+      capturedCheckoutId = getDb().checkout(SEED.users.an, idemKey, body as never).checkout_id;
+      const response = getDb().checkout(SEED.users.an, idemKey, body as never);
       return HttpResponse.json(response, { status: 201 });
     }),
     http.post('*/api/payments', async ({ request }) => {
-      paymentIdempotencyKey = request.headers.get('Idempotency-Key') ?? undefined;
-      const body = await request.json() as { checkout_id: string };
-      const response = getDb().createPayment(SEED.users.an, paymentIdempotencyKey ?? '', body);
+      capturedIdempotencyKey = request.headers.get('Idempotency-Key') ?? undefined;
+      capturedPaymentRequest = (await request.json()) as Record<string, unknown>;
+      const response = getDb().createPayment(SEED.users.an, capturedIdempotencyKey ?? '', capturedPaymentRequest as never);
       return HttpResponse.json(response, { status: 201 });
     }),
   );
-  
+
   const { user } = renderApp(`/checkout?sku=${SEED.skus.bowl11}`, { as: 'an@example.com' });
   await fillAddress(user);
-  
+
   const fieldset = await screen.findByRole('group', { name: 'Phương thức thanh toán' });
   const vnpayRadio = within(fieldset).getByDisplayValue('VNPAY');
   await user.click(vnpayRadio);
-  
+
   expect(screen.getByRole('button', { name: 'Đặt hàng và thanh toán' })).toBeInTheDocument();
-  
+
   await user.click(screen.getByRole('button', { name: 'Đặt hàng và thanh toán' }));
 
-  expect(checkoutPaymentMethod).toBe('VNPAY');
-  expect(paymentIdempotencyKey).toBeDefined();
-  expect(typeof paymentIdempotencyKey).toBe('string');
-  expect(redirectTo).toHaveBeenCalledWith(expect.stringMatching(/\/__mock\/pay\//));
+  await waitFor(() => {
+    expect(capturedIdempotencyKey).toBeDefined();
+    expect(capturedPaymentRequest.checkout_id).toBe(capturedCheckoutId);
+    expect(sessionStorage.getItem(`pay:${capturedCheckoutId}`)).toBe(capturedIdempotencyKey);
+    expect(redirectTo).toHaveBeenCalledWith(expect.stringMatching(/\/__mock\/pay\//));
+  });
+});
+
+test('reused stored idempotency key is sent to payment request', async () => {
+  getDb().state.carts[SEED.users.an] = { [SEED.skus.bowl11]: 1 };
+
+  const fixedRes = getDb().checkout(SEED.users.an, 'fixed', {
+    sku_ids: [SEED.skus.bowl11],
+    shipping_address: { full_name: 'Test', phone: '0901234567', line1: 'addr', ward: 'w', district: 'd', province: 'p' },
+    payment_method: 'VNPAY',
+  });
+
+  // Reset cart for the page to load fresh
+  getDb().state.carts[SEED.users.an] = { [SEED.skus.bowl11]: 1 };
+
+  let capturedIdempotencyKey: string | undefined;
+  let capturedCheckoutId: string | undefined;
+
+  server.use(
+    http.post('*/api/checkout', () => HttpResponse.json(fixedRes, { status: 201 })),
+    http.post('*/api/payments', async ({ request }) => {
+      capturedIdempotencyKey = request.headers.get('Idempotency-Key') ?? undefined;
+      const body = (await request.json()) as Record<string, unknown> & { checkout_id?: string };
+      capturedCheckoutId = body.checkout_id;
+      const response = getDb().createPayment(SEED.users.an, capturedIdempotencyKey ?? '', body as never);
+      return HttpResponse.json(response, { status: 201 });
+    }),
+  );
+
+  const { user } = renderApp(`/checkout?sku=${SEED.skus.bowl11}`, { as: 'an@example.com' });
+
+  // Pre-set the stored key in sessionStorage
+  sessionStorage.setItem(`pay:${fixedRes.checkout_id}`, 'stored-key');
+
+  await fillAddress(user);
+  const fieldset = await screen.findByRole('group', { name: 'Phương thức thanh toán' });
+  const vnpayRadio = within(fieldset).getByDisplayValue('VNPAY');
+  await user.click(vnpayRadio);
+
+  await user.click(screen.getByRole('button', { name: 'Đặt hàng và thanh toán' }));
+
+  await waitFor(() => {
+    expect(capturedIdempotencyKey).toBe('stored-key');
+    expect(capturedCheckoutId).toBe(fixedRes.checkout_id);
+  });
 });
 
 test('payment method selection persists and sends correct payment method', async () => {
   getDb().state.carts[SEED.users.an] = { [SEED.skus.bowl11]: 1 };
-  let paymentMethods: (string | undefined)[] = [];
+  const paymentMethods: (string | undefined)[] = [];
 
   server.use(
     http.post('*/api/checkout', async ({ request }) => {
