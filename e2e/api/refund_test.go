@@ -70,18 +70,20 @@ func TestSellerCancelAfterPaymentRefundsThatOrder(t *testing.T) {
 		"sellerB wallet: InEscrow should increase by orderB.Total")
 
 	// Step 7: Seller A confirms, then cancels orderA (reason "Hết hàng")
-	_, err := w.sellerA.SellerOrderAction(ctx(t), orderA.ID, "confirm", "")
+	o, err := w.sellerA.SellerOrderAction(ctx(t), orderA.ID, "confirm", "")
 	require.NoError(t, err)
-	_, err = w.sellerA.SellerOrderAction(ctx(t), orderA.ID, "cancel", "Hết hàng")
+	require.Equal(t, "CONFIRMED", o.Status)
+	o, err = w.sellerA.SellerOrderAction(ctx(t), orderA.ID, "cancel", "Hết hàng")
 	require.NoError(t, err)
+	require.Equal(t, "CANCELLED", o.Status)
 
-	// Step 8: Wait for orderA PaymentStatus to become REFUNDED within 3*refundInterval + 5s
+	// Step 8: Wait for orderA to be CANCELLED with PaymentStatus REFUNDED within 3*refundInterval + 5s
 	refundTimeout := 3*refundInterval + 5*time.Second
 	orderA = waitOrder(t, w.payer, orderA.ID, refundTimeout,
 		func(o client.Order) bool {
-			return o.PaymentStatus == "REFUNDED"
+			return o.Status == "CANCELLED" && o.PaymentStatus == "REFUNDED"
 		},
-		"orderA payment should be REFUNDED after seller cancellation")
+		"orderA should be CANCELLED with REFUNDED payment after seller cancellation")
 
 	// Step 9: Verify sellerA wallet: InEscrow released, Available unchanged
 	waitWallet(t, w.sellerA, 10*time.Second,
@@ -159,7 +161,10 @@ func TestCODCheckoutNeverTouchesTheLedger(t *testing.T) {
 
 	// Step 6: Assert.Never that sellerB's wallet changes for 2*sweeperInterval + 2s
 	assert.Never(t, func() bool {
-		currentB := walletOf(t, w.sellerB)
+		currentB, err := w.sellerB.Wallet(ctx(t))
+		if err != nil {
+			return true // Fail loudly on endpoint error
+		}
 		// Wallet changes if Available or InEscrow differ from baseline
 		return currentB.Available != baseB.Available || currentB.InEscrow != baseB.InEscrow
 	}, 2*sweeperInterval+2*time.Second, 200*time.Millisecond,
