@@ -121,7 +121,7 @@ func TestPaymentTraceCrossesGatewayPaymentOrder(t *testing.T) {
 // through Kafka consumers into order and ledger services.
 func TestFakeWebhookTraceReachesConsumers(t *testing.T) {
 	w := getWorld(t)
-	buyer := w.buyers[1]
+	buyer := w.payer
 	require.NoError(t, buyer.ClearCart(ctx(t)))
 
 	// Create product and record baseline wallet
@@ -135,11 +135,11 @@ func TestFakeWebhookTraceReachesConsumers(t *testing.T) {
 	o := orderFor(t, res, w.shopA.ID)
 
 	// Pay with FAKE but don't send webhook (hook_webhook=drop)
+	// This creates the outbox row with traceparent before the reconciler picks it up
 	paymentData := payFake(t, buyer, checkoutID, "succeed", url.Values{"hook_webhook": {"drop"}})
-	paymentData = waitPayment(t, buyer, paymentData.ID, "SUCCEEDED", 5*time.Second)
-	require.Equal(t, "SUCCEEDED", paymentData.Status, "payment should be SUCCEEDED even with webhook drop")
 
-	// Now manually send a webhook with traceparent header before reconcileMinAge
+	// Immediately post the webhook with traceparent header BEFORE the reconciler processes the outbox
+	// (reconciler runs every RECONCILE_INTERVAL=2s and processes rows older than RECONCILE_MIN_AGE=3s)
 	traceID, spanID := randHex(16), randHex(8)
 	fakeSecret := os.Getenv("FAKE_WEBHOOK_SECRET")
 	if fakeSecret == "" {
@@ -153,6 +153,10 @@ func TestFakeWebhookTraceReachesConsumers(t *testing.T) {
 	}, http.Header{"Traceparent": {"00-" + traceID + "-" + spanID + "-01"}})
 	require.NoError(t, err, "webhook send failed")
 
+	// Now wait for payment to reach SUCCEEDED status
+	paymentData = waitPayment(t, buyer, paymentData.ID, "SUCCEEDED", 5*time.Second)
+	require.Equal(t, "SUCCEEDED", paymentData.Status, "payment should be SUCCEEDED")
+
 	// Wait for order to reach PAID status (webhook processing + consumer)
 	o = waitOrder(t, buyer, o.ID, 15*time.Second,
 		func(order client.Order) bool {
@@ -160,16 +164,15 @@ func TestFakeWebhookTraceReachesConsumers(t *testing.T) {
 		},
 		"order should be PAID after webhook processing")
 
-	// Verify trace has at least gateway and payment services (order and ledger consumers
-	// may not propagate traceparent through outbox/Kafka in current implementation)
+	// Verify trace has gateway, payment, order, and ledger services
 	deadline := time.Now().Add(30 * time.Second)
 	var services map[string]bool
 	var ops map[string][]string
-	var hasGatewayAndPayment bool
+	var hasAllServices bool
 	for time.Now().Before(deadline) {
 		services, ops, _ = fetchTrace(t, traceID)
-		if services["gateway"] && services["payment"] {
-			hasGatewayAndPayment = true
+		if services["gateway"] && services["payment"] && services["order"] && services["ledger"] {
+			hasAllServices = true
 			break
 		}
 		time.Sleep(time.Second)
@@ -180,25 +183,30 @@ func TestFakeWebhookTraceReachesConsumers(t *testing.T) {
 	}
 	sort.Strings(names)
 
-	// Dump services and operations for debugging
+	// Dump services and operations for failure message
 	opDesc := []string{}
 	for svc, opList := range ops {
 		opDesc = append(opDesc, svc+": "+strings.Join(opList, ", "))
 	}
 	sort.Strings(opDesc)
 
-	if !services["order"] || !services["ledger"] {
-		t.Logf("FINDING: order and/or ledger consumer spans not in webhook trace")
-		t.Logf("  trace %s: services %v, operations:\n    %s", traceID, names, strings.Join(opDesc, "\n    "))
-		t.Logf("  (traceparent may not be propagated through Kafka outbox in current implementation)")
+	if !hasAllServices {
+		t.Logf("trace %s services and operations seen:\n  %s", traceID, strings.Join(opDesc, "\n  "))
 	}
-	require.True(t, hasGatewayAndPayment, "trace %s: services %v (want at least gateway, payment)", traceID, names)
+	require.True(t, hasAllServices, "trace %s: services %v (want gateway, payment, order, ledger)", traceID, names)
 
-	// Seller cancels to transition to REFUNDED
+	// Seller cancels to transition to CANCELLED and REFUNDED
 	_, err = w.sellerA.SellerOrderAction(ctx(t), o.ID, "cancel", "Test refund")
 	require.NoError(t, err)
 
-	// Wait for order to reach REFUNDED status
+	// Wait for order to reach CANCELLED status (seller action)
+	o = waitOrder(t, buyer, o.ID, 10*time.Second,
+		func(order client.Order) bool {
+			return order.Status == "CANCELLED"
+		},
+		"order should be CANCELLED after seller cancels")
+
+	// Wait for payment to transition to REFUNDED status
 	o = waitOrder(t, buyer, o.ID, 15*time.Second,
 		func(order client.Order) bool {
 			return order.PaymentStatus == "REFUNDED"
