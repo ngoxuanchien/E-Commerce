@@ -16,6 +16,8 @@ func setRequiredEnv(t *testing.T) {
 	t.Setenv("IDENTITY_URL", "http://identity:8081")
 	t.Setenv("CATALOG_URL", "http://catalog:8082")
 	t.Setenv("ORDER_URL", "http://order:8083")
+	t.Setenv("PAYMENT_URL", "http://payment:8084")
+	t.Setenv("LEDGER_URL", "http://ledger:8085")
 	t.Setenv("IDENTITY_JWKS_URL", "http://identity:8081/.well-known/jwks.json")
 }
 
@@ -31,6 +33,8 @@ func TestLoadConfig(t *testing.T) {
 	assert.Equal(t, "http://identity:8081", cfg.IdentityURL)
 	assert.Equal(t, "http://catalog:8082", cfg.CatalogURL)
 	assert.Equal(t, "http://order:8083", cfg.OrderURL)
+	assert.Equal(t, "http://payment:8084", cfg.PaymentURL)
+	assert.Equal(t, "http://ledger:8085", cfg.LedgerURL)
 	assert.Equal(t, "http://identity:8081/.well-known/jwks.json", cfg.JWKSURL)
 	assert.Equal(t, []string{"http://localhost:5173", "https://shop.example"}, cfg.CORSAllowedOrigins)
 	assert.Equal(t, 3*time.Second, cfg.UpstreamTimeout)
@@ -49,7 +53,7 @@ func TestLoadConfigDefaults(t *testing.T) {
 }
 
 func TestLoadConfigRequiresUpstreamsAndJWKS(t *testing.T) {
-	for _, name := range []string{"IDENTITY_URL", "CATALOG_URL", "ORDER_URL", "IDENTITY_JWKS_URL"} {
+	for _, name := range []string{"IDENTITY_URL", "CATALOG_URL", "ORDER_URL", "PAYMENT_URL", "LEDGER_URL", "IDENTITY_JWKS_URL"} {
 		t.Run(name, func(t *testing.T) {
 			setRequiredEnv(t)
 			t.Setenv(name, "")
@@ -67,15 +71,22 @@ func TestNewUpstreams(t *testing.T) {
 		IdentityURL:     "http://identity:8081",
 		CatalogURL:      "http://catalog:8082",
 		OrderURL:        "http://order:8083",
+		PaymentURL:      "http://payment:8084",
+		LedgerURL:       "http://ledger:8085",
 		UpstreamTimeout: time.Second,
 	}
 
 	ups, err := newUpstreams(valid)
 	require.NoError(t, err)
-	assert.Len(t, ups, 3)
+	assert.Len(t, ups, 5)
 
 	bad := valid
 	bad.IdentityURL = "identity:8081"
+	_, err = newUpstreams(bad)
+	assert.Error(t, err)
+
+	bad = valid
+	bad.LedgerURL = "ledger:8085"
 	_, err = newUpstreams(bad)
 	assert.Error(t, err)
 }

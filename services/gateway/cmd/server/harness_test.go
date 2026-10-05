@@ -122,7 +122,7 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 
 	h := &harness{t: t, hits: map[string]*atomic.Int64{}, logs: &syncBuffer{}}
 	upstreams := map[string]http.Handler{}
-	for _, name := range []string{routes.Identity, routes.Catalog, routes.Order} {
+	for _, name := range []string{routes.Identity, routes.Catalog, routes.Order, routes.Payment, routes.Ledger} {
 		counter := &atomic.Int64{}
 		h.hits[name] = counter
 		srv := httptest.NewServer(echoUpstream(name, counter))
