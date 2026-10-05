@@ -1,0 +1,7 @@
+{
+  "error": {
+    "message": "Only Checkout Sessions with a status in [\"open\"] can be expired.",
+    "request_log_url": "https://dashboard.stripe.com/test/logs/req_aBcDeFgHiJkLmN",
+    "type": "invalid_request_error"
+  }
+}

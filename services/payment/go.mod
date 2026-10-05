@@ -8,9 +8,17 @@ replace (
 )
 
 require (
+	github.com/getkin/kin-openapi v0.149.0
+	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
+	github.com/ngoxuanchien/e-commerce/gen v0.0.0
 	github.com/ngoxuanchien/e-commerce/pkg v0.0.0-00010101000000-000000000000
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/stretchr/testify v1.12.1
+	github.com/stripe/stripe-go/v86 v86.4.2
+	github.com/twmb/franz-go v1.22.1
+	google.golang.org/grpc v1.84.0
+	google.golang.org/protobuf v1.36.12
 )
 
 require (
@@ -32,7 +40,6 @@ require (
 	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.15 // indirect
-	github.com/getkin/kin-openapi v0.149.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
@@ -41,7 +48,6 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.30.5 // indirect
 	github.com/golang-migrate/migrate/v4 v4.20.1 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa // indirect
@@ -68,7 +74,6 @@ require (
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.30 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.6 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/testcontainers/testcontainers-go v0.44.0 // indirect
@@ -78,7 +83,6 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/redis v0.44.0 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
-	github.com/twmb/franz-go v1.22.1 // indirect
 	github.com/twmb/franz-go/pkg/kadm v1.19.0 // indirect
 	github.com/twmb/franz-go/pkg/kmsg v1.14.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
@@ -101,6 +105,4 @@ require (
 	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260825221802-da73d73af1c5 // indirect
-	google.golang.org/grpc v1.84.0 // indirect
-	google.golang.org/protobuf v1.36.12 // indirect
 )

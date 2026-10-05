@@ -1,0 +1,12 @@
+{
+  "id": "re_3QxYzAbCdEfGhIjK0pQrStUv",
+  "object": "refund",
+  "amount": 350000,
+  "charge": "ch_3QxYzAbCdEfGhIjK0hIjKlMn",
+  "created": 1790672400,
+  "currency": "vnd",
+  "metadata": {},
+  "payment_intent": "pi_3QxYzAbCdEfGhIjK0aBcDeFg",
+  "reason": null,
+  "status": "succeeded"
+}

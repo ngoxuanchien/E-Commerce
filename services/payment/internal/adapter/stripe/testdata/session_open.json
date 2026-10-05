@@ -1,0 +1,23 @@
+{
+  "id": "cs_test_a1B2c3D4e5F6g7H8i9J0",
+  "object": "checkout.session",
+  "amount_subtotal": 350000,
+  "amount_total": 350000,
+  "cancel_url": "https://gw.test/api/payments/stripe/return?session_id={CHECKOUT_SESSION_ID}",
+  "client_reference_id": "0192f0c1-a2b3-7c4d-8e9f-a0b1c2d3e4f5",
+  "created": 1790668800,
+  "currency": "vnd",
+  "expires_at": 1790670600,
+  "livemode": false,
+  "metadata": {
+    "checkout_id": "0192f0c1-0000-7000-8000-000000000001",
+    "payment_id": "0192f0c1-a2b3-7c4d-8e9f-a0b1c2d3e4f5"
+  },
+  "mode": "payment",
+  "payment_intent": null,
+  "payment_status": "unpaid",
+  "status": "open",
+  "success_url": "https://gw.test/api/payments/stripe/return?session_id={CHECKOUT_SESSION_ID}",
+  "ui_mode": "hosted",
+  "url": "https://checkout.stripe.com/c/pay/cs_test_a1B2c3D4e5F6g7H8i9J0#fidkdWxOYHwnPyd1blpxYHZxWjA0"
+}
