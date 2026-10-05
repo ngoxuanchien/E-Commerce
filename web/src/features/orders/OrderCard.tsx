@@ -6,6 +6,8 @@ import { Price } from '@/components/Price';
 import { Button } from '@/components/ui/button';
 import { formatDateTime } from '@/lib/format';
 import { OrderStatusBadge } from './OrderStatusBadge';
+import { PaymentStatusBadge } from './PaymentStatusBadge';
+import { PaymentCountdown } from './PaymentCountdown';
 import { shortId } from './order-status';
 
 export function OrderCard({ order, href, actions, showBuyer }: { order: Order; href: string; actions?: ReactNode; showBuyer?: boolean }) {
@@ -19,7 +21,10 @@ export function OrderCard({ order, href, actions, showBuyer }: { order: Order; h
           <p className="text-xs text-muted-foreground">Mã đơn {shortId(order.id)}</p>
           <p className="text-xs text-muted-foreground">{formatDateTime(order.created_at)}</p>
         </div>
-        <OrderStatusBadge status={order.status} />
+        <div className="flex flex-col items-end gap-1">
+          <OrderStatusBadge status={order.status} />
+          <PaymentStatusBadge status={order.payment_status} />
+        </div>
       </header>
       {first ? (
         <div className="flex gap-3 p-4">
@@ -35,6 +40,11 @@ export function OrderCard({ order, href, actions, showBuyer }: { order: Order; h
       ) : null}
       {showBuyer ? (
         <p className="px-4 pb-3 text-sm">Người nhận: {order.shipping_address.full_name}, {order.shipping_address.phone}</p>
+      ) : null}
+      {order.status === 'AWAITING_PAYMENT' && order.payment_deadline ? (
+        <div className="px-4 pb-3">
+          <PaymentCountdown deadline={order.payment_deadline} />
+        </div>
       ) : null}
       <footer className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
         <p className="flex items-baseline gap-2 text-sm">
