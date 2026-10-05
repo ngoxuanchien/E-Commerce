@@ -1,5 +1,5 @@
 import type {
-  Cart, CartItem, CartShop, Category, CheckoutRequest, CheckoutResponse, LoginRequest, Order, OrderItem, OrderPage,
+  Cart, CartItem, CartShop, Category, CheckoutRequest, CheckoutResponse, CreatePaymentRequest, LoginRequest, Order, OrderItem, OrderPage,
   OrderStatus, Paths, Product, ProductInput, ProductPage, ProductPatch, ProductStatus, ProductSummary, ProductSummaryPage,
   RegisterRequest, Role, Shop, ShopCreate, ShopRef, ShopUpdate, Sku, TokenResponse, UploadResponse, User,
   Payment, WalletEntry, Payout,
@@ -12,6 +12,7 @@ import { buildSeed } from './seed';
 export const STORAGE_KEY = 'marketplace-mock-db:v2';
 export const PAYMENT_TTL_MS = 15 * 60_000;
 export const COMMISSION_RATE_BPS = 500;
+export const STRIPE_MIN_AMOUNT = 10_000;
 /** Stand-in for order-svc's SHIPPING_FEE_FLAT: reported per cart shop and charged per order. */
 export const SHIPPING_FEE_FLAT = 30_000;
 export const MOCK_ASSET_BASE = 'http://localhost:9000/product-images';
@@ -611,5 +612,149 @@ export class MockDb {
     order.history.push({ from, to: rule.to, actor_role: actor, note: note || null, created_at: order.updated_at });
     this.save();
     return publicOrder(order);
+  }
+
+  // ---- payments ----
+
+  private publicPayment(p: MockPayment): Payment {
+    const copy: Partial<MockPayment> = structuredClone(p);
+    delete copy.buyer_id;
+    return copy as Payment;
+  }
+
+  createPayment(userId: string, key: string, body: CreatePaymentRequest): Payment {
+    // Rule 1: key validation
+    if (!key || key.length > 100) throw validation({ 'Idempotency-Key': 'required, 1-100 characters' });
+
+    // Rule 2: check for replayed idempotency key
+    const paymentKey = `payment:${userId}:${key}`;
+    const existingKey = this.state.keys[paymentKey];
+    if (existingKey) {
+      const existingPayment = this.state.payments.find((p) => p.id === existingKey.id);
+      if (existingPayment && existingPayment.checkout_id === body.checkout_id) {
+        return this.publicPayment(existingPayment);
+      }
+      throw new MockError(422, 'IDEMPOTENCY_KEY_REUSED', 'Idempotency-Key reused with a different checkout_id');
+    }
+
+    // Rule 3: order must exist
+    const orders = this.state.orders.filter((o) => o.buyer_id === userId && o.checkout_id === body.checkout_id);
+    if (orders.length === 0) throw notFound('checkout');
+
+    const checkout = orders[0];
+
+    // Rule 4: payment_method must not be COD
+    if (checkout.payment_method === 'COD') {
+      throw new MockError(409, 'INVALID_STATE_TRANSITION', 'cannot create payment for COD checkout', { reason: 'COD_CHECKOUT' });
+    }
+
+    // Rule 5: no SUCCEEDED payment yet
+    if (this.state.payments.some((p) => p.checkout_id === body.checkout_id && p.status === 'SUCCEEDED')) {
+      throw new MockError(409, 'INVALID_STATE_TRANSITION', 'payment already succeeded for this checkout', { reason: 'ALREADY_PAID' });
+    }
+
+    // Rule 6: at least one order must be AWAITING_PAYMENT
+    if (!orders.some((o) => o.status === 'AWAITING_PAYMENT')) {
+      throw new MockError(409, 'INVALID_STATE_TRANSITION', 'no order is awaiting payment', { reason: 'NOT_AWAITING_PAYMENT' });
+    }
+
+    // Rule 7: deadline not passed
+    const deadline = new Date(checkout.payment_deadline!).getTime();
+    if (Date.now() >= deadline) {
+      throw new MockError(409, 'INVALID_STATE_TRANSITION', 'payment deadline has passed', { reason: 'DEADLINE_PASSED' });
+    }
+
+    // Rule 8: amount check for STRIPE
+    const amount = orders.reduce((sum, o) => sum + o.total, 0);
+    if (checkout.payment_method === 'STRIPE' && amount < STRIPE_MIN_AMOUNT) {
+      throw new MockError(409, 'INVALID_STATE_TRANSITION', `amount must be at least ${STRIPE_MIN_AMOUNT}`, { reason: 'BELOW_PROVIDER_MINIMUM' });
+    }
+
+    // Expire any PENDING payment for this checkout
+    for (const p of this.state.payments.filter((p) => p.checkout_id === body.checkout_id && p.status === 'PENDING')) {
+      p.status = 'EXPIRED';
+      p.redirect_url = null;
+      p.updated_at = now();
+    }
+
+    // Create the new payment
+    const paymentId = uuid();
+    const origin = typeof globalThis !== 'undefined' && globalThis.location?.origin ? globalThis.location.origin : 'http://localhost';
+    const payment: MockPayment = {
+      id: paymentId,
+      checkout_id: body.checkout_id,
+      method: checkout.payment_method as 'VNPAY' | 'STRIPE',
+      provider: 'fake',
+      status: 'PENDING',
+      amount,
+      redirect_url: `${origin}/__mock/pay/${paymentId}`,
+      expires_at: checkout.payment_deadline!,
+      failure_reason: null,
+      created_at: now(),
+      updated_at: now(),
+      buyer_id: userId,
+    };
+    this.state.payments.push(payment);
+    this.state.keys[paymentKey] = { hash: JSON.stringify(body), id: paymentId };
+    this.save();
+    return this.publicPayment(payment);
+  }
+
+  payment(userId: string, id: string): Payment {
+    const p = this.state.payments.find((x) => x.id === id && x.buyer_id === userId);
+    if (!p) throw notFound('payment');
+
+    // Expire PENDING payments past their deadline
+    if (p.status === 'PENDING' && Date.now() >= new Date(p.expires_at).getTime()) {
+      p.status = 'EXPIRED';
+      p.redirect_url = null;
+      p.updated_at = now();
+      this.save();
+    }
+
+    return this.publicPayment(p);
+  }
+
+  submitMockPayment(id: string, outcome: 'succeed' | 'fail'): void {
+    const payment = this.state.payments.find((p) => p.id === id);
+    if (!payment) throw notFound('payment');
+
+    // No-op if already terminal
+    if (payment.status !== 'PENDING') return;
+
+    if (outcome === 'fail') {
+      payment.status = 'FAILED';
+      payment.failure_reason = 'mock_declined';
+      payment.redirect_url = null;
+      payment.updated_at = now();
+    } else {
+      // Check for duplicate
+      const existingSucceeded = this.state.payments.find((p) => p.checkout_id === payment.checkout_id && p.status === 'SUCCEEDED');
+      if (existingSucceeded) {
+        payment.status = 'DUPLICATE';
+        payment.redirect_url = null;
+        payment.updated_at = now();
+      } else {
+        payment.status = 'SUCCEEDED';
+        payment.redirect_url = null;
+        payment.updated_at = now();
+
+        // Transition orders to PENDING_CONFIRMATION with payment_status PAID
+        const orders = this.state.orders.filter((o) => o.checkout_id === payment.checkout_id && o.status === 'AWAITING_PAYMENT');
+        for (const order of orders) {
+          order.status = 'PENDING_CONFIRMATION';
+          order.payment_status = 'PAID';
+          order.updated_at = now();
+          order.history.push({ from: 'AWAITING_PAYMENT', to: 'PENDING_CONFIRMATION', actor_role: 'system', note: null, created_at: order.updated_at });
+        }
+
+        // Handle late captures (orders already cancelled)
+        const cancelled = this.state.orders.filter((o) => o.checkout_id === payment.checkout_id && o.status === 'CANCELLED');
+        for (const order of cancelled) {
+          order.payment_status = 'REFUNDED';
+        }
+      }
+    }
+    this.save();
   }
 }
