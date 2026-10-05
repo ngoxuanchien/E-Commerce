@@ -1,25 +1,28 @@
 # Architecture
 
-This document describes the Phase 1 system as built: which service owns
-what, how a request travels, and how checkout and cancellation stay
-consistent across services without distributed transactions. The design
-specs behind it are in `docs/superpowers/specs/`; the key decisions are
-recorded as ADRs in [adr/](adr).
+This document describes the marketplace system as built in Phase 1 (core
+services and checkout) and Phase 2 (online payment, escrow, seller wallets,
+commission and payouts). The design specs are in `docs/superpowers/specs/`;
+the key decisions are recorded as ADRs in [adr/](adr).
 
 ## Services and ownership
 
 | Service | Ports (HTTP / gRPC) | Data | Responsibilities | Talks to | Workstream |
 |---|---|---|---|---|---|
-| gateway | 8080 / – | none | Single public entry: routing, JWT verification (JWKS), identity headers, CORS, per-IP rate limits, 1 MB body limit, request ids, tracing | all three services over HTTP | WS4 |
+| gateway | 8080 / – | none | Single public entry: routing, JWT verification (JWKS), identity headers, CORS, per-IP rate limits, 1 MB body limit, request ids, tracing | identity, catalog, order, payment, ledger over HTTP; payment callbacks | WS4 / WS4' |
 | identity-svc | 8081 / 9081 | `identity_db` (users, roles, refresh tokens) | Register, login, access + refresh tokens, JWKS, `GrantRole` | – | WS1 |
 | catalog-svc | 8082 / 9082 | `catalog_db` (shops, categories, products, SKUs, reservations, processed events), MinIO bucket `product-images` | Shops, products and variants, image upload URLs, search, **inventory** (the single source of truth for stock) | identity (`GrantRole`); consumes `order.events` | WS2 |
-| order-svc | 8083 / 9083 | `order_db` (orders, items, history, idempotency keys, outbox), Redis (carts) | Cart, checkout (one order per shop), order state machine, event publishing, sweeper | catalog (`GetSkus`, `ReserveStock`, `ReleaseStock`); produces `order.events` | WS3 |
-| web | 3000 | none | React SPA served by nginx, which proxies `/api` to the gateway | gateway | WS5 |
+| order-svc | 8083 / 9083 | `order_db` (orders, items, history, idempotency keys, outbox, payment inbox), Redis (carts) | Cart, checkout (one order per shop, COD or online), order state machine, event publishing, sweeper (payment timeout, auto-complete), refund inbox | catalog (`GetSkus`, `ReserveStock`, `ReleaseStock`); payment (`CancelCheckoutPayments`); consumes `payment.events`, produces `order.events` | WS3 / WS3' |
+| payment-svc | 8084 / 9084 | `payment_db` (payment attempts, refunds, provider events, processed events, idempotency keys) | Payment attempts (FAKE, VNPay, Stripe), callback verification (IPN, webhook, return URL), reconciliation, refund worker, order cancellation | order (`GetCheckout`); consumes `order.events`, produces `payment.events` | WS1' |
+| ledger-svc | 8085 / 9085 | `ledger_db` (journal transactions, entries, escrow allocations, processed events, idempotency keys) | Double-entry ledger: provider clearing, checkout suspense, per-order escrow, seller wallet and payout-pending, commission revenue, platform cash. Balances derived from entries. Trial balance invariant enforced. | – ; consumes `payment.events` and `order.events`, produces `payout.events` | WS2' |
+| web | 3000 | none | React SPA served by nginx, which proxies `/api` to the gateway | gateway | WS5 / WS5' |
 
-One Postgres instance hosts three separate databases; no service reads
+One Postgres instance hosts five separate databases; no service reads
 another service's database. Only the gateway, web, MinIO and Jaeger publish
 ports to the host, which is why services can trust the `X-User-*` headers
-set by the gateway.
+set by the gateway. Payment callbacks (`/api/payments/*/`) skip authentication
+and routing to a specific user, but the gateway still verifies the signature
+before forwarding.
 
 ## A request through the gateway
 
@@ -85,6 +88,116 @@ sequenceDiagram
 Prices come from the catalog at checkout time and are snapshotted into the
 order items, together with the product name, variant and image. The
 shipping fee is a flat 30,000 VND per order.
+
+### Online checkout (P2)
+
+When the buyer chooses an online payment method (VNPay or Stripe), the orders
+are placed in `AWAITING_PAYMENT` instead of `PENDING_CONFIRMATION`, and a
+separate step creates a payment and redirects to the provider's hosted page.
+Once the provider confirms the payment asynchronously, the orders move to
+`PENDING_CONFIRMATION` and the escrow is captured into the ledger.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Buyer
+  participant W as web
+  participant O as order-svc
+  participant P as payment-svc
+  participant PSP as VNPay / Stripe / FAKE
+  participant L as ledger-svc
+  Buyer->>W: place order (VNPAY)
+  W->>O: POST /api/checkout {payment_method: VNPAY}
+  O-->>W: 201 orders AWAITING_PAYMENT, payment_deadline
+  W->>P: POST /api/payments {checkout_id}
+  P->>O: gRPC GetCheckout
+  P-->>W: {payment_id, redirect_url}
+  W->>PSP: redirect
+  PSP->>P: IPN / webhook (signed)
+  P->>P: verify, attempt SUCCEEDED, PaymentSucceeded to outbox
+  P->>L: emit payment.events PaymentSucceeded
+  O->>O: consume payment.events → orders PENDING_CONFIRMATION, payment_status PAID
+  L->>L: allocate payment amount to order escrows
+  PSP-->>W: return URL → /checkout/result
+  Note over O,L: … confirm → ship → deliver → complete (buyer or auto after 72 h)
+  O->>L: emit order.events OrderCompleted
+  L->>L: release escrow: seller wallet += total − commission, platform revenue += commission
+```
+
+## Refund on cancel (P2)
+
+When a paid order is cancelled after the payment is captured, the payment-svc
+creates a refund. The refund-due rule is symmetric in arrival order: whether
+the capture or the cancellation arrives first, the refund is created exactly
+when both facts hold.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor User as Buyer or seller
+  participant O as order-svc
+  participant ODB as order_db
+  participant P as payment-svc
+  participant K as Kafka payment.events
+  participant L as ledger-svc
+  User->>O: POST .../cancel
+  O->>ODB: one tx: status CANCELLED, history, OrderCancelled to outbox
+  O-->>User: 200 Order
+  ODB-->>K: emit order.events OrderCancelled (with payment_method, checkout_id)
+  K->>P: OrderCancelled
+  P->>P: check if capture exists; if yes, create refund, PaymentRefunded to outbox
+  P->>K: emit payment.events PaymentRefunded
+  K->>L: PaymentRefunded → reverse escrow allocation
+  K->>O: PaymentRefunded → update payment_status to REFUNDED
+```
+
+## Escrow release on completion (P2)
+
+When an order is completed (either by the buyer or automatically by the sweeper
+after `AUTO_COMPLETE_AFTER`), the ledger releases the escrow, transferring the
+funds to the seller's wallet (minus commission) and the platform's commission
+revenue account.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor User as Buyer or system
+  participant O as order-svc
+  participant ODB as order_db
+  participant K as Kafka order.events
+  participant L as ledger-svc
+  User->>O: complete order (buyer) or sweeper fires
+  O->>ODB: one tx: status COMPLETED, history, OrderCompleted to outbox
+  O-->>User: 200 Order
+  ODB-->>K: emit order.events OrderCompleted
+  K->>L: OrderCompleted
+  L->>L: RELEASE escrow: seller_wallet += (total − commission), platform_commission_revenue += commission
+```
+
+## Payout request and settlement (P2)
+
+A seller can request a payout up to their available wallet balance. The
+ledger-svc moves the amount to the payout-pending account. A settle job then
+settles it, moving it from payout-pending to platform_cash (a simulated bank
+account), and publishes payout events for notifications.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Seller
+  participant L as ledger-svc
+  participant LDB as ledger_db
+  participant K as Kafka payout.events
+  Seller->>L: POST /api/payouts {amount}
+  L->>LDB: check balance >= amount (check payout minimum)
+  LDB-->>L: verified
+  L->>LDB: one tx: seller_wallet -= amount, seller_payout_pending += amount, idempotency key, PayoutRequested to outbox
+  L-->>Seller: 201 {payout_id}
+  LDB-->>K: emit payout.events PayoutRequested
+  Note over L,K: ... settle job runs every 30 s (PAYOUT_SETTLE_INTERVAL)
+  L->>LDB: claim pending payouts, RELEASE pending: seller_payout_pending -= amount, platform_cash -= amount
+  LDB-->>K: emit payout.events PayoutSettled
+```
 
 ## Cancellation
 
@@ -203,12 +316,78 @@ the outbox row. Logs are JSON (`slog`) and carry `request_id` and
 checkout produces a single trace containing gateway, order and catalog
 spans, including `ReserveStock`.
 
+## Money (P2)
+
+The marketplace ledger is a double-entry, append-only journal owned by
+ledger-svc. Every transaction balances to zero (sum of debits = sum of credits).
+Balances are derived by summing entries; no balance column is stored.
+
+### Chart of accounts
+
+| Account Code | Type | Scope | Purpose |
+|---|---|---|---|
+| `psp_clearing:{provider}` | Asset | Global | Money at a provider (VNPay, Stripe, FAKE) waiting to be received |
+| `checkout_suspense:{checkoutID}` | Liability | Checkout | A received payment not yet allocated to orders |
+| `escrow:{orderID}` | Liability | Order (seller) | One order's share held until the order completes or is refunded |
+| `seller_wallet:{sellerID}` | Liability | Seller | A seller's available balance (sum of completed orders' net credit, minus any pending payouts) |
+| `seller_payout_pending:{sellerID}` | Liability | Seller | Requested payouts waiting for settlement |
+| `platform_commission_revenue` | Revenue | Global | The platform's commission income from online orders |
+| `platform_cash` | Asset | Global | Simulated bank account (goes negative as payouts settle; P2 does not model provider settlement) |
+
+### Invariants
+
+1. **Every transaction balances.** A deferred constraint trigger
+   `entries_balanced` checks that every transaction's entries sum to zero at
+   commit. This is also validated in code by `domain.Journal.Validate`.
+2. **Append-only.** Triggers reject `UPDATE`, `DELETE`, and `TRUNCATE` on
+   `journal_transactions` and `entries`. A correction is made with a reversing
+   transaction (ADR-0006).
+3. **No liability in debit.** A posting that debits a liability account (seller
+   wallet, escrow, suspense) locks that account's row, recomputes its balance
+   from entries, and refuses the posting if the result would be negative. This
+   makes "payout ≤ available" atomic and prevents an escrow from being both
+   released and refunded.
+4. **Idempotent postings.** Each posting is keyed by a business idempotency key
+   (`pay:{payment_id}`, `capture:{checkout_id}:{order_id}`, `release:{order_id}`,
+   `refund:{refund_id}`, `payout_request:{payout_id}`, `payout_settle:{payout_id}`).
+   A duplicate event posts once.
+
+### Trial balance
+
+The trial balance is a command that sums entries by type and reports:
+- `balances_by_type`: Asset, Liability, and Revenue totals (should sum to zero)
+- `unbalanced_transactions`: any transaction whose entries don't sum to zero
+- `liabilities_in_debit`: any liability account with a positive balance (should be empty)
+
+The e2e suite runs it after every scenario:
+
+```bash
+docker compose exec ledger /server trial-balance
+```
+
+It exits 0 if the ledger is consistent and 1 otherwise. This is documented
+in `services/ledger/README.md` and ADRs 0006 and 0007.
+
 ## Known limitations
 
 Deliberate P1 scope cuts: COD only, flat shipping fee, no vouchers, reviews,
 notifications, admin, password reset or saved addresses.
 
-Open issues, each tracked with its owning workstream:
+P2 scope: no partial refunds, no refunds after order completion, no reviews,
+no saved cards, no multiple currencies, no admin UI for the ledger, no real
+bank payouts or provider settlement reconciliation.
+
+Known P2 limitations:
+
+- **VNPay refund RC 00 is final.** The refund API has no per-request status
+  to poll, so a refund answered RC 00 is accepted without a follow-up.
+- **FAKE is not a security boundary.** Its webhook is signed with a shared
+  dev secret and its hooks are open; never expose a FAKE-enabled instance
+  to real users.
+- **Trial balance is a full scan.** Reading every entry to check consistency
+  is fine at portfolio scale, but snapshots can be added later if needed.
+
+Open issues from P1, each tracked with its owning workstream:
 
 - **A stale seller form can overwrite stock.** A seller's product edit sets
   on-hand stock directly, so an edit form opened before a sale can
