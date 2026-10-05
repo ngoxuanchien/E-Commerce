@@ -26,10 +26,17 @@ const (
 
 // contractRouter validates each call against the OpenAPI document of the
 // service that owns its path (WS4 §2 routing table).
-type contractRouter struct{ identity, catalog, order, payment, ledger http.RoundTripper }
+// plain is used for FAKE HTML checkout page (FakeArm) which returns text/html;
+// testutil.ContractTransport cannot validate text/html responses (reported to WS0').
+type contractRouter struct{ plain, identity, catalog, order, payment, ledger http.RoundTripper }
 
 func (c contractRouter) RoundTrip(r *http.Request) (*http.Response, error) {
 	p := r.URL.Path
+	// FakeArm (GET /api/payments/fake/checkout/{id}) returns HTML; bypass contract validation.
+	// POST to same path (FakeSubmit) is still validated.
+	if r.Method == http.MethodGet && strings.HasPrefix(p, "/api/payments/fake/checkout/") {
+		return c.plain.RoundTrip(r)
+	}
 	switch {
 	case strings.HasPrefix(p, "/api/payments"):
 		return c.payment.RoundTrip(r)
@@ -54,6 +61,7 @@ func newTransport(t *testing.T) http.RoundTripper {
 		return testutil.ContractTransport(t, filepath.Join("..", "..", "api", "openapi", name), base)
 	}
 	return contractRouter{
+		plain:    base,
 		identity: spec("identity.yaml"),
 		catalog:  spec("catalog.yaml"),
 		order:    spec("order.yaml"),

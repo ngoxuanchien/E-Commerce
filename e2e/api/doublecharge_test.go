@@ -186,14 +186,14 @@ func TestLateSuccessAfterDeadlineRefundsBothOrders(t *testing.T) {
 
 	orderA = waitOrder(t, w.payer, orderA.ID, refundTimeout,
 		func(o client.Order) bool {
-			return o.PaymentStatus == "REFUNDED"
+			return o.Status == "CANCELLED" && o.PaymentStatus == "REFUNDED"
 		},
-		"orderA should have REFUNDED payment status after late success")
+		"orderA should be CANCELLED with REFUNDED payment status after late success")
 	orderB = waitOrder(t, w.payer, orderB.ID, refundTimeout,
 		func(o client.Order) bool {
-			return o.PaymentStatus == "REFUNDED"
+			return o.Status == "CANCELLED" && o.PaymentStatus == "REFUNDED"
 		},
-		"orderB should have REFUNDED payment status after late success")
+		"orderB should be CANCELLED with REFUNDED payment status after late success")
 
 	// Step 8: Verify both sellers' InEscrow back to baseline
 	waitWallet(t, w.sellerA, 10*time.Second,
