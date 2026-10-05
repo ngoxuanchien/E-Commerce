@@ -15,6 +15,10 @@ import (
 	"time"
 )
 
+// requestTimeout covers RetryRateLimited's 3-minute 429 budget used by seed
+// and the tests, plus one ordinary request.
+const requestTimeout = 4 * time.Minute
+
 // Client calls the gateway as one user: it keeps that user's refresh cookie
 // in its jar and sends the current access token as a bearer token.
 type Client struct {
@@ -29,7 +33,7 @@ func New(baseURL string, rt http.RoundTripper) *Client {
 	jar, _ := cookiejar.New(nil) // cookiejar.New never fails with nil options
 	return &Client{
 		BaseURL: strings.TrimRight(baseURL, "/"),
-		HTTP:    &http.Client{Transport: rt, Jar: jar, Timeout: 30 * time.Second},
+		HTTP:    &http.Client{Transport: rt, Jar: jar, Timeout: requestTimeout},
 	}
 }
 

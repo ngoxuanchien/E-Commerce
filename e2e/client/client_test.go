@@ -123,3 +123,8 @@ func TestCreatePayoutSendsIdempotencyKey(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "REQUESTED", payout.Status)
 }
+
+func TestNewTimeoutCoversRateLimitWaits(t *testing.T) {
+	c := client.New("http://x", nil)
+	assert.Greater(t, c.HTTP.Timeout, 3*time.Minute)
+}
