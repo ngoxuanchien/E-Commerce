@@ -101,7 +101,16 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    env:
+      PAYMENT_TIMEOUT: 40s
+      SWEEPER_INTERVAL: 2s
+      AUTO_COMPLETE_AFTER: 5s
+      RECONCILE_INTERVAL: 2s
+      RECONCILE_MIN_AGE: 3s
+      FAKE_WEBHOOK_DELAY: 300ms
+      PAYOUT_SETTLE_INTERVAL: 1s
+      PAYOUT_SETTLE_DELAY: 2s
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -132,7 +141,10 @@ jobs:
           CI: 'true'
       - name: collect service logs
         if: failure()
-        run: docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.web.yml --profile app logs --no-color > e2e-service-logs.txt
+        run: |
+          docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.web.yml --profile app logs --no-color > e2e-service-logs.txt
+          docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.web.yml --profile app logs --no-color payment > e2e-payment-logs.txt
+          docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.web.yml --profile app logs --no-color ledger > e2e-ledger-logs.txt
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -141,4 +153,6 @@ jobs:
             e2e/playwright/playwright-report
             e2e/playwright/test-results
             e2e-service-logs.txt
+            e2e-payment-logs.txt
+            e2e-ledger-logs.txt
           retention-days: 7

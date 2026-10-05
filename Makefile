@@ -92,10 +92,16 @@ keys: ## Generate the dev JWT signing key (deploy/secrets, gitignored)
 		openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out deploy/secrets/jwt_private.pem && \
 		chmod 644 deploy/secrets/jwt_private.pem && echo "generated deploy/secrets/jwt_private.pem"; }
 
+# Fast timers for the e2e stack (P2 WS6' §2); `make up-app` alone keeps the defaults.
+E2E_TIMERS := PAYMENT_TIMEOUT=40s SWEEPER_INTERVAL=2s AUTO_COMPLETE_AFTER=5s \
+	RECONCILE_INTERVAL=2s RECONCILE_MIN_AGE=3s FAKE_WEBHOOK_DELAY=300ms \
+	PAYOUT_SETTLE_INTERVAL=1s PAYOUT_SETTLE_DELAY=2s
+
 seed: ## Seed demo data through the gateway (run after make up-app; idempotent)
 	cd e2e && GOWORK=off go run ./cmd/seed
 
-e2e: ## Run API smoke tests + Playwright against a running stack (make up-app seed first)
+e2e: ## (Re)start the stack with fast timers, then API tests + Playwright (make up-app seed first)
+	$(E2E_TIMERS) $(MAKE) up-app
 	cd e2e && GOWORK=off go test -count=1 -timeout 20m ./...
 	cd e2e/playwright && npm ci --no-audit --no-fund && npx playwright install chromium && npx playwright test
 
