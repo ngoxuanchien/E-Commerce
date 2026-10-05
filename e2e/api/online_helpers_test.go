@@ -177,6 +177,19 @@ func deliver(t *testing.T, seller actor, orderID string) {
 	require.NoError(t, err)
 }
 
+// orderFor returns the order from a checkout response matching the given shop ID.
+// Fails the test if no order is found for that shop.
+func orderFor(t *testing.T, res client.CheckoutResponse, shopID string) client.Order {
+	t.Helper()
+	for _, o := range res.Orders {
+		if o.Shop.ID == shopID {
+			return o
+		}
+	}
+	require.Failf(t, "orderFor", "no order found for shop %s in checkout %s", shopID, res.CheckoutID)
+	return client.Order{}
+}
+
 // credit calculates the seller's net credit (Total - CommissionAmount).
 func credit(o client.Order) int64 {
 	return o.Total - o.CommissionAmount

@@ -29,8 +29,8 @@ func TestOnlineCheckoutEscrowAndAutoComplete(t *testing.T) {
 	checkoutRes := checkoutOnline(t, w.payer, "VNPAY", lines)
 	require.Len(t, checkoutRes.Orders, 2, "expected 2 orders from 2 shops")
 
-	orderA := checkoutRes.Orders[0]
-	orderB := checkoutRes.Orders[1]
+	orderA := orderFor(t, checkoutRes, w.shopA.ID)
+	orderB := orderFor(t, checkoutRes, w.shopB.ID)
 	checkoutID := checkoutRes.CheckoutID
 
 	// Verify both orders have correct commission (500 bps = 5%)
@@ -103,15 +103,6 @@ func TestOnlineCheckoutEscrowAndAutoComplete(t *testing.T) {
 	orderB, err := w.payer.CompleteOrder(ctx(t), orderB.ID)
 	require.NoError(t, err)
 
-	// Wait for auto-complete if not already COMPLETED
-	if orderB.Status != "COMPLETED" {
-		orderB = waitOrder(t, w.payer, orderB.ID, autoCompleteTimeout,
-			func(o client.Order) bool {
-				return o.Status == "COMPLETED"
-			},
-			"orderB should auto-complete")
-	}
-
 	// Step 10: Verify sellerB wallet: Available increased
 	waitWallet(t, w.sellerB, 10*time.Second,
 		func(wl client.Wallet) bool {
@@ -138,7 +129,7 @@ func TestStripeMethodUsesItsAdapter(t *testing.T) {
 	checkoutRes := checkoutOnline(t, w.payer, "STRIPE", lines)
 	require.Len(t, checkoutRes.Orders, 1)
 
-	orderA := checkoutRes.Orders[0]
+	orderA := orderFor(t, checkoutRes, w.shopA.ID)
 	checkoutID := checkoutRes.CheckoutID
 
 	// Create and submit FAKE payment with "succeed" outcome
@@ -162,16 +153,8 @@ func TestStripeMethodUsesItsAdapter(t *testing.T) {
 	deliver(t, w.sellerA, orderA.ID)
 
 	// Complete order as buyer
-	_, err := w.payer.CompleteOrder(ctx(t), orderA.ID)
+	orderA, err := w.payer.CompleteOrder(ctx(t), orderA.ID)
 	require.NoError(t, err)
-
-	// Wait for auto-complete or explicit COMPLETED
-	autoCompleteTimeout := autoCompleteAfter + 3*sweeperInterval + 5*time.Second
-	orderA = waitOrder(t, w.payer, orderA.ID, autoCompleteTimeout,
-		func(o client.Order) bool {
-			return o.Status == "COMPLETED"
-		},
-		"orderA should be COMPLETED after buyer complete")
 
 	// Verify sellerA wallet is credited
 	waitWallet(t, w.sellerA, 10*time.Second,
