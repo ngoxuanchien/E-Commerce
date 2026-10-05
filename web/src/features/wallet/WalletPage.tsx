@@ -7,6 +7,7 @@ import { ErrorState, EmptyState, PageSpinner } from '@/components/states';
 import { Price } from '@/components/Price';
 import { cn } from '@/lib/utils';
 import { ENTRY_KIND_LABEL, formatSignedVnd } from './wallet-labels';
+import { PayoutForm } from './PayoutForm';
 
 export function WalletPage() {
   const wallet = useWallet();
@@ -22,20 +23,23 @@ export function WalletPage() {
       ) : wallet.isError ? (
         <ErrorState error={wallet.error} onRetry={() => void wallet.refetch()} />
       ) : (
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-lg border bg-card p-4" data-testid="wallet-available">
-            <p className="text-sm text-muted-foreground">Số dư khả dụng</p>
-            <Price value={wallet.data?.available} className="text-xl font-semibold" />
+        <>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="rounded-lg border bg-card p-4" data-testid="wallet-available">
+              <p className="text-sm text-muted-foreground">Số dư khả dụng</p>
+              <Price value={wallet.data?.available} className="text-xl font-semibold" />
+            </div>
+            <div className="rounded-lg border bg-card p-4" data-testid="wallet-in-escrow">
+              <p className="text-sm text-muted-foreground">Đang giữ</p>
+              <Price value={wallet.data?.in_escrow} className="text-xl font-semibold" />
+            </div>
+            <div className="rounded-lg border bg-card p-4" data-testid="wallet-pending-payout">
+              <p className="text-sm text-muted-foreground">Đang rút</p>
+              <Price value={wallet.data?.pending_payout} className="text-xl font-semibold" />
+            </div>
           </div>
-          <div className="rounded-lg border bg-card p-4" data-testid="wallet-in-escrow">
-            <p className="text-sm text-muted-foreground">Đang giữ</p>
-            <Price value={wallet.data?.in_escrow} className="text-xl font-semibold" />
-          </div>
-          <div className="rounded-lg border bg-card p-4" data-testid="wallet-pending-payout">
-            <p className="text-sm text-muted-foreground">Đang rút</p>
-            <Price value={wallet.data?.pending_payout} className="text-xl font-semibold" />
-          </div>
-        </div>
+          <PayoutForm available={wallet.data?.available ?? 0} />
+        </>
       )}
 
       <h2 className="text-xl font-bold">Lịch sử giao dịch</h2>

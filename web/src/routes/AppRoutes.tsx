@@ -22,6 +22,7 @@ import { SellerOrdersPage } from '@/features/seller-orders/SellerOrdersPage';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { RegisterPage } from '@/features/auth/RegisterPage';
 import { WalletPage } from '@/features/wallet/WalletPage';
+import { PayoutsPage } from '@/features/wallet/PayoutsPage';
 
 export function AppRoutes() {
   return (
@@ -51,6 +52,7 @@ export function AppRoutes() {
                 <Route path="products/:id" element={<ProductFormPage />} />
                 <Route path="orders" element={<SellerOrdersPage />} />
                 <Route path="wallet" element={<WalletPage />} />
+                <Route path="payouts" element={<PayoutsPage />} />
               </Route>
             </Route>
           </Route>
