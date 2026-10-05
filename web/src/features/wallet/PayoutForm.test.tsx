@@ -112,6 +112,6 @@ test('INSUFFICIENT_FUNDS error → alert with available balance', async () => {
 
   // Wait for the error message to appear (the api call and error handler should run)
   const alert = await screen.findByRole('alert');
-  expect(alert.textContent).toContain('Số dư không đủ');
-  expect(alert.textContent).toContain(formatVnd(12_000));
+  const expectedMessage = `Số dư không đủ. Số dư khả dụng: ${formatVnd(12_000)}.`;
+  expect(alert.textContent?.trim()).toBe(expectedMessage);
 });
