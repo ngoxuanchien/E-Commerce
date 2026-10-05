@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 const NAV = [
   { to: '/seller/products', label: 'Sản phẩm' },
   { to: '/seller/orders', label: 'Đơn hàng' },
+  { to: '/seller/wallet', label: 'Ví' },
   { to: '/seller/shop', label: 'Hồ sơ shop' },
 ];
 

@@ -21,6 +21,7 @@ import { SellerProductsPage } from '@/features/seller-products/SellerProductsPag
 import { SellerOrdersPage } from '@/features/seller-orders/SellerOrdersPage';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { RegisterPage } from '@/features/auth/RegisterPage';
+import { WalletPage } from '@/features/wallet/WalletPage';
 
 export function AppRoutes() {
   return (
@@ -49,6 +50,7 @@ export function AppRoutes() {
                 <Route path="products/new" element={<ProductFormPage />} />
                 <Route path="products/:id" element={<ProductFormPage />} />
                 <Route path="orders" element={<SellerOrdersPage />} />
+                <Route path="wallet" element={<WalletPage />} />
               </Route>
             </Route>
           </Route>
