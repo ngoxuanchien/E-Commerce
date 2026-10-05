@@ -104,15 +104,7 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any, hdr
 	}
 
 	if resp.StatusCode >= 300 {
-		var env struct {
-			Error struct {
-				Code    string          `json:"code"`
-				Message string          `json:"message"`
-				Details json.RawMessage `json:"details"`
-			} `json:"error"`
-		}
-		_ = json.Unmarshal(data, &env) // a non-JSON body still yields an APIError with the status
-		return &APIError{Status: resp.StatusCode, Code: env.Error.Code, Message: env.Error.Message, Details: env.Error.Details}
+		return apiError(resp.StatusCode, data)
 	}
 	if out != nil && len(data) > 0 {
 		if err := json.Unmarshal(data, out); err != nil {
@@ -120,4 +112,17 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any, hdr
 		}
 	}
 	return nil
+}
+
+// apiError decodes a non-2xx response as an APIError.
+func apiError(status int, data []byte) *APIError {
+	var env struct {
+		Error struct {
+			Code    string          `json:"code"`
+			Message string          `json:"message"`
+			Details json.RawMessage `json:"details"`
+		} `json:"error"`
+	}
+	_ = json.Unmarshal(data, &env) // a non-JSON body still yields an APIError with the status
+	return &APIError{Status: status, Code: env.Error.Code, Message: env.Error.Message, Details: env.Error.Details}
 }
