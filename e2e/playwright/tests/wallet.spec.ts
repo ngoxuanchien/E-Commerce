@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { ApiUser, runId } from '../support/api';
-import { openCheckout, placeOrderButton, signIn } from '../support/ui';
+import { ApiUser, type Order, runId } from '../support/api';
+import { signIn } from '../support/ui';
 
 test('seller earns balance from order and can request payout to SETTLED', async ({ page }) => {
   test.setTimeout(180_000);
@@ -14,39 +14,24 @@ test('seller earns balance from order and can request payout to SETTLED', async 
     await seller.openShop(`Shop Ví ${run}`, `e2e-${run}-shop`);
     const product = await seller.createProduct(`Sản phẩm ví test ${run}`, 5, 120_000);
 
-    // Buyer: Setup cart and checkout via UI (form submission exercises fixed fakeSubmit)
+    // Buyer: pay through the API (cart -> VNPAY checkout -> FAKE hosted pay -> succeed)
     await buyer.setCartItem(product.skus[0].id, 1);
+    const checkout = await buyer.checkout('VNPAY');
+    const payment = await buyer.startPayment(checkout.id);
+    await buyer.fakeSubmit(payment.payment_id, 'succeed');
 
-    await signIn(page, buyer.account);
-    await page.goto(`/products/${product.id}`);
-    await openCheckout(page);
-    await page.getByTestId('payment-method-VNPAY').click();
-    await placeOrderButton(page).click();
-
-    // UI redirects to FAKE hosted page; form submission calls the fixed fakeSubmit endpoint
-    await expect(page).toHaveURL(/\/api\/payments\/fake\/checkout\//);
-    await page.getByTestId('fake-pay-succeed').click();
-
-    // Wait for payment completion
-    await expect(page).toHaveURL(/\/checkout\/result\?payment_id=/);
-
-    // Get order by checkout_id and poll payment_status to PAID
-    const checkout = await buyer.call<{ checkout_id: string }>(
-      'GET',
-      '/api/cart',
-    );
-    const allOrders = await buyer.orders();
-    const order = allOrders[0];
-    expect(order).toBeDefined();
-    expect(order).not.toBeNull();
-    if (!order) throw new Error('Order not found');
-
+    // The webhook/consumer flips the order to PAID asynchronously
+    let order: Order | undefined;
     await expect
-      .poll(async () => {
-        const updated = await buyer.order(order.id);
-        return updated.payment_status;
-      }, { timeout: 20_000, intervals: [1000] })
+      .poll(
+        async () => {
+          order = (await buyer.orders()).find((o) => o.checkout_id === checkout.id);
+          return order?.payment_status;
+        },
+        { timeout: 20_000, intervals: [1000] },
+      )
       .toBe('PAID');
+    if (!order) throw new Error('Order not found');
 
     // Seller: Confirm, ship, deliver
     await seller.sellerAction(order.id, 'confirm');
@@ -77,7 +62,7 @@ test('seller earns balance from order and can request payout to SETTLED', async 
     // Seller: Open wallet page and verify exact balance is displayed (144.000 ₫)
     await signIn(page, seller.account);
     await page.goto('/seller/wallet');
-    await expect(page.getByTestId('wallet-available')).toContainText(expectedFormattedAmount);
+    await expect(page.getByTestId('wallet-available').locator('.price')).toHaveText(expectedFormattedAmount);
 
     // Fill payout amount and submit
     const payoutAmountInput = page.getByTestId('payout-amount');
@@ -100,12 +85,12 @@ test('seller earns balance from order and can request payout to SETTLED', async 
       });
     }).toPass({ timeout: 30_000 });
 
-    // Verify wallet-available shows exactly "0 ₫" via UI with exact regex match (bounded retry)
+    // Verify wallet-available shows exactly "0 ₫" (bounded retry)
     await page.goto('/seller/wallet');
     await expect(async () => {
       await page.reload();
-      await expect(page.getByTestId('wallet-available')).toHaveText(/0\s*₫/, { timeout: 2_000 });
-    }).toPass({ timeout: 10_000 });
+      await expect(page.getByTestId('wallet-available').locator('.price')).toHaveText(/^\s*0\s*₫\s*$/, { timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
   } finally {
     await Promise.all([seller.dispose(), buyer.dispose()]);
   }

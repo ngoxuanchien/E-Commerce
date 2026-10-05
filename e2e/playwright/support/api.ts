@@ -153,7 +153,13 @@ export class ApiUser {
   }
 
   async startPayment(checkoutId: string): Promise<{ payment_id: string; hosted_url: string }> {
-    return this.call<{ payment_id: string; hosted_url: string }>('POST', `/api/checkout/${checkoutId}/start-payment`);
+    const p = await this.call<{ id: string; redirect_url: string }>(
+      'POST',
+      '/api/payments',
+      { checkout_id: checkoutId },
+      { 'Idempotency-Key': crypto.randomUUID() },
+    );
+    return { payment_id: p.id, hosted_url: p.redirect_url };
   }
 
   async fakeSubmit(paymentId: string, outcome: 'succeed' | 'fail'): Promise<string> {
