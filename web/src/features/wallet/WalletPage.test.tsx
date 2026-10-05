@@ -1,21 +1,24 @@
-import { screen, within } from '@testing-library/react';
+import { screen, within, waitFor } from '@testing-library/react';
 import { expect, test } from 'vitest';
 import { SEED } from '@/mocks/seed';
 import { getDb } from '@/mocks/state';
 import { renderApp } from '@/test/render';
 import { shortId } from '@/features/orders/order-status';
+import { formatVnd } from '@/lib/format';
 
 test('renders wallet cards with available, in_escrow, and pending_payout balances', async () => {
   renderApp('/seller/wallet', { as: 'binh@example.com' });
 
   const available = await screen.findByTestId('wallet-available');
-  expect(within(available).getByText(/457\.500/)).toBeInTheDocument();
+  expect(available.textContent).toContain(formatVnd(457_500));
 
   const inEscrow = await screen.findByTestId('wallet-in-escrow');
-  expect(within(inEscrow).getByText(/0\s₫/)).toBeInTheDocument();
+  expect(inEscrow.textContent).toContain(formatVnd(0));
+  expect(inEscrow.textContent).not.toContain('457');
 
   const pendingPayout = await screen.findByTestId('wallet-pending-payout');
-  expect(within(pendingPayout).getByText(/0\s₫/)).toBeInTheDocument();
+  expect(pendingPayout.textContent).toContain(formatVnd(0));
+  expect(pendingPayout.textContent).not.toContain('457');
 });
 
 test('displays wallet entry for a RELEASE transaction', async () => {
@@ -23,8 +26,11 @@ test('displays wallet entry for a RELEASE transaction', async () => {
 
   const entry = await screen.findByTestId('wallet-entry');
   expect(within(entry).getByText('Tiền đơn hàng')).toBeInTheDocument();
-  expect(within(entry).getByText(/\+457\.500/)).toBeInTheDocument();
-  expect(within(entry).getByText(/\+457\.500/)).toHaveClass('text-jade');
+
+  const cells = within(entry).getAllByRole('cell');
+  const amountCell = cells[cells.length - 1]; // Last cell is the amount
+  expect(amountCell.textContent).toContain('+' + formatVnd(457_500));
+  expect(amountCell).toHaveClass('text-jade');
 
   const link = within(entry).getByRole('link', { name: shortId(SEED.orders.paidCompleted) });
   expect(link).toHaveAttribute('href', `/orders/${SEED.orders.paidCompleted}`);
@@ -39,8 +45,11 @@ test('displays wallet entry for a PAYOUT_REQUEST transaction', async () => {
   expect(payoutEntry).toBeDefined();
 
   expect(within(payoutEntry!).getByText('Rút tiền')).toBeInTheDocument();
-  expect(within(payoutEntry!).getByText(/−100\.000/)).toBeInTheDocument();
-  expect(within(payoutEntry!).getByText(/−100\.000/)).toHaveClass('text-destructive');
+
+  const cells = within(payoutEntry!).getAllByRole('cell');
+  const amountCell = cells[cells.length - 1]; // Last cell is the amount
+  expect(amountCell.textContent).toContain('−' + formatVnd(100_000));
+  expect(amountCell).toHaveClass('text-destructive');
 });
 
 test('wallet pending_payout card shows total of REQUESTED payouts', async () => {
@@ -48,8 +57,7 @@ test('wallet pending_payout card shows total of REQUESTED payouts', async () => 
   renderApp('/seller/wallet', { as: 'binh@example.com' });
 
   const pendingPayout = await screen.findByTestId('wallet-pending-payout');
-  // The card contains the label and the Price component
-  expect(within(pendingPayout).getByText(/100\.000/)).toBeInTheDocument();
+  expect(pendingPayout.textContent).toContain(formatVnd(100_000));
 });
 
 test('load more fetches additional wallet entries', async () => {
@@ -79,8 +87,9 @@ test('load more fetches additional wallet entries', async () => {
   await user.click(loadMoreButton);
 
   // Now should have 26 rows (20 + 6 from next page)
-  const updatedEntries = await screen.findAllByTestId('wallet-entry');
-  expect(updatedEntries.length).toBeGreaterThanOrEqual(20);
+  await waitFor(() => {
+    expect(screen.getAllByTestId('wallet-entry')).toHaveLength(26);
+  });
 });
 
 test('shows nav link for wallet in seller layout', async () => {
