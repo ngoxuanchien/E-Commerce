@@ -29,6 +29,8 @@ export function PayoutForm({ available }: { available: number }) {
           setKey(crypto.randomUUID());
         },
         onError: (err) => {
+          // A rejected key is replayed by the server; only retryable errors keep it.
+          if (!isRetryable(err)) setKey(crypto.randomUUID());
           if (err instanceof ApiError && err.code === 'INSUFFICIENT_FUNDS') {
             form.setError('root', { message: paymentErrorMessage(err) });
             return;

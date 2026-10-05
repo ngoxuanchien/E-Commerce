@@ -67,7 +67,7 @@ export function PaymentResultPage() {
   }
 
   // Error state (NOT_FOUND vs other errors)
-  if (error) {
+  if (error && !payment) {
     const isNotFound = error instanceof ApiError && error.code === 'NOT_FOUND';
     if (isNotFound) {
       return (
@@ -109,7 +109,7 @@ export function PaymentResultPage() {
   };
 
   return (
-    <section data-testid="payment-result" data-status={status} className="rounded-lg border bg-card p-8 text-center">
+    <section data-testid="payment-result" data-status={status} aria-live="polite" className="rounded-lg border bg-card p-8 text-center">
       {status === 'SUCCEEDED' && (
         <>
           <h1 className="text-2xl font-bold">Thanh toán thành công</h1>
@@ -125,7 +125,7 @@ export function PaymentResultPage() {
         <>
           <h1 className="text-2xl font-bold">Thanh toán không thành công</h1>
           {canClickButton && (
-            <Button onClick={handlePayAgain} className="mt-4" data-testid="pay-again">
+            <Button onClick={handlePayAgain} disabled={startPayment.isPending} className="mt-4" data-testid="pay-again">
               Thanh toán lại
             </Button>
           )}
@@ -152,7 +152,7 @@ export function PaymentResultPage() {
         <>
           <h1 className="text-2xl font-bold">Đang chờ kết quả thanh toán…</h1>
           <div className="mt-4">
-            <PageSpinner label="" />
+            <PageSpinner label="Đang chờ kết quả thanh toán…" />
           </div>
         </>
       )}

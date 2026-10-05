@@ -30,7 +30,7 @@ CI runs `npm ci && npm run lint && npm test`. Run the Playwright suites locally.
 
 `npm run dev:mock` starts an MSW service worker backed by an in-memory database
 (`src/mocks/db.ts`). The database follows the catalog and order service rules: one order per shop,
-a flat 30,000 ₫ shipping fee, stock reserved at checkout and returned on cancel, the order state
+a flat 30,000 ₫ shipping fee (`SHIPPING_FEE_FLAT` in `mocks/db.ts`; checkout shows the server's `CartShop.shipping_fee`), stock reserved at checkout and returned on cancel, the order state
 machine, idempotent checkout, and a seller role that appears only after refreshing the session.
 
 Seeded accounts (password `matkhau123`):
@@ -44,12 +44,12 @@ Seeded accounts (password `matkhau123`):
 The mock data is saved in `localStorage` under `marketplace-mock-db:v2`. Delete that key to reset it.
 
 Payments: online orders (VNPAY, STRIPE) start in `AWAITING_PAYMENT` with a 15-minute deadline. The
-mock keeps the payment state machine in memory; `window.location.assign('/__mock/pay/<id>')` opens
+mock keeps the payment state machine in its DB, persisted to `localStorage` with the rest of the state; `window.location.assign('/__mock/pay/<id>')` opens
 a fake gateway page ("Thành công" / "Thất bại") that settles the payment and returns to
 `/checkout/result?payment_id=<id>`.
 
-Ledger: wallet balances are derived from entries, never stored. Releasing an order to the seller
-credits total − commission (5 %). Payouts settle 3 s after the request and always succeed.
+Ledger: wallet balances are derived from entries, never stored. When an online order completes, the seller
+is credited total − commission (5 %). Payouts settle 3 s after the request and always succeed.
 `binh@example.com` is seeded with an available balance of 457,500 ₫.
 
 ## API types
@@ -81,12 +81,6 @@ src/components   shared UI (layout, price, status tabs, quantity input, shadcn u
 src/routes       route table and guards
 e2e              Playwright specs (MSW mode, plus a session check against a stub gateway)
 ```
-
-## Known contract gaps
-
-- No endpoint exposes the shipping fee before checkout, so the checkout preview uses the constant
-  `SHIPPING_FEE_FLAT` (`src/features/checkout/shipping.ts`). The orders it creates carry the
-  server's fee.
 
 ## Deviations and decisions (WS5')
 

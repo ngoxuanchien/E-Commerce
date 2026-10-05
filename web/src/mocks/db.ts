@@ -44,7 +44,7 @@ export type DbState = {
   payments: MockPayment[];
   walletEntries: MockWalletEntry[];
   payouts: MockPayout[];
-  keys: Record<string, { hash: string; id: string }>;
+  keys: Record<string, { hash: string; id: string; rejected?: { available: number } }>;
   idempotency: Record<string, { hash: string; response: CheckoutResponse }>;
   blobs: Record<string, string>;
   tokens: Record<string, TokenGrant>;
@@ -842,9 +842,13 @@ export class MockDb {
     const payoutKey = `payout:${userId}:${key}`;
     const existingKey = this.state.keys[payoutKey];
     if (existingKey) {
-      const existingPayout = this.state.payouts.find((p) => p.id === existingKey.id);
-      if (existingPayout && JSON.stringify(body) === existingKey.hash) {
-        return this.publicPayout(existingPayout);
+      if (JSON.stringify(body) === existingKey.hash) {
+        // A deterministic rejection is stored under the key and replayed, like ledger-svc.
+        if (existingKey.rejected) {
+          throw new MockError(409, 'INSUFFICIENT_FUNDS', 'insufficient available balance', existingKey.rejected);
+        }
+        const existingPayout = this.state.payouts.find((p) => p.id === existingKey.id);
+        if (existingPayout) return this.publicPayout(existingPayout);
       }
       throw new MockError(422, 'IDEMPOTENCY_KEY_REUSED', 'Idempotency-Key reused with different request body');
     }
@@ -859,7 +863,10 @@ export class MockDb {
     // Check available balance
     const wallet = this.wallet(userId);
     if (body.amount > wallet.available) {
-      throw new MockError(409, 'INSUFFICIENT_FUNDS', 'insufficient available balance', { available: wallet.available });
+      const rejected = { available: wallet.available };
+      this.state.keys[payoutKey] = { hash: JSON.stringify(body), id: '', rejected };
+      this.save();
+      throw new MockError(409, 'INSUFFICIENT_FUNDS', 'insufficient available balance', rejected);
     }
 
     // Create payout and entry

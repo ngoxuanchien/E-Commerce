@@ -1,5 +1,5 @@
 import { screen, waitFor } from '@testing-library/react';
-import { HttpResponse, http } from 'msw';
+import { HttpResponse, delay, http } from 'msw';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { SEED } from '@/mocks/seed';
 import { getDb } from '@/mocks/state';
@@ -404,4 +404,53 @@ test('SUCCEEDED status invalidates orders and order queries', async () => {
   });
 
   invalidateSpy.mockRestore();
+});
+
+test('pay-again is disabled while starting, so a double click sends one POST', async () => {
+  const checkoutId = setupCheckout();
+  const payment = getDb().createPayment(SEED.users.an, 'p1', { checkout_id: checkoutId });
+  getDb().submitMockPayment(payment.id, 'fail');
+  let posts = 0;
+  server.use(
+    http.post('*/api/payments', async () => {
+      posts++;
+      await delay(100);
+      return undefined;
+    }),
+  );
+
+  const { user } = renderApp(`/checkout/result?payment_id=${payment.id}`, { as: 'an@example.com' });
+  const btn = await screen.findByTestId('pay-again');
+  await user.dblClick(btn);
+
+  await waitFor(() => expect(vi.mocked(redirectTo)).toHaveBeenCalled());
+  expect(posts).toBe(1);
+});
+
+test('the result section announces state changes politely', async () => {
+  const checkoutId = setupCheckout();
+  const payment = getDb().createPayment(SEED.users.an, 'p1', { checkout_id: checkoutId });
+  renderApp(`/checkout/result?payment_id=${payment.id}`, { as: 'an@example.com' });
+
+  expect(await screen.findByTestId('payment-result')).toHaveAttribute('aria-live', 'polite');
+  expect(screen.getByRole('status')).toHaveTextContent('Đang chờ kết quả thanh toán…');
+});
+
+test('a failed poll keeps rendering the last known payment', async () => {
+  const checkoutId = setupCheckout();
+  const payment = getDb().createPayment(SEED.users.an, 'p1', { checkout_id: checkoutId });
+  let gets = 0;
+  server.use(
+    http.get('*/api/payments/*', () => {
+      gets++;
+      return gets === 1 ? undefined : HttpResponse.json({}, { status: 503 });
+    }),
+  );
+
+  renderApp(`/checkout/result?payment_id=${payment.id}`, { as: 'an@example.com' });
+  await screen.findByRole('heading', { name: 'Đang chờ kết quả thanh toán…' });
+  await waitFor(() => expect(gets).toBeGreaterThan(1), { timeout: 4000 });
+
+  expect(screen.getByRole('heading', { name: 'Đang chờ kết quả thanh toán…' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Thử lại' })).not.toBeInTheDocument();
 });

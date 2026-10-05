@@ -598,6 +598,16 @@ describe('ledger (wallet, entries, payouts)', () => {
     expect(payout2.id).toBe(payout1.id);
   });
 
+  test('createPayout replays a stored INSUFFICIENT_FUNDS for the same key and body', () => {
+    const tooMuch = { amount: 10_000_000 };
+    const first = caught(() => db.createPayout(SEED.users.binh, 'k-rej', tooMuch));
+    expect(first).toMatchObject({ status: 409, code: 'INSUFFICIENT_FUNDS' });
+    // Even if funds were available now, the stored rejection is replayed.
+    db.state.walletEntries.push({ id: 'e', transaction_id: 't', kind: 'RELEASE', amount: 20_000_000, order_id: null, payout_id: null, seller_user_id: SEED.users.binh, created_at: new Date().toISOString() } as never);
+    expect(caught(() => db.createPayout(SEED.users.binh, 'k-rej', tooMuch))).toMatchObject({ status: 409, code: 'INSUFFICIENT_FUNDS' });
+    expect(caught(() => db.createPayout(SEED.users.binh, 'k-rej', { amount: 60_000 }))).toMatchObject({ status: 422, code: 'IDEMPOTENCY_KEY_REUSED' });
+  });
+
   test('createPayout validation: amount must be integer >= PAYOUT_MIN_AMOUNT', () => {
     const err = caught(() => db.createPayout(SEED.users.binh, 'k-bad', { amount: 49_999 }));
     expect(err).toMatchObject({ code: 'VALIDATION_ERROR', details: { fields: { amount: expect.any(String) } } });

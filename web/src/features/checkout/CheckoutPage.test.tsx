@@ -350,3 +350,25 @@ test('payment 409 BELOW_PROVIDER_MINIMUM shows reason and navigates', async () =
   expect(await screen.findByText('Số tiền thấp hơn mức tối thiểu của cổng thanh toán. Vui lòng chọn phương thức khác.')).toBeInTheDocument();
   expect(currentPath()).toBe('/orders?status=AWAITING_PAYMENT');
 });
+
+test('radios lock while checkout is pending, so the submitted method still starts the payment', async () => {
+  getDb().state.carts[SEED.users.an] = { [SEED.skus.bowl11]: 1 };
+  let payments = 0;
+  server.use(
+    http.post('*/api/checkout', async ({ request }) => {
+      await delay(100);
+      return HttpResponse.json(getDb().checkout(SEED.users.an, request.headers.get('Idempotency-Key') ?? '', (await request.json()) as never), { status: 201 });
+    }),
+    http.post('*/api/payments', async ({ request }) => {
+      payments++;
+      return HttpResponse.json(getDb().createPayment(SEED.users.an, request.headers.get('Idempotency-Key') ?? '', (await request.json()) as never), { status: 201 });
+    }),
+  );
+  const { user } = renderApp(`/checkout?sku=${SEED.skus.bowl11}`, { as: 'an@example.com' });
+  await fillAddress(user);
+  await user.click(await screen.findByTestId('payment-method-VNPAY'));
+  await user.click(screen.getByRole('button', { name: 'Đặt hàng và thanh toán' }));
+
+  await waitFor(() => expect(screen.getByTestId('payment-method-COD')).toBeDisabled());
+  await waitFor(() => expect(payments).toBe(1));
+});

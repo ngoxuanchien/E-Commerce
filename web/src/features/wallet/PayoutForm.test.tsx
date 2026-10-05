@@ -115,3 +115,24 @@ test('INSUFFICIENT_FUNDS error → alert with available balance', async () => {
   const expectedMessage = `Số dư không đủ. Số dư khả dụng: ${formatVnd(12_000)}.`;
   expect(alert.textContent?.trim()).toBe(expectedMessage);
 });
+
+test('after a 409 INSUFFICIENT_FUNDS the next submit sends a different key', async () => {
+  const keys: string[] = [];
+  server.use(
+    http.post('*/api/seller/payouts', ({ request }) => {
+      keys.push(request.headers.get('Idempotency-Key') ?? '');
+      return keys.length === 1
+        ? HttpResponse.json({ error: { code: 'INSUFFICIENT_FUNDS', message: 'x', details: { available: 12_000 } } }, { status: 409 })
+        : undefined;
+    }),
+  );
+  const { user } = renderApp('/seller/wallet', { as: 'binh@example.com' });
+  const input = await screen.findByTestId('payout-amount');
+  await user.type(input, '50000');
+  await user.click(screen.getByTestId('payout-submit'));
+  await screen.findByRole('alert');
+
+  await user.click(screen.getByTestId('payout-submit'));
+  await waitFor(() => expect(keys.length).toBe(2));
+  expect(keys[1]).not.toBe(keys[0]);
+});

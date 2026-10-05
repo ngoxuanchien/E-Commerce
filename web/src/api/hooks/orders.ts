@@ -8,12 +8,12 @@ import type { CheckoutRequest, CheckoutResponse, Order, OrderStatus } from '../t
  * Handlers are mutation options (not per-call), so they also run when the global
  * "Thử lại" toast re-executes the mutation with the same variables (same Idempotency-Key).
  */
-export function useCheckout(handlers: { onSuccess?: (res: CheckoutResponse) => void; onError?: (err: unknown) => void } = {}) {
+export function useCheckout(handlers: { onSuccess?: (res: CheckoutResponse, vars: { body: CheckoutRequest }) => void; onError?: (err: unknown) => void } = {}) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ idempotencyKey, body }: { idempotencyKey: string; body: CheckoutRequest }) =>
       unwrap(api.POST('/api/checkout', { params: { header: { 'Idempotency-Key': idempotencyKey } }, body })),
-    onSuccess: (res) => handlers.onSuccess?.(res),
+    onSuccess: (res, vars) => handlers.onSuccess?.(res, vars),
     onError: (err) => handlers.onError?.(err),
     onSettled: (_res, err) => {
       // After a retryable failure (network, 503, 429) the server may already have

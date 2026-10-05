@@ -46,9 +46,9 @@ export function CheckoutPage() {
   });
   const startPayment = useStartPayment();
   const checkout = useCheckout({
-    onSuccess: (res) => {
+    onSuccess: (res, vars) => {
       setIdempotencyKey(crypto.randomUUID());
-      const isOnline = paymentMethod !== 'COD';
+      const isOnline = vars.body.payment_method !== 'COD';
       if (isOnline) {
         startPayment.mutate(
           { checkoutId: res.checkout_id, idempotencyKey: payKey(res.checkout_id) },
@@ -151,7 +151,7 @@ export function CheckoutPage() {
         ))}
       </div>
       <aside aria-label="Thanh toán" className="space-y-4 rounded-lg border bg-card p-5 lg:sticky lg:top-4">
-        <fieldset>
+        <fieldset disabled={checkout.isPending || startPayment.isPending}>
           <legend className="font-semibold">Phương thức thanh toán</legend>
           <label className="mt-2 flex items-center gap-2 text-sm">
             <input type="radio" name="payment_method" value="COD" checked={paymentMethod === 'COD'} onChange={() => setPaymentMethod('COD')} className="accent-[var(--tarp)]" data-testid="payment-method-COD" />
