@@ -1,3 +1,4 @@
+import { formatVnd } from '@/lib/format';
 import type { ErrorBody, ErrorCode } from './types';
 
 export const ERROR_MESSAGES: Record<ErrorCode, string> = {
@@ -114,4 +115,36 @@ export function applyFieldErrors(
     setError(target as never, { type: 'server', message: FIELD_MESSAGE });
   }
   return names.length > 0;
+}
+
+export const PAYMENT_REASON_MESSAGES: Record<string, string> = {
+  COD_CHECKOUT: 'Đơn này thanh toán khi nhận hàng, không cần thanh toán trực tuyến.',
+  NOT_AWAITING_PAYMENT: 'Đơn hàng không còn chờ thanh toán.',
+  DEADLINE_PASSED: 'Đã quá hạn thanh toán, đơn hàng sẽ bị huỷ.',
+  ALREADY_PAID: 'Đơn hàng đã được thanh toán.',
+  BELOW_PROVIDER_MINIMUM: 'Số tiền thấp hơn mức tối thiểu của cổng thanh toán. Vui lòng chọn phương thức khác.',
+};
+
+export function paymentReasonOf(err: unknown): string | undefined {
+  if (!(err instanceof ApiError) || err.code !== 'INVALID_STATE_TRANSITION') return undefined;
+  const reason = err.details?.reason;
+  return typeof reason === 'string' ? reason : undefined;
+}
+
+export function paymentErrorMessage(err: unknown): string {
+  if (!(err instanceof ApiError)) return errorMessage(err);
+
+  const reason = paymentReasonOf(err);
+  if (reason && reason in PAYMENT_REASON_MESSAGES) {
+    return PAYMENT_REASON_MESSAGES[reason];
+  }
+
+  if (err.code === 'INSUFFICIENT_FUNDS') {
+    const available = err.details?.available;
+    if (typeof available === 'number') {
+      return `Số dư không đủ. Số dư khả dụng: ${formatVnd(available)}.`;
+    }
+  }
+
+  return errorMessage(err);
 }

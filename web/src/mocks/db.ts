@@ -1,16 +1,22 @@
 import type {
-  Cart, CartItem, CartShop, Category, CheckoutRequest, CheckoutResponse, LoginRequest, Order, OrderItem, OrderPage,
+  Cart, CartItem, CartShop, Category, CheckoutRequest, CheckoutResponse, CreatePaymentRequest, LoginRequest, Order, OrderItem, OrderPage,
   OrderStatus, Paths, Product, ProductInput, ProductPage, ProductPatch, ProductStatus, ProductSummary, ProductSummaryPage,
   RegisterRequest, Role, Shop, ShopCreate, ShopRef, ShopUpdate, Sku, TokenResponse, UploadResponse, User,
+  Payment, WalletEntry, Payout,
 } from '@/api/types';
 import { normalizeVi } from '@/lib/vi';
 import { MockError, notFound, validation } from './mock-error';
 import { paginate } from './paginate';
 import { buildSeed } from './seed';
 
-export const STORAGE_KEY = 'marketplace-mock-db:v1';
+export const STORAGE_KEY = 'marketplace-mock-db:v2';
+export const PAYMENT_TTL_MS = 15 * 60_000;
+export const COMMISSION_RATE_BPS = 500;
+export const STRIPE_MIN_AMOUNT = 10_000;
 /** Stand-in for order-svc's SHIPPING_FEE_FLAT: reported per cart shop and charged per order. */
 export const SHIPPING_FEE_FLAT = 30_000;
+export const PAYOUT_MIN_AMOUNT = 50_000;
+export const PAYOUT_SETTLE_DELAY_MS = 3_000;
 export const MOCK_ASSET_BASE = 'http://localhost:9000/product-images';
 const RESERVED_SLUGS = ['me', 'new', 'admin', 'seller'];
 const MAX_CART_LINES = 50;
@@ -24,6 +30,9 @@ export type MockProduct = {
   image_keys: string[]; skus: Sku[]; created_at: string; updated_at: string;
 };
 export type MockOrder = Order & { seller_user_id: string };
+export type MockPayment = Payment & { buyer_id: string };
+export type MockWalletEntry = WalletEntry & { seller_user_id: string };
+export type MockPayout = Payout & { seller_user_id: string };
 export type TokenGrant = { userId: string; roles: Role[] };
 export type DbState = {
   users: MockUser[];
@@ -32,6 +41,10 @@ export type DbState = {
   products: MockProduct[];
   carts: Record<string, Record<string, number>>;
   orders: MockOrder[];
+  payments: MockPayment[];
+  walletEntries: MockWalletEntry[];
+  payouts: MockPayout[];
+  keys: Record<string, { hash: string; id: string; rejected?: { available: number } }>;
   idempotency: Record<string, { hash: string; response: CheckoutResponse }>;
   blobs: Record<string, string>;
   tokens: Record<string, TokenGrant>;
@@ -45,7 +58,7 @@ type Actor = 'buyer' | 'seller';
 // WS3 §5 state machine, per actor.
 const TRANSITIONS: Record<Actor, Partial<Record<BuyerAction | SellerAction, { from: OrderStatus[]; to: OrderStatus }>>> = {
   buyer: {
-    cancel: { from: ['PENDING_CONFIRMATION'], to: 'CANCELLED' },
+    cancel: { from: ['PENDING_CONFIRMATION', 'AWAITING_PAYMENT'], to: 'CANCELLED' },
     complete: { from: ['DELIVERED'], to: 'COMPLETED' },
   },
   seller: {
@@ -475,7 +488,7 @@ export class MockDb {
 
     const fields: Record<string, string> = {};
     for (const f of ADDRESS_FIELDS) if (!body.shipping_address?.[f]?.trim()) fields[`shipping_address.${f}`] = 'required';
-    if (body.payment_method !== 'COD') fields.payment_method = 'must be COD';
+    if (!['COD', 'VNPAY', 'STRIPE'].includes(body.payment_method ?? '')) fields.payment_method = 'must be COD, VNPAY or STRIPE';
     fail(fields);
 
     const lines = this.state.carts[userId] ?? {};
@@ -499,6 +512,7 @@ export class MockDb {
       r.ctx!.sku.stock -= r.quantity;
       byShop.set(r.ctx!.shop.id, [...(byShop.get(r.ctx!.shop.id) ?? []), r]);
     }
+    const isOnlinePayment = body.payment_method !== 'COD';
     const orders: MockOrder[] = [...byShop.values()].map((group) => {
       const shop = group[0].ctx!.shop;
       const items: OrderItem[] = group.map(({ skuId, quantity, ctx }) => ({
@@ -506,16 +520,26 @@ export class MockDb {
         image_url: this.firstImage(ctx!.product), unit_price: ctx!.sku.price, quantity, line_total: ctx!.sku.price * quantity,
       }));
       const subtotal = items.reduce((sum, i) => sum + i.line_total, 0);
+      const commissionAmount = isOnlinePayment ? Math.floor(subtotal * COMMISSION_RATE_BPS / 10_000) : 0;
       return {
-        id: uuid(), checkout_id: checkoutId, status: 'PENDING_CONFIRMATION', buyer_id: userId, seller_user_id: shop.owner_user_id,
+        id: uuid(), checkout_id: checkoutId, status: isOnlinePayment ? 'AWAITING_PAYMENT' : 'PENDING_CONFIRMATION', buyer_id: userId, seller_user_id: shop.owner_user_id,
         shop: { id: shop.id, name: shop.name, slug: shop.slug }, items, subtotal, shipping_fee: SHIPPING_FEE_FLAT, total: subtotal + SHIPPING_FEE_FLAT,
-        shipping_address: { ...body.shipping_address }, payment_method: 'COD', cancel_reason: null,
-        // The mock only supports COD: payment_status NONE, no deadline, no commission, not delivered.
-        payment_status: 'NONE', payment_deadline: null, commission_rate_bps: 0, commission_amount: 0, delivered_at: null,
-        history: [
-          { from: null, to: 'PENDING', actor_role: 'system', note: null, created_at: ts },
-          { from: 'PENDING', to: 'PENDING_CONFIRMATION', actor_role: 'system', note: null, created_at: ts },
-        ],
+        shipping_address: { ...body.shipping_address }, payment_method: body.payment_method, cancel_reason: null,
+        // COD: payment_status NONE, no deadline, no commission. Online: UNPAID, deadline, commission.
+        payment_status: isOnlinePayment ? 'UNPAID' : 'NONE',
+        payment_deadline: isOnlinePayment ? new Date(Date.now() + PAYMENT_TTL_MS).toISOString() : null,
+        commission_rate_bps: isOnlinePayment ? COMMISSION_RATE_BPS : 0,
+        commission_amount: commissionAmount,
+        delivered_at: null,
+        history: isOnlinePayment
+          ? [
+              { from: null, to: 'PENDING', actor_role: 'system', note: null, created_at: ts },
+              { from: 'PENDING', to: 'AWAITING_PAYMENT', actor_role: 'system', note: null, created_at: ts },
+            ]
+          : [
+              { from: null, to: 'PENDING', actor_role: 'system', note: null, created_at: ts },
+              { from: 'PENDING', to: 'PENDING_CONFIRMATION', actor_role: 'system', note: null, created_at: ts },
+            ],
         created_at: ts, updated_at: ts,
       };
     });
@@ -570,9 +594,326 @@ export class MockDb {
         const ctx = this.skuContext(item.sku_id);
         if (ctx) ctx.sku.stock += item.quantity; // catalog releases the reservation
       }
+      // When a buyer cancels an AWAITING_PAYMENT order, cancel all its siblings.
+      if (actor === 'buyer' && from === 'AWAITING_PAYMENT') {
+        const siblings = this.state.orders.filter(
+          (o) => o.checkout_id === order.checkout_id && o.id !== order.id && o.buyer_id === order.buyer_id && o.status === 'AWAITING_PAYMENT',
+        );
+        for (const sibling of siblings) {
+          sibling.status = 'CANCELLED';
+          sibling.cancel_reason = note;
+          sibling.updated_at = order.updated_at;
+          for (const item of sibling.items) {
+            const ctx = this.skuContext(item.sku_id);
+            if (ctx) ctx.sku.stock += item.quantity;
+          }
+          sibling.history.push({ from: 'AWAITING_PAYMENT', to: 'CANCELLED', actor_role: 'system', note: note || null, created_at: sibling.updated_at });
+        }
+      }
+      // Refund if paid
+      if (order.payment_status === 'PAID') {
+        order.payment_status = 'REFUNDED';
+      }
+    }
+    // When completing a paid online order, add RELEASE entry
+    if (rule.to === 'COMPLETED' && order.payment_status === 'PAID') {
+      const releaseAmount = order.total - order.commission_amount;
+      const entry: MockWalletEntry = {
+        id: uuid(),
+        transaction_id: uuid(),
+        kind: 'RELEASE',
+        amount: releaseAmount,
+        order_id: order.id,
+        payout_id: null,
+        seller_user_id: order.seller_user_id,
+        created_at: order.updated_at,
+      };
+      this.state.walletEntries.push(entry);
     }
     order.history.push({ from, to: rule.to, actor_role: actor, note: note || null, created_at: order.updated_at });
     this.save();
     return publicOrder(order);
+  }
+
+  // ---- payments ----
+
+  private publicPayment(p: MockPayment): Payment {
+    const copy: Partial<MockPayment> = structuredClone(p);
+    delete copy.buyer_id;
+    return copy as Payment;
+  }
+
+  createPayment(userId: string, key: string, body: CreatePaymentRequest): Payment {
+    // Rule 1: key validation
+    if (!key || key.length > 100) throw validation({ 'Idempotency-Key': 'required, 1-100 characters' });
+
+    // Rule 2: check for replayed idempotency key
+    const paymentKey = `payment:${userId}:${key}`;
+    const existingKey = this.state.keys[paymentKey];
+    if (existingKey) {
+      const existingPayment = this.state.payments.find((p) => p.id === existingKey.id);
+      if (existingPayment && existingPayment.checkout_id === body.checkout_id) {
+        // Apply expiry logic on replay (same as payment() does)
+        if (existingPayment.status === 'PENDING' && Date.now() >= new Date(existingPayment.expires_at).getTime()) {
+          existingPayment.status = 'EXPIRED';
+          existingPayment.redirect_url = null;
+          existingPayment.updated_at = now();
+          this.save();
+        }
+        return this.publicPayment(existingPayment);
+      }
+      throw new MockError(422, 'IDEMPOTENCY_KEY_REUSED', 'Idempotency-Key reused with a different checkout_id');
+    }
+
+    // Rule 3: order must exist
+    const orders = this.state.orders.filter((o) => o.buyer_id === userId && o.checkout_id === body.checkout_id);
+    if (orders.length === 0) throw notFound('checkout');
+
+    const checkout = orders[0];
+
+    // Rule 4: payment_method must not be COD
+    if (checkout.payment_method === 'COD') {
+      throw new MockError(409, 'INVALID_STATE_TRANSITION', 'cannot create payment for COD checkout', { reason: 'COD_CHECKOUT' });
+    }
+
+    // Rule 5: no SUCCEEDED payment yet
+    if (this.state.payments.some((p) => p.checkout_id === body.checkout_id && p.status === 'SUCCEEDED')) {
+      throw new MockError(409, 'INVALID_STATE_TRANSITION', 'payment already succeeded for this checkout', { reason: 'ALREADY_PAID' });
+    }
+
+    // Filter AWAITING_PAYMENT orders for rules 6, 7, 8
+    const awaiting = orders.filter((o) => o.status === 'AWAITING_PAYMENT');
+
+    // Rule 6: at least one order must be AWAITING_PAYMENT
+    if (awaiting.length === 0) {
+      throw new MockError(409, 'INVALID_STATE_TRANSITION', 'no order is awaiting payment', { reason: 'NOT_AWAITING_PAYMENT' });
+    }
+
+    // Rule 7: deadline not passed (use deadline from an AWAITING order)
+    const deadline = new Date(awaiting[0].payment_deadline!).getTime();
+    if (Date.now() >= deadline) {
+      throw new MockError(409, 'INVALID_STATE_TRANSITION', 'payment deadline has passed', { reason: 'DEADLINE_PASSED' });
+    }
+
+    // Rule 8: amount check for STRIPE (sum only AWAITING_PAYMENT orders)
+    const amount = awaiting.reduce((sum, o) => sum + o.total, 0);
+    if (checkout.payment_method === 'STRIPE' && amount < STRIPE_MIN_AMOUNT) {
+      throw new MockError(409, 'INVALID_STATE_TRANSITION', `amount must be at least ${STRIPE_MIN_AMOUNT}`, { reason: 'BELOW_PROVIDER_MINIMUM' });
+    }
+
+    // Expire any PENDING payment for this checkout
+    for (const p of this.state.payments.filter((p) => p.checkout_id === body.checkout_id && p.status === 'PENDING')) {
+      p.status = 'EXPIRED';
+      p.redirect_url = null;
+      p.updated_at = now();
+    }
+
+    // Create the new payment
+    const paymentId = uuid();
+    const origin = typeof globalThis !== 'undefined' && globalThis.location?.origin ? globalThis.location.origin : 'http://localhost';
+    const payment: MockPayment = {
+      id: paymentId,
+      checkout_id: body.checkout_id,
+      method: checkout.payment_method as 'VNPAY' | 'STRIPE',
+      provider: 'fake',
+      status: 'PENDING',
+      amount,
+      redirect_url: `${origin}/__mock/pay/${paymentId}`,
+      expires_at: checkout.payment_deadline!,
+      failure_reason: null,
+      created_at: now(),
+      updated_at: now(),
+      buyer_id: userId,
+    };
+    this.state.payments.push(payment);
+    this.state.keys[paymentKey] = { hash: JSON.stringify(body), id: paymentId };
+    this.save();
+    return this.publicPayment(payment);
+  }
+
+  payment(userId: string, id: string): Payment {
+    const p = this.state.payments.find((x) => x.id === id && x.buyer_id === userId);
+    if (!p) throw notFound('payment');
+
+    // Expire PENDING payments past their deadline
+    if (p.status === 'PENDING' && Date.now() >= new Date(p.expires_at).getTime()) {
+      p.status = 'EXPIRED';
+      p.redirect_url = null;
+      p.updated_at = now();
+      this.save();
+    }
+
+    return this.publicPayment(p);
+  }
+
+  submitMockPayment(id: string, outcome: 'succeed' | 'fail'): void {
+    const payment = this.state.payments.find((p) => p.id === id);
+    if (!payment) throw notFound('payment');
+
+    // No-op if already terminal
+    if (payment.status !== 'PENDING') return;
+
+    if (outcome === 'fail') {
+      payment.status = 'FAILED';
+      payment.failure_reason = 'mock_declined';
+      payment.redirect_url = null;
+      payment.updated_at = now();
+    } else {
+      // Check for duplicate
+      const existingSucceeded = this.state.payments.find((p) => p.checkout_id === payment.checkout_id && p.status === 'SUCCEEDED');
+      if (existingSucceeded) {
+        payment.status = 'DUPLICATE';
+        payment.redirect_url = null;
+        payment.updated_at = now();
+      } else {
+        payment.status = 'SUCCEEDED';
+        payment.redirect_url = null;
+        payment.updated_at = now();
+
+        // Transition orders to PENDING_CONFIRMATION with payment_status PAID
+        const orders = this.state.orders.filter((o) => o.checkout_id === payment.checkout_id && o.status === 'AWAITING_PAYMENT');
+        for (const order of orders) {
+          order.status = 'PENDING_CONFIRMATION';
+          order.payment_status = 'PAID';
+          order.updated_at = now();
+          order.history.push({ from: 'AWAITING_PAYMENT', to: 'PENDING_CONFIRMATION', actor_role: 'system', note: null, created_at: order.updated_at });
+        }
+
+        // Handle late captures (orders already cancelled)
+        const cancelled = this.state.orders.filter((o) => o.checkout_id === payment.checkout_id && o.status === 'CANCELLED');
+        for (const order of cancelled) {
+          order.payment_status = 'REFUNDED';
+        }
+      }
+    }
+    this.save();
+  }
+
+  // ---- ledger ----
+
+  private settlePayouts(): void {
+    const now_ms = Date.now();
+    for (const payout of this.state.payouts) {
+      if (payout.status === 'REQUESTED') {
+        const requestedMs = new Date(payout.requested_at).getTime();
+        if (now_ms >= requestedMs + PAYOUT_SETTLE_DELAY_MS) {
+          payout.status = 'SETTLED';
+          payout.settled_at = now();
+        }
+      }
+    }
+  }
+
+  wallet(userId: string): import('@/api/types').Wallet {
+    this.settlePayouts();
+
+    // Compute available = Σ walletEntries amount for this seller
+    const available = this.state.walletEntries
+      .filter((e) => e.seller_user_id === userId)
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    // Compute pending_payout = Σ amount of REQUESTED payouts
+    const pending_payout = this.state.payouts
+      .filter((p) => p.seller_user_id === userId && p.status === 'REQUESTED')
+      .reduce((sum, p) => sum + p.amount, 0);
+
+    // Compute in_escrow = Σ total of orders with payment_status === 'PAID' and status not COMPLETED/CANCELLED
+    const in_escrow = this.state.orders
+      .filter((o) => o.seller_user_id === userId && o.payment_status === 'PAID' && o.status !== 'COMPLETED' && o.status !== 'CANCELLED')
+      .reduce((sum, o) => sum + o.total, 0);
+
+    return { available, pending_payout, in_escrow, currency: 'VND' };
+  }
+
+  walletEntries(userId: string, limit?: number | null, cursor?: string | null): import('@/api/types').WalletEntryPage {
+    const items = this.state.walletEntries.filter((e) => e.seller_user_id === userId).sort(newestFirst);
+    return paginate(items.map((e) => {
+      const copy: Partial<typeof e> = structuredClone(e);
+      delete copy.seller_user_id;
+      return copy as import('@/api/types').WalletEntry;
+    }), limit, cursor);
+  }
+
+  createPayout(userId: string, key: string, body: import('@/api/types').PayoutRequest): import('@/api/types').Payout {
+    // Validate key
+    if (!key || key.length > 100) throw validation({ 'Idempotency-Key': 'required, 1-100 characters' });
+
+    // Check for replayed key
+    const payoutKey = `payout:${userId}:${key}`;
+    const existingKey = this.state.keys[payoutKey];
+    if (existingKey) {
+      if (JSON.stringify(body) === existingKey.hash) {
+        // A deterministic rejection is stored under the key and replayed, like ledger-svc.
+        if (existingKey.rejected) {
+          throw new MockError(409, 'INSUFFICIENT_FUNDS', 'insufficient available balance', existingKey.rejected);
+        }
+        const existingPayout = this.state.payouts.find((p) => p.id === existingKey.id);
+        if (existingPayout) return this.publicPayout(existingPayout);
+      }
+      throw new MockError(422, 'IDEMPOTENCY_KEY_REUSED', 'Idempotency-Key reused with different request body');
+    }
+
+    // Validate amount
+    const fields: Record<string, string> = {};
+    if (!Number.isInteger(body.amount) || body.amount < PAYOUT_MIN_AMOUNT) {
+      fields.amount = `must be an integer >= ${PAYOUT_MIN_AMOUNT}`;
+    }
+    fail(fields);
+
+    // Check available balance
+    const wallet = this.wallet(userId);
+    if (body.amount > wallet.available) {
+      const rejected = { available: wallet.available };
+      this.state.keys[payoutKey] = { hash: JSON.stringify(body), id: '', rejected };
+      this.save();
+      throw new MockError(409, 'INSUFFICIENT_FUNDS', 'insufficient available balance', rejected);
+    }
+
+    // Create payout and entry
+    const payoutId = uuid();
+    const ts = now();
+    const payout: MockPayout = {
+      id: payoutId,
+      amount: body.amount,
+      status: 'REQUESTED',
+      failure_reason: null,
+      requested_at: ts,
+      settled_at: null,
+      seller_user_id: userId,
+    };
+    const entry: MockWalletEntry = {
+      id: uuid(),
+      transaction_id: uuid(),
+      kind: 'PAYOUT_REQUEST',
+      amount: -body.amount,
+      order_id: null,
+      payout_id: payoutId,
+      seller_user_id: userId,
+      created_at: ts,
+    };
+
+    this.state.payouts.push(payout);
+    this.state.walletEntries.push(entry);
+    this.state.keys[payoutKey] = { hash: JSON.stringify(body), id: payoutId };
+    this.save();
+    return this.publicPayout(payout);
+  }
+
+  payouts(userId: string, status?: string | null, limit?: number | null, cursor?: string | null): import('@/api/types').PayoutPage {
+    this.settlePayouts();
+    const validStatuses = ['REQUESTED', 'SETTLED', 'FAILED'];
+    if (status && !validStatuses.includes(status)) {
+      throw validation({ status: 'must be REQUESTED, SETTLED or FAILED' });
+    }
+    const items = this.state.payouts
+      .filter((p) => p.seller_user_id === userId && (!status || p.status === status))
+      .sort((a, b) => b.requested_at.localeCompare(a.requested_at) || b.id.localeCompare(a.id));
+    return paginate(items.map((p) => this.publicPayout(p)), limit, cursor);
+  }
+
+  private publicPayout(p: MockPayout): import('@/api/types').Payout {
+    const copy: Partial<MockPayout> = structuredClone(p);
+    delete copy.seller_user_id;
+    return copy as import('@/api/types').Payout;
   }
 }

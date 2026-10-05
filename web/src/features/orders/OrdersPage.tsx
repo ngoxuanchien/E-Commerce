@@ -4,8 +4,10 @@ import { LoadMore } from '@/components/LoadMore';
 import { StatusTabs } from '@/components/StatusTabs';
 import { EmptyState, ErrorState, PageSpinner } from '@/components/states';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { PayAgainButton } from '@/features/payment/PayAgainButton';
 import { OrderCard } from './OrderCard';
 import { ORDER_STATUS_TABS, parseOrderStatus } from './order-status';
+import { isPayable } from './payment-labels';
 
 export function OrdersPage() {
   const [params, setParams] = useSearchParams();
@@ -33,7 +35,12 @@ export function OrdersPage() {
       ) : (
         <div className="space-y-4">
           {items.map((order) => (
-            <OrderCard key={order.id} order={order} href={`/orders/${order.id}`} />
+            <OrderCard
+              key={order.id}
+              order={order}
+              href={`/orders/${order.id}`}
+              actions={isPayable(order) ? <PayAgainButton order={order} size="sm" /> : undefined}
+            />
           ))}
         </div>
       )}

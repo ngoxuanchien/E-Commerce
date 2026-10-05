@@ -37,7 +37,30 @@ test('a stale action reports the state change and refreshes the list', async () 
 
 test('status tabs filter the seller orders', async () => {
   const { user } = renderApp('/seller/orders', { as: 'binh@example.com' });
-  await screen.findByRole('article', { name: 'Đơn hàng của Gốm Bát Tràng Cô Bình' });
+  const articles = await screen.findAllByRole('article', { name: 'Đơn hàng của Gốm Bát Tràng Cô Bình' });
+  expect(articles.length).toBeGreaterThan(0);
   await user.click(screen.getByRole('button', { name: 'Chờ xác nhận' }));
   expect(await screen.findByText('Chưa có đơn hàng nào ở trạng thái này.')).toBeInTheDocument();
+});
+
+test('shows waiting for buyer to pay message for awaiting payment orders', async () => {
+  const db = getDb();
+  db.setCartItem(SEED.users.an, SEED.skus.bowl11, 1);
+  db.checkout(SEED.users.an, 'test-seller-awaiting', {
+    sku_ids: [SEED.skus.bowl11],
+    shipping_address: {
+      full_name: 'An Nguyễn',
+      phone: '0901234567',
+      line1: '12 Lý Tự Trọng',
+      ward: 'Bến Nghé',
+      district: 'Quận 1',
+      province: 'TP. Hồ Chí Minh',
+    },
+    payment_method: 'VNPAY',
+  });
+  renderApp('/seller/orders', { as: 'binh@example.com' });
+  const articles = await screen.findAllByRole('article', { name: 'Đơn hàng của Gốm Bát Tràng Cô Bình' });
+  const gom = articles.find((a) => within(a).queryByText('Chờ người mua thanh toán') !== null);
+  expect(gom).toBeDefined();
+  expect(within(gom!).queryByRole('button', { name: 'Xác nhận đơn' })).not.toBeInTheDocument();
 });

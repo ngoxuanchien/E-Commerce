@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CheckoutRequest } from '@/api/types';
-import { MockDb, SHIPPING_FEE_FLAT } from './db';
+import { MockDb, SHIPPING_FEE_FLAT, PAYMENT_TTL_MS, COMMISSION_RATE_BPS, PAYOUT_SETTLE_DELAY_MS } from './db';
 import { SEED } from './seed';
 
 let db: MockDb;
@@ -20,6 +20,12 @@ function caught(fn: () => unknown): unknown {
 const address = { full_name: 'An Nguyễn', phone: '0901234567', line1: '12 Lý Tự Trọng', ward: 'Bến Nghé', district: 'Quận 1', province: 'TP. Hồ Chí Minh' };
 const body = (sku_ids?: string[]): CheckoutRequest => ({ ...(sku_ids ? { sku_ids } : {}), shipping_address: address, payment_method: 'COD' });
 const skuStock = (productId: string, skuId: string) => db.product(productId).skus.find((s) => s.id === skuId)!.stock;
+
+function onlineCheckout(method: 'VNPAY' | 'STRIPE' = 'VNPAY') {
+  db.setCartItem(SEED.users.an, SEED.skus.bowl11, 2); // 90,000
+  db.setCartItem(SEED.users.an, SEED.skus.teeM, 1); // 149,000
+  return db.checkout(SEED.users.an, `online-key-${Math.random()}`, { shipping_address: address, payment_method: method });
+}
 
 describe('identity', () => {
   test('login issues a token whose roles are a snapshot; refresh re-reads roles', () => {
@@ -171,6 +177,88 @@ describe('cart and checkout', () => {
     expect(cart.shops[0].items[0]).toMatchObject({ available: false });
     expect(cart.subtotal).toBe(0);
   });
+
+  test('online checkout creates AWAITING_PAYMENT orders with deadline and commission', () => {
+    db.setCartItem(SEED.users.an, SEED.skus.bowl11, 2);
+    db.setCartItem(SEED.users.an, SEED.skus.teeM, 1);
+    const beforeTime = Date.now();
+    const res = db.checkout(SEED.users.an, 'key-online', { shipping_address: address, payment_method: 'VNPAY' });
+    const afterTime = Date.now();
+
+    expect(res.orders).toHaveLength(2);
+    expect(new Set(res.orders.map((o) => o.checkout_id)).size).toBe(1);
+    for (const order of res.orders) {
+      expect(order.status).toBe('AWAITING_PAYMENT');
+      expect(order.payment_status).toBe('UNPAID');
+      expect(order.commission_rate_bps).toBe(COMMISSION_RATE_BPS);
+    }
+
+    const bowlOrder = res.orders.find((o) => o.shop.id === SEED.shops.gom)!;
+    const teeOrder = res.orders.find((o) => o.shop.id === SEED.shops.aoThun)!;
+
+    expect(bowlOrder.commission_amount).toBe(4_500);
+    expect(teeOrder.commission_amount).toBe(7_450);
+
+    const deadline = new Date(bowlOrder.payment_deadline!).getTime();
+    expect(deadline).toBeGreaterThanOrEqual(beforeTime + PAYMENT_TTL_MS - 5000);
+    expect(deadline).toBeLessThanOrEqual(afterTime + PAYMENT_TTL_MS + 5000);
+
+    expect(bowlOrder.history[bowlOrder.history.length - 1]).toMatchObject({ from: 'PENDING', to: 'AWAITING_PAYMENT' });
+  });
+
+  test('COD checkout still creates PENDING_CONFIRMATION with payment_status NONE', () => {
+    db.setCartItem(SEED.users.an, SEED.skus.bowl11, 1);
+    const res = db.checkout(SEED.users.an, 'key-cod', { shipping_address: address, payment_method: 'COD' });
+
+    expect(res.orders).toHaveLength(1);
+    const order = res.orders[0];
+    expect(order.status).toBe('PENDING_CONFIRMATION');
+    expect(order.payment_status).toBe('NONE');
+    expect(order.payment_deadline).toBeNull();
+    expect(order.commission_rate_bps).toBe(0);
+    expect(order.commission_amount).toBe(0);
+  });
+
+  test('rejects an unknown payment method', () => {
+    db.setCartItem(SEED.users.an, SEED.skus.bowl11, 1);
+    const err = caught(() => db.checkout(SEED.users.an, 'key-bad', { shipping_address: address, payment_method: 'PAYPAL' as never }));
+    expect(err).toMatchObject({ code: 'VALIDATION_ERROR', details: { fields: { payment_method: expect.any(String) } } });
+  });
+
+  test('buyer cancel of an AWAITING order cancels its siblings and releases stock', () => {
+    db.setCartItem(SEED.users.an, SEED.skus.bowl11, 2);
+    db.setCartItem(SEED.users.an, SEED.skus.teeM, 1);
+    const beforeBowlStock = skuStock(SEED.products.bowl, SEED.skus.bowl11);
+    const beforeTeeStock = skuStock(SEED.products.tee, SEED.skus.teeM);
+
+    const res = db.checkout(SEED.users.an, 'key-siblings', { shipping_address: address, payment_method: 'VNPAY' });
+    const firstOrderId = res.orders[0].id;
+
+    const cancelled = db.buyerAction(SEED.users.an, firstOrderId, 'cancel', 'đổi ý');
+    expect(cancelled.status).toBe('CANCELLED');
+    expect(cancelled.cancel_reason).toBe('đổi ý');
+
+    for (const order of db.buyerOrders(SEED.users.an).items.filter((o) => o.checkout_id === res.checkout_id)) {
+      expect(order.status).toBe('CANCELLED');
+      expect(order.cancel_reason).toBe('đổi ý');
+    }
+
+    expect(skuStock(SEED.products.bowl, SEED.skus.bowl11)).toBe(beforeBowlStock);
+    expect(skuStock(SEED.products.tee, SEED.skus.teeM)).toBe(beforeTeeStock);
+  });
+
+  test('ignores storage saved under v1', () => {
+    const storage: Storage = {
+      getItem: (key: string) => (key === 'marketplace-mock-db:v1' ? '{"users":[]}' : null),
+      setItem: () => {},
+      removeItem: () => {},
+      clear: () => {},
+      key: () => null,
+      length: 0,
+    };
+    const db2 = new MockDb(storage);
+    expect(db2.state.payments).toEqual([]);
+  });
 });
 
 describe('order lifecycle', () => {
@@ -203,8 +291,398 @@ describe('order lifecycle', () => {
   test('buyer and seller lists are scoped, newest first and filterable by status', () => {
     expect(db.buyerOrders(SEED.users.an).items.map((o) => o.id)).toEqual([SEED.orders.pending, SEED.orders.delivered]);
     expect(db.buyerOrders(SEED.users.an, 'DELIVERED').items).toHaveLength(1);
-    expect(db.sellerOrders(SEED.users.binh).items.map((o) => o.id)).toEqual([SEED.orders.delivered]);
+    expect(db.sellerOrders(SEED.users.binh).items.map((o) => o.id)).toEqual([SEED.orders.paidCompleted, SEED.orders.delivered]);
     expect(db.sellerOrders(SEED.users.an).items).toEqual([]);
+  });
+});
+
+describe('payments', () => {
+  test('createPayment with a two-shop cart produces a PENDING payment', () => {
+    const checkout = onlineCheckout();
+    const bowlOrder = checkout.orders.find((o) => o.shop.id === SEED.shops.gom)!;
+
+    const payment = db.createPayment(SEED.users.an, 'pay-1', { checkout_id: checkout.checkout_id });
+
+    expect(payment).toMatchObject({
+      status: 'PENDING',
+      method: 'VNPAY',
+      provider: 'fake',
+      amount: 299_000, // (90k + 30k) + (149k + 30k)
+      expires_at: bowlOrder.payment_deadline,
+      failure_reason: null,
+    });
+    expect(payment.redirect_url).toMatch(/\/__mock\/pay\/[a-f0-9-]+$/);
+    expect(payment).not.toHaveProperty('buyer_id');
+  });
+
+  test('same key and body return the same payment id (idempotent)', () => {
+    const checkout = onlineCheckout();
+    const p1 = db.createPayment(SEED.users.an, 'pay-2', { checkout_id: checkout.checkout_id });
+    const p2 = db.createPayment(SEED.users.an, 'pay-2', { checkout_id: checkout.checkout_id });
+    expect(p2.id).toBe(p1.id);
+  });
+
+  test('same key with different checkout_id → 422 IDEMPOTENCY_KEY_REUSED', () => {
+    const checkout1 = onlineCheckout();
+    const checkout2 = onlineCheckout();
+    db.createPayment(SEED.users.an, 'pay-3', { checkout_id: checkout1.checkout_id });
+    const err = caught(() => db.createPayment(SEED.users.an, 'pay-3', { checkout_id: checkout2.checkout_id }));
+    expect(err).toMatchObject({ status: 422, code: 'IDEMPOTENCY_KEY_REUSED' });
+  });
+
+  test('missing or long idempotency key → VALIDATION_ERROR', () => {
+    const checkout = onlineCheckout();
+    expect(caught(() => db.createPayment(SEED.users.an, '', { checkout_id: checkout.checkout_id }))).toMatchObject({ code: 'VALIDATION_ERROR', details: { fields: { 'Idempotency-Key': expect.any(String) } } });
+    expect(caught(() => db.createPayment(SEED.users.an, 'x'.repeat(101), { checkout_id: checkout.checkout_id }))).toMatchObject({ code: 'VALIDATION_ERROR' });
+  });
+
+  test('unknown checkout_id → 404', () => {
+    const err = caught(() => db.createPayment(SEED.users.an, 'pay-4', { checkout_id: 'nope' }));
+    expect(err).toMatchObject({ status: 404 });
+  });
+
+  test('COD checkout → 409 INVALID_STATE_TRANSITION reason=COD_CHECKOUT', () => {
+    db.setCartItem(SEED.users.an, SEED.skus.bowl11, 1);
+    const res = db.checkout(SEED.users.an, 'cod-key', { shipping_address: address, payment_method: 'COD' });
+    const err = caught(() => db.createPayment(SEED.users.an, 'pay-cod', { checkout_id: res.checkout_id }));
+    expect(err).toMatchObject({ status: 409, code: 'INVALID_STATE_TRANSITION', details: { reason: 'COD_CHECKOUT' } });
+  });
+
+  test('already succeeded payment → 409 INVALID_STATE_TRANSITION reason=ALREADY_PAID', () => {
+    const checkout = onlineCheckout();
+    const p1 = db.createPayment(SEED.users.an, 'pay-5a', { checkout_id: checkout.checkout_id });
+    db.submitMockPayment(p1.id, 'succeed');
+    const err = caught(() => db.createPayment(SEED.users.an, 'pay-5b', { checkout_id: checkout.checkout_id }));
+    expect(err).toMatchObject({ status: 409, code: 'INVALID_STATE_TRANSITION', details: { reason: 'ALREADY_PAID' } });
+  });
+
+  test('no AWAITING_PAYMENT order → 409 INVALID_STATE_TRANSITION reason=NOT_AWAITING_PAYMENT', () => {
+    const checkout = onlineCheckout();
+    const firstOrderId = checkout.orders[0].id;
+    // Cancel the orders so they're no longer AWAITING_PAYMENT
+    db.buyerAction(SEED.users.an, firstOrderId, 'cancel', 'Đổi ý');
+    const err = caught(() => db.createPayment(SEED.users.an, 'pay-6', { checkout_id: checkout.checkout_id }));
+    expect(err).toMatchObject({ status: 409, code: 'INVALID_STATE_TRANSITION', details: { reason: 'NOT_AWAITING_PAYMENT' } });
+  });
+
+  test('past payment deadline → 409 INVALID_STATE_TRANSITION reason=DEADLINE_PASSED', () => {
+    const checkout = onlineCheckout();
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 16 * 60_000);
+    const err = caught(() => db.createPayment(SEED.users.an, 'pay-7', { checkout_id: checkout.checkout_id }));
+    expect(err).toMatchObject({ status: 409, code: 'INVALID_STATE_TRANSITION', details: { reason: 'DEADLINE_PASSED' } });
+    vi.useRealTimers();
+  });
+
+  test('STRIPE below minimum amount → 409 INVALID_STATE_TRANSITION reason=BELOW_PROVIDER_MINIMUM', () => {
+    const checkout = onlineCheckout('STRIPE');
+    // Set order totals to be < 10_000 each so sum is < 10_000
+    for (const order of db.state.orders.filter((o) => o.checkout_id === checkout.checkout_id)) {
+      order.total = 4_000;
+    }
+    const err = caught(() => db.createPayment(SEED.users.an, 'pay-stripe-min', { checkout_id: checkout.checkout_id }));
+    expect(err).toMatchObject({ status: 409, code: 'INVALID_STATE_TRANSITION', details: { reason: 'BELOW_PROVIDER_MINIMUM' } });
+  });
+
+  test('expired PENDING payment is marked EXPIRED when read', () => {
+    const checkout = onlineCheckout();
+    const p1 = db.createPayment(SEED.users.an, 'pay-8a', { checkout_id: checkout.checkout_id });
+    db.createPayment(SEED.users.an, 'pay-8b', { checkout_id: checkout.checkout_id }); // expiring the first one
+
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 16 * 60_000);
+    const expired = db.payment(SEED.users.an, p1.id);
+    expect(expired.status).toBe('EXPIRED');
+    expect(expired.redirect_url).toBeNull();
+    vi.useRealTimers();
+  });
+
+  test('succeed payment transitions orders to PENDING_CONFIRMATION with payment_status PAID', () => {
+    const checkout = onlineCheckout();
+    const payment = db.createPayment(SEED.users.an, 'pay-9', { checkout_id: checkout.checkout_id });
+    db.submitMockPayment(payment.id, 'succeed');
+
+    const updated = db.payment(SEED.users.an, payment.id);
+    expect(updated.status).toBe('SUCCEEDED');
+    expect(updated.redirect_url).toBeNull();
+
+    for (const order of db.buyerOrders(SEED.users.an).items.filter((o) => o.checkout_id === checkout.checkout_id)) {
+      expect(order.status).toBe('PENDING_CONFIRMATION');
+      expect(order.payment_status).toBe('PAID');
+      expect(order.history[order.history.length - 1]).toMatchObject({ from: 'AWAITING_PAYMENT', to: 'PENDING_CONFIRMATION', actor_role: 'system' });
+    }
+  });
+
+  test('failed payment transitions to FAILED; orders stay AWAITING_PAYMENT', () => {
+    const checkout = onlineCheckout();
+    const payment = db.createPayment(SEED.users.an, 'pay-10', { checkout_id: checkout.checkout_id });
+    db.submitMockPayment(payment.id, 'fail');
+
+    const updated = db.payment(SEED.users.an, payment.id);
+    expect(updated.status).toBe('FAILED');
+    expect(updated.failure_reason).toBe('mock_declined');
+    expect(updated.redirect_url).toBeNull();
+
+    for (const order of db.buyerOrders(SEED.users.an).items.filter((o) => o.checkout_id === checkout.checkout_id)) {
+      expect(order.status).toBe('AWAITING_PAYMENT');
+    }
+  });
+
+  test('can retry after failure', () => {
+    const checkout = onlineCheckout();
+    const p1 = db.createPayment(SEED.users.an, 'pay-11a', { checkout_id: checkout.checkout_id });
+    db.submitMockPayment(p1.id, 'fail');
+    const p2 = db.createPayment(SEED.users.an, 'pay-11b', { checkout_id: checkout.checkout_id });
+    expect(p2.id).not.toBe(p1.id);
+  });
+
+  test('submitMockPayment with DUPLICATE when another payment already succeeded', () => {
+    const checkout = onlineCheckout();
+    const p1 = db.createPayment(SEED.users.an, 'pay-12a', { checkout_id: checkout.checkout_id });
+    db.submitMockPayment(p1.id, 'succeed');
+
+    const p2: typeof db.state.payments[0] = {
+      id: 'duplicate-id',
+      checkout_id: checkout.checkout_id,
+      method: 'VNPAY',
+      provider: 'fake',
+      status: 'PENDING',
+      amount: 299_000,
+      redirect_url: null,
+      expires_at: new Date(Date.now() + PAYMENT_TTL_MS).toISOString(),
+      failure_reason: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      buyer_id: SEED.users.an,
+    };
+    db.state.payments.push(p2);
+
+    db.submitMockPayment(p2.id, 'succeed');
+    const result = db.payment(SEED.users.an, p2.id);
+    expect(result.status).toBe('DUPLICATE');
+  });
+
+  test('late capture: succeed after orders cancelled → payment SUCCEEDED, orders refunded', () => {
+    const checkout = onlineCheckout();
+    const payment = db.createPayment(SEED.users.an, 'pay-late', { checkout_id: checkout.checkout_id });
+    const firstOrderId = checkout.orders[0].id;
+    // Cancel the orders before submitting payment
+    db.buyerAction(SEED.users.an, firstOrderId, 'cancel', 'Đổi ý');
+
+    db.submitMockPayment(payment.id, 'succeed');
+
+    const updatedPayment = db.payment(SEED.users.an, payment.id);
+    expect(updatedPayment.status).toBe('SUCCEEDED');
+
+    for (const order of db.buyerOrders(SEED.users.an).items.filter((o) => o.checkout_id === checkout.checkout_id)) {
+      expect(order.payment_status).toBe('REFUNDED');
+    }
+  });
+
+  test('payment() of another user → 404', () => {
+    const checkout = onlineCheckout();
+    const payment = db.createPayment(SEED.users.an, 'pay-13', { checkout_id: checkout.checkout_id });
+    const err = caught(() => db.payment(SEED.users.binh, payment.id));
+    expect(err).toMatchObject({ status: 404 });
+  });
+
+  test('submitMockPayment of unknown id → 404', () => {
+    const err = caught(() => db.submitMockPayment('nope', 'succeed'));
+    expect(err).toMatchObject({ status: 404 });
+  });
+
+  test('submitMockPayment is a no-op if payment is not PENDING', () => {
+    const checkout = onlineCheckout();
+    const payment = db.createPayment(SEED.users.an, 'pay-14', { checkout_id: checkout.checkout_id });
+    db.submitMockPayment(payment.id, 'succeed');
+    expect(() => db.submitMockPayment(payment.id, 'succeed')).not.toThrow();
+  });
+});
+
+describe('ledger (wallet, entries, payouts)', () => {
+  test('seeded wallet: binh has 457,500 available from the paidCompleted order', () => {
+    const binh = SEED.users.binh;
+    const wallet = db.wallet(binh);
+    expect(wallet).toMatchObject({
+      available: 457_500,
+      pending_payout: 0,
+      in_escrow: 0,
+      currency: 'VND',
+    });
+  });
+
+  test('seeded wallet: chi (buyer only) has zero balance', () => {
+    const chi = SEED.users.chi;
+    const wallet = db.wallet(chi);
+    expect(wallet).toMatchObject({
+      available: 0,
+      pending_payout: 0,
+      in_escrow: 0,
+      currency: 'VND',
+    });
+  });
+
+  test('online checkout by an → pay (succeed) → binh in_escrow increases; deliver → available increases and in_escrow clears', () => {
+    db.setCartItem(SEED.users.an, SEED.skus.bowl11, 1); // 45,000
+    const checkout = db.checkout(SEED.users.an, 'key-online-ledger', { shipping_address: address, payment_method: 'VNPAY' });
+    const bowlOrder = checkout.orders[0];
+
+    // Before payment: binh's in_escrow is 0 (paidCompleted is COMPLETED, not in escrow)
+    let wallet = db.wallet(SEED.users.binh);
+    expect(wallet.in_escrow).toBe(0);
+
+    // Pay
+    const payment = db.createPayment(SEED.users.an, 'pay-ledger-1', { checkout_id: checkout.checkout_id });
+    db.submitMockPayment(payment.id, 'succeed');
+
+    // After payment: in_escrow includes new order (45k + 30k = 75k)
+    wallet = db.wallet(SEED.users.binh);
+    expect(wallet.in_escrow).toBe(75_000);
+    expect(wallet.available).toBe(457_500);
+
+    // Confirm, ship, deliver
+    db.sellerAction(SEED.users.binh, bowlOrder.id, 'confirm');
+    db.sellerAction(SEED.users.binh, bowlOrder.id, 'ship');
+    db.sellerAction(SEED.users.binh, bowlOrder.id, 'deliver');
+
+    // Complete (buyer)
+    db.buyerAction(SEED.users.an, bowlOrder.id, 'complete');
+
+    // After complete: new RELEASE entry, in_escrow clears for this order, available increases
+    // Bowl: subtotal 45k, shipping 30k, total 75k. Commission on subtotal: 500 bps of 45k = 2,250, release = 75k - 2,250 = 72,750
+    wallet = db.wallet(SEED.users.binh);
+    expect(wallet.available).toBe(457_500 + 72_750);
+    expect(wallet.in_escrow).toBe(0); // no more orders in escrow
+
+    // Verify newest entry is RELEASE for this order
+    const entries = db.walletEntries(SEED.users.binh);
+    expect(entries.items[0]).toMatchObject({
+      kind: 'RELEASE',
+      amount: 72_750,
+      order_id: bowlOrder.id,
+    });
+  });
+
+  test('paid then cancelled by seller → payment_status becomes REFUNDED, in_escrow clears, no entry added', () => {
+    db.setCartItem(SEED.users.an, SEED.skus.vase, 1); // 320,000
+    const checkout = db.checkout(SEED.users.an, 'key-cancel-ledger', { shipping_address: address, payment_method: 'VNPAY' });
+    const vaseOrder = checkout.orders[0];
+
+    const payment = db.createPayment(SEED.users.an, 'pay-cancel', { checkout_id: checkout.checkout_id });
+    db.submitMockPayment(payment.id, 'succeed');
+
+    let wallet = db.wallet(SEED.users.binh);
+    const beforeCancel = wallet.in_escrow;
+    expect(beforeCancel).toBeGreaterThan(0); // includes vase order (320k + 30k = 350k)
+
+    db.sellerAction(SEED.users.binh, vaseOrder.id, 'cancel', 'sold');
+
+    const cancelled = db.order(SEED.users.binh, vaseOrder.id);
+    expect(cancelled.payment_status).toBe('REFUNDED');
+
+    wallet = db.wallet(SEED.users.binh);
+    expect(wallet.in_escrow).toBe(0); // vase order was cancelled, no other escrow orders
+    expect(wallet.available).toBe(457_500); // unchanged
+
+    // No new entry added
+    const entries = db.walletEntries(SEED.users.binh);
+    expect(entries.items[0]).not.toMatchObject({ kind: 'RELEASE', order_id: vaseOrder.id });
+  });
+
+  test('createPayout idempotency: same key returns same payout id', () => {
+    const payout1 = db.createPayout(SEED.users.binh, 'k1', { amount: 100_000 });
+    expect(payout1.status).toBe('REQUESTED');
+    expect(payout1.amount).toBe(100_000);
+
+    const payout2 = db.createPayout(SEED.users.binh, 'k1', { amount: 100_000 });
+    expect(payout2.id).toBe(payout1.id);
+  });
+
+  test('createPayout replays a stored INSUFFICIENT_FUNDS for the same key and body', () => {
+    const tooMuch = { amount: 10_000_000 };
+    const first = caught(() => db.createPayout(SEED.users.binh, 'k-rej', tooMuch));
+    expect(first).toMatchObject({ status: 409, code: 'INSUFFICIENT_FUNDS' });
+    // Even if funds were available now, the stored rejection is replayed.
+    db.state.walletEntries.push({ id: 'e', transaction_id: 't', kind: 'RELEASE', amount: 20_000_000, order_id: null, payout_id: null, seller_user_id: SEED.users.binh, created_at: new Date().toISOString() } as never);
+    expect(caught(() => db.createPayout(SEED.users.binh, 'k-rej', tooMuch))).toMatchObject({ status: 409, code: 'INSUFFICIENT_FUNDS' });
+    expect(caught(() => db.createPayout(SEED.users.binh, 'k-rej', { amount: 60_000 }))).toMatchObject({ status: 422, code: 'IDEMPOTENCY_KEY_REUSED' });
+  });
+
+  test('createPayout validation: amount must be integer >= PAYOUT_MIN_AMOUNT', () => {
+    const err = caught(() => db.createPayout(SEED.users.binh, 'k-bad', { amount: 49_999 }));
+    expect(err).toMatchObject({ code: 'VALIDATION_ERROR', details: { fields: { amount: expect.any(String) } } });
+  });
+
+  test('createPayout insufficient funds: amount > available → 409 INSUFFICIENT_FUNDS with available in details', () => {
+    const err = caught(() => db.createPayout(SEED.users.binh, 'k-over', { amount: 1_000_000 }));
+    expect(err).toMatchObject({ status: 409, code: 'INSUFFICIENT_FUNDS', details: { available: 457_500 } });
+  });
+
+  test('createPayout success: creates REQUESTED payout and PAYOUT_REQUEST entry', () => {
+    const payout = db.createPayout(SEED.users.binh, 'k-new', { amount: 100_000 });
+    expect(payout.status).toBe('REQUESTED');
+    expect(payout.failure_reason).toBeNull();
+    expect(payout.requested_at).toBeDefined();
+    expect(payout.settled_at).toBeNull();
+
+    const wallet = db.wallet(SEED.users.binh);
+    expect(wallet.available).toBe(457_500 - 100_000);
+    expect(wallet.pending_payout).toBe(100_000);
+
+    const entries = db.walletEntries(SEED.users.binh);
+    expect(entries.items[0]).toMatchObject({
+      kind: 'PAYOUT_REQUEST',
+      amount: -100_000,
+      payout_id: payout.id,
+    });
+  });
+
+  test('payouts() filters by status REQUESTED|SETTLED|FAILED', () => {
+    const p1 = db.createPayout(SEED.users.binh, 'k-filter1', { amount: 50_000 });
+    const p2 = db.createPayout(SEED.users.binh, 'k-filter2', { amount: 60_000 });
+
+    const requested = db.payouts(SEED.users.binh, 'REQUESTED');
+    expect(requested.items).toHaveLength(2);
+    expect(requested.items.map((p) => p.id).sort()).toEqual([p1.id, p2.id].sort());
+
+    // Settled: should be 0 initially, then 2 after delay
+    let settled = db.payouts(SEED.users.binh, 'SETTLED');
+    expect(settled.items).toHaveLength(0);
+
+    // Advance time, then settle
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + PAYOUT_SETTLE_DELAY_MS + 100);
+    settled = db.payouts(SEED.users.binh, 'SETTLED');
+    expect(settled.items).toHaveLength(2);
+    vi.useRealTimers();
+  });
+
+  test('payouts and wallet auto-settle old REQUESTED payouts', () => {
+    const payout = db.createPayout(SEED.users.binh, 'k-settle', { amount: 100_000 });
+    const requestedTime = new Date(payout.requested_at).getTime();
+
+    // Before settling
+    let p = db.payouts(SEED.users.binh, 'REQUESTED');
+    expect(p.items).toHaveLength(1);
+    expect(p.items[0].status).toBe('REQUESTED');
+
+    // Advance time past PAYOUT_SETTLE_DELAY_MS
+    vi.useFakeTimers();
+    vi.setSystemTime(requestedTime + PAYOUT_SETTLE_DELAY_MS + 100);
+
+    // Call payouts() triggers settle
+    p = db.payouts(SEED.users.binh, 'REQUESTED');
+    expect(p.items).toHaveLength(0);
+
+    p = db.payouts(SEED.users.binh, 'SETTLED');
+    expect(p.items).toHaveLength(1);
+    expect(p.items[0].settled_at).toBeDefined();
+
+    // Wallet shows pending_payout = 0
+    const wallet = db.wallet(SEED.users.binh);
+    expect(wallet.pending_payout).toBe(0);
+
+    vi.useRealTimers();
   });
 });
 

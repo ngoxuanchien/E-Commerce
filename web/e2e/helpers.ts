@@ -41,7 +41,7 @@ export async function addToCart(page: Page, productName: string, variant?: strin
   await expect(page.getByText('Đã thêm vào giỏ hàng').first()).toBeVisible();
 }
 
-export async function checkout(page: Page) {
+export async function checkout(page: Page, method: 'COD' | 'VNPAY' | 'STRIPE' = 'COD') {
   await page.getByRole('link', { name: /Giỏ hàng/ }).click();
   await page.getByRole('button', { name: 'Mua hàng' }).click();
   await page.getByLabel('Số điện thoại').fill('0901234567');
@@ -49,7 +49,8 @@ export async function checkout(page: Page) {
   await page.getByLabel('Phường/Xã').fill('Bến Nghé');
   await page.getByLabel('Quận/Huyện').fill('Quận 1');
   await page.getByLabel('Tỉnh/Thành phố').fill('TP. Hồ Chí Minh');
-  await page.getByRole('button', { name: 'Đặt hàng' }).click();
+  if (method !== 'COD') await page.getByTestId('payment-method-' + method).check();
+  await page.getByRole('button', { name: /^Đặt hàng/ }).click();
 }
 
 export async function expectNoHorizontalScroll(page: Page) {

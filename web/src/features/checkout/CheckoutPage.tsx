@@ -5,8 +5,11 @@ import { Link, useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { useCart } from '@/api/hooks/cart';
 import { useCheckout } from '@/api/hooks/orders';
-import { ApiError, applyFieldErrors, errorMessage, isRetryable, shortagesOf } from '@/api/errors';
-import type { Address } from '@/api/types';
+import { useStartPayment } from '@/api/hooks/payments';
+import { ApiError, applyFieldErrors, errorMessage, isRetryable, paymentErrorMessage, shortagesOf } from '@/api/errors';
+import type { Address, PaymentMethod } from '@/api/types';
+import { payKey } from '@/features/payment/pay-key';
+import { formatDateTime } from '@/lib/format';
 import { Awning } from '@/components/Awning';
 import { Price } from '@/components/Price';
 import { EmptyState, ErrorState, PageSpinner } from '@/components/states';
@@ -33,6 +36,7 @@ export function CheckoutPage() {
   const { user } = useAuth();
   const cart = useCart();
   const navigate = useNavigate();
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('COD');
   // One key per checkout page visit; reused for retries/double-clicks; replaced after success.
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const submitting = useRef(false);
@@ -40,10 +44,28 @@ export function CheckoutPage() {
     resolver: zodResolver(addressSchema),
     defaultValues: { full_name: user?.full_name ?? '', phone: '', line1: '', ward: '', district: '', province: '' },
   });
+  const startPayment = useStartPayment();
   const checkout = useCheckout({
-    onSuccess: (res) => {
+    onSuccess: (res, vars) => {
       setIdempotencyKey(crypto.randomUUID());
-      navigate(`/orders?placed=${res.orders.length}`, { replace: true });
+      const isOnline = vars.body.payment_method !== 'COD';
+      if (isOnline) {
+        startPayment.mutate(
+          { checkoutId: res.checkout_id, idempotencyKey: payKey(res.checkout_id) },
+          {
+            onError: (err) => {
+              if (isRetryable(err)) {
+                toast.error(`Đơn đã được tạo, vui lòng thanh toán trước ${formatDateTime(res.orders[0].payment_deadline!)}`);
+              } else {
+                toast.error(paymentErrorMessage(err));
+              }
+              navigate('/orders?status=AWAITING_PAYMENT', { replace: true });
+            },
+          },
+        );
+      } else {
+        navigate(`/orders?placed=${res.orders.length}`, { replace: true });
+      }
     },
     onError: (err) => {
       if (err instanceof ApiError && err.code === 'OUT_OF_STOCK') {
@@ -75,7 +97,7 @@ export function CheckoutPage() {
 
   const placeOrder = (address: Address) => {
     checkout.mutate(
-      { idempotencyKey, body: { sku_ids: groups.flatMap((g) => g.items.map((i) => i.sku_id)), shipping_address: address, payment_method: 'COD' } },
+      { idempotencyKey, body: { sku_ids: groups.flatMap((g) => g.items.map((i) => i.sku_id)), shipping_address: address, payment_method: paymentMethod } },
       { onSettled: () => { submitting.current = false; } },
     );
   };
@@ -129,11 +151,19 @@ export function CheckoutPage() {
         ))}
       </div>
       <aside aria-label="Thanh toán" className="space-y-4 rounded-lg border bg-card p-5 lg:sticky lg:top-4">
-        <fieldset>
+        <fieldset disabled={checkout.isPending || startPayment.isPending}>
           <legend className="font-semibold">Phương thức thanh toán</legend>
           <label className="mt-2 flex items-center gap-2 text-sm">
-            <input type="radio" name="payment_method" value="COD" checked readOnly className="accent-[var(--tarp)]" />
+            <input type="radio" name="payment_method" value="COD" checked={paymentMethod === 'COD'} onChange={() => setPaymentMethod('COD')} className="accent-[var(--tarp)]" data-testid="payment-method-COD" />
             Thanh toán khi nhận hàng (COD)
+          </label>
+          <label className="mt-2 flex items-center gap-2 text-sm">
+            <input type="radio" name="payment_method" value="VNPAY" checked={paymentMethod === 'VNPAY'} onChange={() => setPaymentMethod('VNPAY')} className="accent-[var(--tarp)]" data-testid="payment-method-VNPAY" />
+            VNPay
+          </label>
+          <label className="mt-2 flex items-center gap-2 text-sm">
+            <input type="radio" name="payment_method" value="STRIPE" checked={paymentMethod === 'STRIPE'} onChange={() => setPaymentMethod('STRIPE')} className="accent-[var(--tarp)]" data-testid="payment-method-STRIPE" />
+            Thẻ quốc tế (Stripe)
           </label>
         </fieldset>
         <p className="text-sm text-muted-foreground">Mỗi shop tạo một đơn hàng riêng ({groups.length} đơn).</p>
@@ -146,8 +176,14 @@ export function CheckoutPage() {
             <AlertDescription>{errors.root.message}</AlertDescription>
           </Alert>
         ) : null}
-        <Button type="submit" size="lg" className="w-full" disabled={checkout.isPending}>
-          {checkout.isPending ? 'Đang đặt hàng…' : 'Đặt hàng'}
+        <Button type="submit" size="lg" className="w-full" disabled={checkout.isPending || startPayment.isPending}>
+          {checkout.isPending
+            ? 'Đang đặt hàng…'
+            : startPayment.isPending
+              ? 'Đang chuyển đến trang thanh toán…'
+              : paymentMethod === 'COD'
+                ? 'Đặt hàng'
+                : 'Đặt hàng và thanh toán'}
         </Button>
       </aside>
     </form>

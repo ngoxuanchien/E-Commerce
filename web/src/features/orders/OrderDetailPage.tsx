@@ -9,10 +9,14 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/features/auth/auth-context';
 import { formatDateTime } from '@/lib/format';
+import { PayAgainButton } from '@/features/payment/PayAgainButton';
 import { CancelOrderDialog } from './CancelOrderDialog';
 import { OrderStatusBadge } from './OrderStatusBadge';
+import { PaymentStatusBadge } from './PaymentStatusBadge';
+import { PaymentCountdown } from './PaymentCountdown';
 import { OrderTimeline } from './OrderTimeline';
 import { buyerCanCancel, buyerCanComplete, shortId } from './order-status';
+import { isPayable, PAYMENT_METHOD_LABEL } from './payment-labels';
 
 const reportError = (err: unknown) => {
   if (!isRetryable(err)) toast.error(errorMessage(err));
@@ -96,8 +100,25 @@ export function OrderDetailPage() {
               <div className="flex justify-between"><dt>Phí vận chuyển</dt><dd><Price value={o.shipping_fee} /></dd></div>
               <div className="flex items-baseline justify-between border-t pt-2"><dt>Thành tiền</dt><dd><Price value={o.total} className="text-2xl" /></dd></div>
             </dl>
-            <p className="mt-2 text-muted-foreground">Thanh toán khi nhận hàng (COD)</p>
+            <p className="mt-3 text-muted-foreground">{PAYMENT_METHOD_LABEL[o.payment_method]}</p>
+            <div className="mt-2">
+              <PaymentStatusBadge status={o.payment_status} />
+            </div>
+            {o.status === 'AWAITING_PAYMENT' && o.payment_deadline ? (
+              <div className="mt-2">
+                <PaymentCountdown deadline={o.payment_deadline} />
+              </div>
+            ) : null}
+            {!isBuyer && o.payment_method !== 'COD' ? (
+              <dl className="space-y-1 border-t pt-2 mt-2">
+                <div className="flex justify-between"><dt>Phí sàn ({o.commission_rate_bps / 100}%)</dt><dd><Price value={o.commission_amount} /></dd></div>
+                <div className="flex justify-between"><dt>Bạn nhận được</dt><dd><Price value={o.total - o.commission_amount} /></dd></div>
+              </dl>
+            ) : null}
           </section>
+          {isBuyer && isPayable(o) ? (
+            <PayAgainButton order={o} className="w-full" />
+          ) : null}
           {isBuyer && buyerCanComplete(o.status) ? (
             <Button className="w-full" disabled={complete.isPending} onClick={() => complete.mutate(o.id, { onError: reportError })}>
               Đã nhận được hàng

@@ -1,5 +1,5 @@
 import type { Category, Shop, Sku } from '@/api/types';
-import type { DbState, MockOrder, MockProduct, MockUser } from './db';
+import type { DbState, MockOrder, MockProduct, MockUser, MockWalletEntry } from './db';
 
 const id = (n: number) => `0199a000-0000-7000-8000-${String(n).padStart(12, '0')}`;
 
@@ -13,7 +13,7 @@ export const SEED = {
     teeS: id(57), teeM: id(58), teeL: id(59), teeXL: id(60), busM: id(61), busL: id(62),
     jacketNavy: id(63), jacketBlack: id(64), poloM: id(65),
   },
-  orders: { delivered: id(81), pending: id(82) },
+  orders: { delivered: id(81), pending: id(82), paidCompleted: id(83) },
 } as const;
 
 const at = (hoursAfterBase: number) => new Date(Date.UTC(2026, 8, 20, 1) + hoursAfterBase * 3_600_000).toISOString();
@@ -80,6 +80,33 @@ export function buildSeed(): DbState {
       ],
       created_at: at(20), updated_at: at(26),
     },
+    {
+      id: SEED.orders.paidCompleted, checkout_id: id(93), status: 'COMPLETED', buyer_id: U.chi, seller_user_id: U.binh,
+      shop: { id: S.gom, name: 'Gốm Bát Tràng Cô Bình', slug: 'gom-bat-trang' },
+      items: [{ sku_id: K.teaSet, product_id: P.teaSet, product_name: 'Bộ ấm chén vẽ sen', variant_name: 'Bộ 1 ấm 6 chén', image_url: '/mock-images/am-chen.svg', unit_price: 450_000, quantity: 1, line_total: 450_000 }],
+      subtotal: 450_000, shipping_fee: 30_000, total: 480_000, shipping_address: address, payment_method: 'VNPAY', cancel_reason: null,
+      payment_status: 'PAID', payment_deadline: at(40), commission_rate_bps: 500, commission_amount: 22_500, delivered_at: at(44),
+      history: [
+        { from: null, to: 'PENDING', actor_role: 'system', note: null, created_at: at(39) },
+        { from: 'PENDING', to: 'AWAITING_PAYMENT', actor_role: 'system', note: null, created_at: at(39) },
+        { from: 'AWAITING_PAYMENT', to: 'PENDING_CONFIRMATION', actor_role: 'system', note: null, created_at: at(40) },
+        { from: 'PENDING_CONFIRMATION', to: 'CONFIRMED', actor_role: 'seller', note: null, created_at: at(41) },
+        { from: 'CONFIRMED', to: 'SHIPPING', actor_role: 'seller', note: null, created_at: at(42) },
+        { from: 'SHIPPING', to: 'DELIVERED', actor_role: 'seller', note: null, created_at: at(44) },
+        { from: 'DELIVERED', to: 'COMPLETED', actor_role: 'buyer', note: null, created_at: at(45) },
+      ],
+      created_at: at(39), updated_at: at(45),
+    },
   ];
-  return { users, shops, categories: categories(), products, carts: {}, orders, idempotency: {}, blobs: {}, tokens: {}, session: null };
+  const walletEntries: MockWalletEntry[] = [
+    {
+      id: id(101), transaction_id: id(201), kind: 'RELEASE', amount: 457_500, order_id: SEED.orders.paidCompleted, payout_id: null,
+      seller_user_id: U.binh, created_at: at(45),
+    },
+  ];
+  return {
+    users, shops, categories: categories(), products, carts: {}, orders, idempotency: {},
+    payments: [], walletEntries, payouts: [], keys: {},
+    blobs: {}, tokens: {}, session: null,
+  };
 }

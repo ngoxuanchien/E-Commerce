@@ -16,6 +16,8 @@ export function createQueryClient(options: { retry?: boolean } = {}): QueryClien
     }),
     mutationCache: new MutationCache({
       onError: (error, variables, _onMutateResult, mutation) => {
+        // Silent mutations handle their own errors; skip the global toast.
+        if (mutation.meta?.silent === true) return;
         if (!isRetryable(error)) return;
         toast.error(errorMessage(error), { action: { label: RETRY_LABEL, onClick: () => void mutation.execute(variables) } });
       },

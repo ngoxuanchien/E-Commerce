@@ -1,4 +1,4 @@
-import type { OrderStatus, ProductStatus } from './types';
+import type { OrderStatus, PayoutStatus, ProductStatus } from './types';
 
 export type ProductQuery = {
   q?: string;
@@ -20,4 +20,8 @@ export const qk = {
   order: (id: string) => ['order', id] as const,
   sellerOrders: (status?: OrderStatus) => ['seller-orders', status ?? 'all'] as const,
   sellerProducts: (status?: ProductStatus) => ['seller-products', status ?? 'all'] as const,
+  payment: (id: string) => ['payment', id] as const,
+  wallet: ['wallet'] as const,
+  walletEntries: ['wallet-entries'] as const,
+  payouts: (status?: PayoutStatus) => ['payouts', status ?? 'all'] as const,
 };

@@ -30,7 +30,7 @@ CI runs `npm ci && npm run lint && npm test`. Run the Playwright suites locally.
 
 `npm run dev:mock` starts an MSW service worker backed by an in-memory database
 (`src/mocks/db.ts`). The database follows the catalog and order service rules: one order per shop,
-a flat 30,000 ₫ shipping fee, stock reserved at checkout and returned on cancel, the order state
+a flat 30,000 ₫ shipping fee (`SHIPPING_FEE_FLAT` in `mocks/db.ts`; checkout shows the server's `CartShop.shipping_fee`), stock reserved at checkout and returned on cancel, the order state
 machine, idempotent checkout, and a seller role that appears only after refreshing the session.
 
 Seeded accounts (password `matkhau123`):
@@ -41,7 +41,16 @@ Seeded accounts (password `matkhau123`):
 | `binh@example.com` | seller of "Gốm Bát Tràng Cô Bình" |
 | `chi@example.com` | seller of "Áo Thun Sài Gòn" |
 
-The mock data is saved in `localStorage` under `marketplace-mock-db:v1`. Delete that key to reset it.
+The mock data is saved in `localStorage` under `marketplace-mock-db:v2`. Delete that key to reset it.
+
+Payments: online orders (VNPAY, STRIPE) start in `AWAITING_PAYMENT` with a 15-minute deadline. The
+mock keeps the payment state machine in its DB, persisted to `localStorage` with the rest of the state; `window.location.assign('/__mock/pay/<id>')` opens
+a fake gateway page ("Thành công" / "Thất bại") that settles the payment and returns to
+`/checkout/result?payment_id=<id>`.
+
+Ledger: wallet balances are derived from entries, never stored. When an online order completes, the seller
+is credited total − commission (5 %). Payouts settle 3 s after the request and always succeed.
+`binh@example.com` is seeded with an available balance of 457,500 ₫.
 
 ## API types
 
@@ -73,9 +82,17 @@ src/routes       route table and guards
 e2e              Playwright specs (MSW mode, plus a session check against a stub gateway)
 ```
 
-## Known contract gaps
+## Deviations and decisions (WS5')
 
-- No endpoint exposes the shipping fee before checkout, so the checkout preview uses the constant
-  `SHIPPING_FEE_FLAT` (`src/features/checkout/shipping.ts`). The orders it creates carry the
-  server's fee.
-- `Order.shop` has no `slug`, so order pages show the shop name without a link.
+1. A wallet entry's order link targets `/orders/{id}`, because `WalletEntry` has no shop slug.
+2. The first online submit reuses the idempotency key stored under `pay:{checkout_id}`; pay-again
+   always renews it.
+3. If payment creation fails after checkout, the user always lands on the AWAITING orders, with the
+   deadline toast for 503/network errors and the reason message otherwise.
+4. `meta.silent` mutations skip the global retry toast.
+5. Mock payouts never fail.
+6. The mock payment page (`/__mock/pay/:id`) is DEV-only.
+7. `data-testid`s for WS6': `payment-method-COD|VNPAY|STRIPE`, `payment-result` (`data-status`),
+   `pay-again`, `order-payment-status`, `payment-countdown`, `order-pay-button`, `wallet-available`,
+   `wallet-in-escrow`, `wallet-pending-payout`, `wallet-entry`, `payout-amount`, `payout-submit`,
+   `payout-row` (`data-status`).

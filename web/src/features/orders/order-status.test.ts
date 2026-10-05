@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { buyerCanCancel, buyerCanComplete, parseOrderStatus, sellerActionsFor } from './order-status';
+import { buyerCanCancel, buyerCanComplete, ORDER_STATUS_TABS, parseOrderStatus, sellerActionsFor } from './order-status';
 
 test.each([
   ['PENDING', []],
@@ -13,11 +13,16 @@ test.each([
   expect(sellerActionsFor(status)).toEqual(actions);
 });
 
-test('buyer may cancel only while pending confirmation and complete only when delivered', () => {
+test('buyer may cancel while awaiting payment and pending confirmation, and complete only when delivered', () => {
+  expect(buyerCanCancel('AWAITING_PAYMENT')).toBe(true);
   expect(buyerCanCancel('PENDING_CONFIRMATION')).toBe(true);
   expect(buyerCanCancel('CONFIRMED')).toBe(false);
   expect(buyerCanComplete('DELIVERED')).toBe(true);
   expect(buyerCanComplete('SHIPPING')).toBe(false);
+});
+
+test('ORDER_STATUS_TABS starts with AWAITING_PAYMENT', () => {
+  expect(ORDER_STATUS_TABS[1]).toEqual({ value: 'AWAITING_PAYMENT', label: 'Chờ thanh toán' });
 });
 
 test('parseOrderStatus rejects unknown values', () => {

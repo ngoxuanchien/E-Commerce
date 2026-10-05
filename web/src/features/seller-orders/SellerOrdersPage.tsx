@@ -26,8 +26,11 @@ export function SellerOrdersPage() {
   const act = useSellerOrderAction();
   const items = orders.data?.pages.flatMap((p) => p.items) ?? [];
 
-  const actionsFor = (order: Order) =>
-    sellerActionsFor(order.status).map((action) =>
+  const actionsFor = (order: Order) => {
+    if (order.status === 'AWAITING_PAYMENT') {
+      return <span className="text-sm text-muted-foreground">Chờ người mua thanh toán</span>;
+    }
+    return sellerActionsFor(order.status).map((action) =>
       action === 'cancel' ? (
         <CancelOrderDialog
           key={action}
@@ -57,6 +60,7 @@ export function SellerOrdersPage() {
         </Button>
       ),
     );
+  };
 
   return (
     <div className="space-y-4">

@@ -3,14 +3,18 @@ import type { paths as CatalogPaths, components as CatalogComponents } from './g
 import type { components as CommonComponents } from './gen/common';
 import type { paths as IdentityPaths, components as IdentityComponents } from './gen/identity';
 import type { paths as OrderPaths, components as OrderComponents } from './gen/order';
+import type { paths as PaymentPaths, components as PaymentComponents } from './gen/payment';
+import type { paths as LedgerPaths, components as LedgerComponents } from './gen/ledger';
 
 type CommonSchemas = CommonComponents['schemas'];
 type IdentitySchemas = IdentityComponents['schemas'];
 type CatalogSchemas = CatalogComponents['schemas'];
 type OrderSchemas = OrderComponents['schemas'];
+type PaymentSchemas = PaymentComponents['schemas'];
+type LedgerSchemas = LedgerComponents['schemas'];
 
-/** All gateway paths; the three specs never share a path. */
-export type Paths = IdentityPaths & CatalogPaths & OrderPaths;
+/** All gateway paths; the five specs never share a path. */
+export type Paths = IdentityPaths & CatalogPaths & OrderPaths & PaymentPaths & LedgerPaths;
 
 export type ErrorBody = CommonSchemas['Error'];
 export type ErrorCode = CommonSchemas['ErrorCode'];
@@ -53,3 +57,17 @@ export type OrderHistoryEntry = OrderSchemas['OrderHistoryEntry'];
 export type OrderPage = OrderSchemas['OrderPage'];
 export type CancelRequest = OrderSchemas['CancelRequest'];
 export type OrderActionRequest = OrderSchemas['OrderActionRequest'];
+export type PaymentMethod = Order['payment_method'];
+export type OrderPaymentStatus = Order['payment_status'];
+
+export type Payment = PaymentSchemas['Payment'];
+export type PaymentStatus = Payment['status'];
+export type CreatePaymentRequest = PaymentSchemas['CreatePaymentRequest'];
+
+export type Wallet = LedgerSchemas['Wallet'];
+export type WalletEntry = LedgerSchemas['WalletEntry'];
+export type WalletEntryPage = LedgerSchemas['WalletEntryPage'];
+export type Payout = LedgerSchemas['Payout'];
+export type PayoutStatus = Payout['status'];
+export type PayoutPage = LedgerSchemas['PayoutPage'];
+export type PayoutRequest = LedgerSchemas['PayoutRequest'];

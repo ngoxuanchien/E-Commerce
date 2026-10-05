@@ -9,6 +9,8 @@ import { SearchPage } from '@/features/catalog/SearchPage';
 import { ShopPage } from '@/features/shop/ShopPage';
 import { CartPage } from '@/features/cart/CartPage';
 import { CheckoutPage } from '@/features/checkout/CheckoutPage';
+import { PaymentResultPage } from '@/features/payment/PaymentResultPage';
+import { MockPayPage } from '@/features/payment/MockPayPage';
 import { OrderDetailPage } from '@/features/orders/OrderDetailPage';
 import { OrdersPage } from '@/features/orders/OrdersPage';
 import { SellerLayout } from '@/components/layout/SellerLayout';
@@ -19,6 +21,8 @@ import { SellerProductsPage } from '@/features/seller-products/SellerProductsPag
 import { SellerOrdersPage } from '@/features/seller-orders/SellerOrdersPage';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { RegisterPage } from '@/features/auth/RegisterPage';
+import { WalletPage } from '@/features/wallet/WalletPage';
+import { PayoutsPage } from '@/features/wallet/PayoutsPage';
 
 export function AppRoutes() {
   return (
@@ -31,9 +35,11 @@ export function AppRoutes() {
           <Route path="search" element={<SearchPage />} />
           <Route path="products/:id" element={<ProductPage />} />
           <Route path="shops/:slug" element={<ShopPage />} />
+          {import.meta.env.DEV ? <Route path="__mock/pay/:id" element={<MockPayPage />} /> : null}
           <Route element={<RequireAuth />}>
             <Route path="cart" element={<CartPage />} />
             <Route path="checkout" element={<CheckoutPage />} />
+            <Route path="checkout/result" element={<PaymentResultPage />} />
             <Route path="orders" element={<OrdersPage />} />
             <Route path="orders/:id" element={<OrderDetailPage />} />
             <Route path="seller/open-shop" element={<OpenShopPage />} />
@@ -45,6 +51,8 @@ export function AppRoutes() {
                 <Route path="products/new" element={<ProductFormPage />} />
                 <Route path="products/:id" element={<ProductFormPage />} />
                 <Route path="orders" element={<SellerOrdersPage />} />
+                <Route path="wallet" element={<WalletPage />} />
+                <Route path="payouts" element={<PayoutsPage />} />
               </Route>
             </Route>
           </Route>
