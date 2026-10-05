@@ -15,6 +15,11 @@ const (
 	User
 	// Seller routes need a valid access token whose roles include "seller".
 	Seller
+	// Callback is a public provider-callback route; no token is verified and no
+	// identity is injected, so an invalid Authorization header is ignored rather
+	// than rejected. It is appended last so that level >= User checks do not
+	// apply to it (auth handles it with an early return).
+	Callback
 )
 
 // String returns the lower-case name of l, or "unknown" for an unrecognized value.
@@ -26,6 +31,8 @@ func (l Level) String() string {
 		return "user"
 	case Seller:
 		return "seller"
+	case Callback:
+		return "callback"
 	default:
 		return "unknown"
 	}
@@ -37,6 +44,8 @@ const (
 	Identity = "identity"
 	Catalog  = "catalog"
 	Order    = "order"
+	Payment  = "payment"
+	Ledger   = "ledger"
 )
 
 // Route is one row of the gateway's route table. Pattern is a slash-
@@ -86,6 +95,17 @@ func Default() Table {
 		{Pattern: "/api/checkout", Subtree: true, Upstream: Order, Auth: User},
 		{Pattern: "/api/orders", Subtree: true, Upstream: Order, Auth: User},
 		{Pattern: "/api/seller/orders", Subtree: true, Upstream: Order, Auth: Seller},
+
+		// payment.yaml
+		// Callback routes must precede the User routes so they match first.
+		{Pattern: "/api/payments/vnpay", Subtree: true, Upstream: Payment, Auth: Callback},
+		{Pattern: "/api/payments/stripe", Subtree: true, Upstream: Payment, Auth: Callback},
+		{Pattern: "/api/payments/fake", Subtree: true, Upstream: Payment, Auth: Callback},
+		{Pattern: "/api/payments", Subtree: true, Upstream: Payment, Auth: User},
+
+		// ledger.yaml
+		{Pattern: "/api/seller/wallet", Subtree: true, Upstream: Ledger, Auth: Seller},
+		{Pattern: "/api/seller/payouts", Subtree: true, Upstream: Ledger, Auth: Seller},
 	}
 }
 

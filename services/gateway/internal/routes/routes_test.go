@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestDefaultTableCoversContract checks that every WS0 §4 operation resolves
+// TestDefaultTableCoversContract checks that every WS0 §4 + WS0' operation resolves
 // to the expected upstream and auth level through the default table.
 func TestDefaultTableCoversContract(t *testing.T) {
 	cases := []struct {
@@ -49,8 +49,24 @@ func TestDefaultTableCoversContract(t *testing.T) {
 		{"POST", "/api/seller/orders/o1/ship", Order, Seller},
 		{"POST", "/api/seller/orders/o1/deliver", Order, Seller},
 		{"POST", "/api/seller/orders/o1/cancel", Order, Seller},
+		// payment.yaml
+		{"POST", "/api/payments", Payment, User},
+		{"GET", "/api/payments/p1", Payment, User},
+		{"GET", "/api/payments/vnpay/ipn", Payment, Callback},
+		{"GET", "/api/payments/vnpay/return", Payment, Callback},
+		{"POST", "/api/payments/stripe/webhook", Payment, Callback},
+		{"GET", "/api/payments/stripe/return", Payment, Callback},
+		{"GET", "/api/payments/fake/checkout/p1", Payment, Callback},
+		{"POST", "/api/payments/fake/checkout/p1", Payment, Callback},
+		{"GET", "/api/payments/fake/return", Payment, Callback},
+		{"POST", "/api/payments/fake/webhook", Payment, Callback},
+		// ledger.yaml
+		{"GET", "/api/seller/wallet", Ledger, Seller},
+		{"GET", "/api/seller/wallet/entries", Ledger, Seller},
+		{"POST", "/api/seller/payouts", Ledger, Seller},
+		{"GET", "/api/seller/payouts", Ledger, Seller},
 	}
-	require.Len(t, cases, 30, "must cover all 30 WS0 §4 operations")
+	require.Len(t, cases, 44, "must cover all 44 WS0 §4 + WS0' operations")
 
 	table := Default()
 	for _, tc := range cases {
@@ -160,10 +176,38 @@ func TestParamSegmentNeedsAValue(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestPaymentAndSellerPrefixesDoNotOverlap checks that payment and seller
+// prefixes are correctly distinguished even when path segments overlap.
+func TestPaymentAndSellerPrefixesDoNotOverlap(t *testing.T) {
+	cases := []struct {
+		method   string
+		path     string
+		upstream string
+		level    Level
+	}{
+		{"GET", "/api/payments/0b6c7a8e-1f2d-4c3b-9a5e-6d7f8a9b0c1d", Payment, User},
+		{"GET", "/api/payments/vnpayx", Payment, User},
+		{"GET", "/api/seller/products", Catalog, Seller},
+		{"GET", "/api/seller/orders", Order, Seller},
+		{"GET", "/api/seller/wallet", Ledger, Seller},
+	}
+
+	table := Default()
+	for _, tc := range cases {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			idx, ok := table.Match(tc.method, tc.path)
+			require.True(t, ok, "expected a match")
+			assert.Equal(t, tc.upstream, table[idx].Upstream)
+			assert.Equal(t, tc.level, table[idx].Auth)
+		})
+	}
+}
+
 // TestLevelString checks the human-readable form of each Level.
 func TestLevelString(t *testing.T) {
 	assert.Equal(t, "public", Public.String())
 	assert.Equal(t, "user", User.String())
 	assert.Equal(t, "seller", Seller.String())
+	assert.Equal(t, "callback", Callback.String())
 	assert.Equal(t, "unknown", Level(99).String())
 }
