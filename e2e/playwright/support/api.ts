@@ -141,9 +141,9 @@ export class ApiUser {
   }
 
   async fakeSubmit(paymentId: string, outcome: 'succeed' | 'fail'): Promise<string> {
-    const res = await this.ctx.fetch(`/api/payments/fake/return`, {
+    const res = await this.ctx.fetch(`/api/payments/fake/checkout/${paymentId}`, {
       method: 'POST',
-      form: { payment_id: paymentId, outcome },
+      form: { outcome },
       maxRedirects: 0,
     });
     if (res.status() !== 302) throw new Error(`Expected 302, got ${res.status()}`);
@@ -157,12 +157,11 @@ export class ApiUser {
   }
 
   async sellerAction(orderId: string, action: 'confirm' | 'ship' | 'deliver'): Promise<void> {
-    const actionMap = { confirm: 'confirm-order', ship: 'ship-order', deliver: 'confirm-delivery' };
-    await this.call('POST', `/api/seller/orders/${orderId}/${actionMap[action]}`);
+    await this.call('POST', `/api/seller/orders/${orderId}/${action}`);
   }
 
   async complete(orderId: string): Promise<void> {
-    await this.call('POST', `/api/orders/${orderId}/receive`);
+    await this.call('POST', `/api/orders/${orderId}/complete`);
   }
 
   async wallet(): Promise<{ available: number; in_escrow: number; pending_payout: number }> {
