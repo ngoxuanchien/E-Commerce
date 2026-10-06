@@ -98,7 +98,7 @@ timers to keep tests quick. A later `make up-app` restores the defaults.
 |---|---|---|
 | 1 | Checkout with online payment (VNPay, Stripe, FAKE); escrow captures and auto-completes | `api/online_test.go::TestOnlineCheckoutEscrowAndAutoComplete`, `playwright/tests/payment.spec.ts` (online checkout, success and failure) |
 | 2 | Failed payment can be retried; payment timeout cancels and restocks | `api/payment_failure_test.go::TestFailedPaymentCanBeRetried`, `api/payment_failure_test.go::TestPaymentTimeoutCancelsAndRestocks` |
-| 3 | Seller cancel after payment refunds that order; duplicate payments are auto-refunded | `api/refund_test.go::TestSellerCancelAfterPaymentRefundsThatOrder`, `api/doublecharge_test.go::TestDoubleChargeIsRefunded` |
+| 3 | Seller cancel after payment refunds that order; duplicate payments are auto-refunded (DUPLICATE status asserted; refund not observable via API) | `api/refund_test.go::TestSellerCancelAfterPaymentRefundsThatOrder`, `api/doublecharge_test.go::TestDoubleChargeIsRefunded` |
 | 4 | Payment method routing (VNPay vs Stripe) uses the correct adapter | `api/online_test.go::TestStripeMethodUsesItsAdapter` |
 | 5 | Payout settles and cannot overdraw | `api/payout_test.go::TestPayoutSettlesAndCannotOverdraw`, `playwright/tests/wallet.spec.ts` (payout settles to SETTLED) |
 | 6 | Duplicate and stale webhooks apply once; dropped webhooks recovered by reconciler; late success and double-charge handled; trial balance always zero | `api/callbacks_test.go::TestDuplicateAndStaleWebhooksApplyOnce`, `api/callbacks_test.go::TestDroppedWebhookIsRecovered`, `api/doublecharge_test.go::TestLateSuccessAfterDeadlineRefundsBothOrders`, `api/main_test.go::TestMain` (suite-end trial balance check), `api/ledger_test.go::TestTrialBalanceIsZero`, `api/harness_test.go::getWorld` (per-test `assertTrialBalance`) |
@@ -108,7 +108,7 @@ timers to keep tests quick. A later `make up-app` restores the defaults.
 
 ## P2 test notes
 
-- **TestDoubleChargeIsRefunded:** Asserts the DUPLICATE status in the second payment response and verifies escrow reversal through the trial balance; the refund itself is not observable through the public API.
+- **TestDoubleChargeIsRefunded:** asserts the second payment becomes DUPLICATE and the order is paid and escrowed once; the DUPLICATE refund itself is not observable through the public API (the zero trial balance cannot see an unrefunded suspense balance).
 
 ## P2 decisions
 
