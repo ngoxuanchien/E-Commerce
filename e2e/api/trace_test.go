@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -89,11 +90,10 @@ func TestPaymentTraceCrossesGatewayPaymentOrder(t *testing.T) {
 	// Compute the order before polling (orderFor uses require internally)
 	o := orderFor(t, res, w.shopA.ID)
 	t.Cleanup(func() {
-		if err := ctx(t).Err(); err == nil {
-			// Test passed, clean up checkout
-			if _, err := buyer.CancelOrder(ctx(t), o.ID, ""); err != nil {
-				t.Logf("cleanup: cancel order %s: %v", o.ID, err)
-			}
+		cctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if _, err := buyer.CancelOrder(cctx, o.ID, ""); err != nil {
+			t.Logf("cleanup: cancel order %s: %v", o.ID, err)
 		}
 	})
 
@@ -220,7 +220,7 @@ func TestFakeWebhookTraceReachesConsumers(t *testing.T) {
 		"order should be CANCELLED after seller cancels")
 
 	// Wait for payment to transition to REFUNDED status
-	o = waitOrder(t, buyer, o.ID, 15*time.Second,
+	o = waitOrder(t, buyer, o.ID, 3*refundInterval+5*time.Second,
 		func(order client.Order) bool {
 			return order.PaymentStatus == "REFUNDED"
 		},
