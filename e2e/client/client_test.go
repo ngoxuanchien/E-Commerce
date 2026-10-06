@@ -109,7 +109,7 @@ func TestCreatePayoutSendsIdempotencyKey(t *testing.T) {
 		assert.Equal(t, "k1", r.Header.Get("Idempotency-Key"))
 		// Verify body
 		body, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
+		assert.NoError(t, err)
 		assert.JSONEq(t, `{"amount":50000}`, string(body))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
