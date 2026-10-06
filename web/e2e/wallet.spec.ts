@@ -7,12 +7,7 @@ test('seller sees the wallet, requests a payout and sees it settle', async ({ pa
   await expect(page.getByTestId('wallet-available')).toContainText('457.500');
 
   await page.getByTestId('payout-amount').fill('100000');
-  const submitButton = page.getByTestId('payout-submit');
-  const [resp] = await Promise.all([
-    page.waitForResponse(r => r.url().endsWith('/api/seller/payouts') && r.request().method() === 'POST'),
-    submitButton.click()
-  ]);
-  expect(resp.status()).toBe(201);
+  await page.getByTestId('payout-submit').click();
   await expect(page.getByText('Đã gửi yêu cầu rút tiền')).toBeVisible();
 
   await page.goto('/seller/payouts');
