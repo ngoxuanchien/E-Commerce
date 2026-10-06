@@ -47,9 +47,9 @@ flowchart LR
   O -- PaymentInternal --> P
   P -- GetCheckout --> O
   P -- outbox --> K
-  K -- PaymentSucceeded, PaymentFailed, RefundFailed --> O
+  K -- PaymentSucceeded, PaymentRefunded --> O
   L -- outbox --> K
-  K -- PaymentSucceeded, PaymentFailed, RefundFailed --> L
+  K -- PaymentSucceeded, PaymentRefunded --> L
   K -- OrderCancelled --> P
   K -- OrderCancelled --> L
   P -- VNPay / Stripe / FAKE --> EX["Providers"]

@@ -100,7 +100,7 @@ E2E_TIMERS := PAYMENT_TIMEOUT=40s SWEEPER_INTERVAL=2s AUTO_COMPLETE_AFTER=5s \
 seed: ## Seed demo data through the gateway (run after make up-app; idempotent)
 	cd e2e && GOWORK=off go run ./cmd/seed
 
-e2e: ## (Re)start the stack with fast timers, then API tests + Playwright (make up-app seed first)
+e2e: ## (Re)start the stack with fast timers, then API tests + Playwright (run make seed once first)
 	$(E2E_TIMERS) $(MAKE) up-app
 	cd e2e && GOWORK=off go test -count=1 -timeout 20m ./...
 	cd e2e/playwright && npm ci --no-audit --no-fund && npx playwright install chromium && npx playwright test

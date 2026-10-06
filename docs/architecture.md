@@ -150,12 +150,17 @@ sequenceDiagram
   participant KO as Kafka order.events
   participant KP as Kafka payment.events
   participant L as ledger-svc
+  participant W as refund worker
   User->>O: POST .../cancel
   O->>ODB: one tx: status CANCELLED, history, OrderCancelled to outbox
   O-->>User: 200 Order
   ODB-->>KO: emit OrderCancelled (with payment_method, checkout_id)
   KO->>P: OrderCancelled consumer
-  P->>P: check if capture exists; if yes, create refund, PaymentRefunded to outbox
+  P->>P: check if capture exists; if yes, mark refund PENDING (no outbox write yet)
+  Note over W: every 10 s
+  W->>P: claim one due PENDING refund (FOR UPDATE SKIP LOCKED)
+  W->>P: call Provider.Refund or QueryRefund
+  W->>P: one tx: write PaymentRefunded or RefundFailed to outbox
   P-->>KP: emit PaymentRefunded
   par consumer parallel
     KP->>L: PaymentRefunded → reverse escrow allocation
@@ -441,9 +446,6 @@ Known P2 limitations:
 
 Open issues from P1, each tracked with its owning workstream:
 
-- **A stale seller form can overwrite stock.** A seller's product edit sets
-  on-hand stock directly, so an edit form opened before a sale can
-  re-inflate stock. Fixing it needs a contract change. (WS2)
 - **An idempotency key can stay stuck after a crash.** If order-svc crashes
   mid-checkout, the key keeps answering "in progress" until the 24-hour
   purge; the orders themselves are cancelled by the sweeper. (WS3)

@@ -106,6 +106,10 @@ timers to keep tests quick. A later `make up-app` restores the defaults.
 | 6b | Payment traces cross gateway → payment → order and ledger via Kafka | `api/trace_test.go::TestPaymentTraceCrossesGatewayPaymentOrder`, `api/trace_test.go::TestFakeWebhookTraceReachesConsumers` |
 | 7 | Real VNPay sandbox / Stripe test mode (manual): checkout paid, refund on cancel | `docs/payments-sandbox.md` (manual runbook) |
 
+## P2 test notes
+
+- **TestDoubleChargeIsRefunded:** Asserts the DUPLICATE status in the second payment response and verifies escrow reversal through the trial balance; the refund itself is not observable through the public API.
+
 ## P2 decisions
 
 These refinements and design choices emerged during development and are documented
@@ -152,5 +156,4 @@ here for future maintainers and changes.
 |---|---|---|---|
 | F-P2-1 | `pkg/testutil.ContractTransport` cannot validate `text/html` responses (kin-openapi v0.149) | WS0' (`pkg/`) | Bypassed in e2e (`api/harness_test.go`) |
 
-No service bugs were found by the API test scenarios. Playwright results will be added
-as those tests are completed.
+No service bugs were found by the API test scenarios.
