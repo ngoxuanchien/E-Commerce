@@ -46,6 +46,10 @@ honor `Retry-After` and wait instead of failing. The gateway rejects before
 proxying, so resending is always safe. A full `make e2e` takes a few minutes
 mostly for this reason.
 
+Measured on a fresh stack (2026-10-06, P2): `make keys up-app seed` then
+`make e2e` took about 18 minutes in total, of which `make e2e` was 10 minutes
+(Go API suite 4.5 min, Playwright 12 tests 5.5 min).
+
 ## Isolation
 
 Every test creates its own users, shops and products, named with a random

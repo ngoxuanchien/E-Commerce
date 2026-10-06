@@ -433,9 +433,9 @@ Add to `docs/architecture.md`:
 
 ### Task 16: Full verification on a fresh stack
 
-- [ ] **Step 1:** `docker compose ls`; take the `p2ws6` stack down without `-v`. With `COMPOSE_PROJECT_NAME=p2ws6fresh` (fresh volumes): `make keys up-app seed`, then `make e2e` → all green. Record the wall time in `e2e/README.md`.
-- [ ] **Step 2:** `cd e2e && GOWORK=off ../../E-Commerce/bin/golangci-lint run ./...` clean; `cd e2e/playwright && npx tsc --noEmit` clean.
-- [ ] **Step 3:** Take the stack down without `-v`. Tick this plan's boxes; commit `docs: mark WS6' plan done`.
+- [x] **Step 1:** `docker compose ls`; take the `p2ws6` stack down without `-v`. With `COMPOSE_PROJECT_NAME=p2ws6fresh` (fresh volumes): `make keys up-app seed`, then `make e2e` → all green. Record the wall time in `e2e/README.md`.
+- [x] **Step 2:** `cd e2e && GOWORK=off ../../E-Commerce/bin/golangci-lint run ./...` clean; `cd e2e/playwright && npx tsc --noEmit` clean.
+- [x] **Step 3:** Take the stack down without `-v`. Tick this plan's boxes; commit `docs: mark WS6' plan done`.
 
 ## Findings protocol
 
