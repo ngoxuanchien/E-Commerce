@@ -197,7 +197,15 @@ func (s *seeder) payout(ctx context.Context, seller1 *client.Client) error {
 				cancel()
 				break
 			}
-			if !printed && lastStatus != "REQUESTED" {
+			if lastStatus == "FAILED" {
+				cancel()
+				reason := "unknown"
+				if p.Items[0].FailureReason != nil {
+					reason = *p.Items[0].FailureReason
+				}
+				return fmt.Errorf("payout: FAILED (reason: %s)", reason)
+			}
+			if !printed && lastStatus == "REQUESTED" {
 				_, _ = fmt.Fprintln(s.out, "payout: waiting to settle…")
 				printed = true
 			}

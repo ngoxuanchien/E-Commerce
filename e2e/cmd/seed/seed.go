@@ -230,8 +230,8 @@ func (s *seeder) summary(ctx context.Context, shops []sellerState, bs []*client.
 		wallet, err := c.Wallet(ctx)
 		if err != nil {
 			// Try refreshing token in case it expired
-			if _, err := c.Refresh(ctx); err == nil {
-				wallet, _ = c.Wallet(ctx)
+			if _, refreshErr := c.Refresh(ctx); refreshErr == nil {
+				wallet, err = c.Wallet(ctx)
 			}
 		}
 		if err != nil {
