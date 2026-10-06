@@ -6,6 +6,7 @@ package testutil
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/kafka"
@@ -77,7 +78,33 @@ func Kafka(t testing.TB) []string {
 	if err != nil {
 		t.Fatalf("kafka brokers: %v", err)
 	}
+	waitKafkaReady(t, brokers, time.Minute)
 	return brokers
+}
+
+// waitKafkaReady pings brokers until one answers. The container is reported
+// started from its log line, a moment before the broker accepts connections,
+// so a test that connected at once could fail the API-versions handshake.
+func waitKafkaReady(t testing.TB, brokers []string, within time.Duration) {
+	t.Helper()
+	cl, err := kgo.NewClient(kgo.SeedBrokers(brokers...))
+	if err != nil {
+		t.Fatalf("kafka client: %v", err)
+	}
+	defer cl.Close()
+	deadline := time.Now().Add(within)
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err := cl.Ping(ctx)
+		cancel()
+		if err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("kafka not ready after %s: %v", within, err)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 }
 
 // CreateTopic creates topic with the given partition count (replication factor 1).

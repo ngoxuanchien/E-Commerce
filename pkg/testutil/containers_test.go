@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/ngoxuanchien/e-commerce/pkg/testutil"
 )
@@ -30,6 +31,18 @@ func TestRedisAnswersPing(t *testing.T) {
 	line, err := bufio.NewReader(conn).ReadString('\n')
 	require.NoError(t, err)
 	assert.Equal(t, "+PONG\r\n", line)
+}
+
+// Kafka returns only once the broker accepts connections, so the very first
+// request a test makes (no retry of its own) succeeds.
+func TestKafkaAnswersAtOnce(t *testing.T) {
+	brokers := testutil.Kafka(t)
+	cl, err := kgo.NewClient(kgo.SeedBrokers(brokers...))
+	require.NoError(t, err)
+	defer cl.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, cl.Ping(ctx))
 }
 
 func TestMinIOIsLive(t *testing.T) {
