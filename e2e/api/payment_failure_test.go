@@ -52,7 +52,7 @@ func TestFailedPaymentCanBeRetried(t *testing.T) {
 			return false // ignore transient errors
 		}
 		// Condition: order is NOT still AWAITING_PAYMENT/UNPAID
-		return !(o.Status == "AWAITING_PAYMENT" && o.PaymentStatus == "UNPAID")
+		return o.Status != "AWAITING_PAYMENT" || o.PaymentStatus != "UNPAID"
 	}, neverTimeout, 200*time.Millisecond)
 
 	// Step 5: Second payment attempt — succeed (different payment ID)

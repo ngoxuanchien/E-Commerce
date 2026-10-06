@@ -17,6 +17,9 @@ import (
 func earn(t *testing.T, w *world) int64 {
 	t.Helper()
 
+	// Capture baseline wallet before purchase
+	base := walletOf(t, w.sellerC)
+
 	// Create product on shopC: 1 SKU with 10 stock, price 100,000
 	product := newProduct(t, w.sellerC, w.categoryID, "Earn Product", 10)
 	sku := product.Skus[0]
@@ -51,12 +54,12 @@ func earn(t *testing.T, w *world) int64 {
 	order, err := w.payer.CompleteOrder(ctx(t), order.ID)
 	require.NoError(t, err)
 
-	// Wait for wallet to be credited
+	// Wait for wallet to be credited by exact credit amount
 	waitWallet(t, w.sellerC, 10*time.Second,
 		func(wl client.Wallet) bool {
-			return wl.Available > 0
+			return wl.Available == base.Available+credit(order)
 		},
-		"sellerC wallet should be credited")
+		"sellerC wallet should be credited by order amount")
 
 	return credit(order)
 }
@@ -86,16 +89,14 @@ func waitPayoutSettled(t *testing.T, seller actor, payoutID string, within time.
 		} else {
 			lastErr = err
 		}
-		select {
-		case <-ticker.C:
-			if time.Now().After(deadline) {
-				var errMsg string
-				if lastErr != nil {
-					errMsg = fmt.Sprintf(" (last fetch error: %v)", lastErr)
-				}
-				require.Failf(t, "waitPayoutSettled", "payout %s did not reach SETTLED, last status: %s%s", payoutID, lastPayout.Status, errMsg)
-				return lastPayout
+		<-ticker.C
+		if time.Now().After(deadline) {
+			var errMsg string
+			if lastErr != nil {
+				errMsg = fmt.Sprintf(" (last fetch error: %v)", lastErr)
 			}
+			require.Failf(t, "waitPayoutSettled", "payout %s did not reach SETTLED, last status: %s%s", payoutID, lastPayout.Status, errMsg)
+			return lastPayout
 		}
 	}
 }

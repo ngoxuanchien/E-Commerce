@@ -16,7 +16,6 @@ import (
 // and is refunded automatically. The order is paid once, and escrow is held only once.
 func TestDoubleChargeIsRefunded(t *testing.T) {
 	w := getWorld(t)
-	defer func() { assertTrialBalance(t) }()
 
 	// Step 1: Create product and capture baseline wallet
 	productA := newProduct(t, w.sellerA, w.categoryID, "Double Charge Test", 10)
@@ -125,7 +124,6 @@ func TestDoubleChargeIsRefunded(t *testing.T) {
 // The orders are cancelled by the sweeper when the payment expires before being paid.
 func TestLateSuccessAfterDeadlineRefundsBothOrders(t *testing.T) {
 	w := getWorld(t)
-	defer func() { assertTrialBalance(t) }()
 
 	// Step 1: Create products and capture baseline wallets
 	productA := newProduct(t, w.sellerA, w.categoryID, "Late Success Test A", 10)

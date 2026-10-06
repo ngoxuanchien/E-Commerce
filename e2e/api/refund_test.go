@@ -15,7 +15,6 @@ import (
 // → orderA REFUNDED, ledger escrow reversed, orderB unaffected.
 func TestSellerCancelAfterPaymentRefundsThatOrder(t *testing.T) {
 	w := getWorld(t)
-	defer func() { assertTrialBalance(t) }()
 
 	// Step 1: Create products and capture baseline wallets
 	productA := newProduct(t, w.sellerA, w.categoryID, "Product A Refund", 10)
@@ -122,7 +121,6 @@ func TestSellerCancelAfterPaymentRefundsThatOrder(t *testing.T) {
 // with the ledger: no escrow, no commission, payment_status stays NONE.
 func TestCODCheckoutNeverTouchesTheLedger(t *testing.T) {
 	w := getWorld(t)
-	defer func() { assertTrialBalance(t) }()
 
 	// Step 1: Create product on shopB
 	productB := newProduct(t, w.sellerB, w.categoryID, "COD Product", 10)

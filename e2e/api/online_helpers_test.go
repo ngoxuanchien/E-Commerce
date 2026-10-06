@@ -76,16 +76,14 @@ func waitOrder(t *testing.T, a actor, orderID string, within time.Duration, ok f
 		} else {
 			lastErr = err
 		}
-		select {
-		case <-ticker.C:
-			if time.Now().After(deadline) {
-				var errMsg string
-				if lastErr != nil {
-					errMsg = fmt.Sprintf(" (last fetch error: %v)", lastErr)
-				}
-				require.Failf(t, msg, "order %s: %v%s", orderID, order, errMsg)
-				return order
+		<-ticker.C
+		if time.Now().After(deadline) {
+			var errMsg string
+			if lastErr != nil {
+				errMsg = fmt.Sprintf(" (last fetch error: %v)", lastErr)
 			}
+			require.Failf(t, msg, "order %s: %v%s", orderID, order, errMsg)
+			return order
 		}
 	}
 }
@@ -110,16 +108,14 @@ func waitPayment(t *testing.T, buyer actor, paymentID, status string, within tim
 		} else {
 			lastErr = err
 		}
-		select {
-		case <-ticker.C:
-			if time.Now().After(deadline) {
-				var errMsg string
-				if lastErr != nil {
-					errMsg = fmt.Sprintf(" (last fetch error: %v)", lastErr)
-				}
-				require.Failf(t, "waitPayment", "payment %s: expected status %s, got %s%s", paymentID, status, payment.Status, errMsg)
-				return payment
+		<-ticker.C
+		if time.Now().After(deadline) {
+			var errMsg string
+			if lastErr != nil {
+				errMsg = fmt.Sprintf(" (last fetch error: %v)", lastErr)
 			}
+			require.Failf(t, "waitPayment", "payment %s: expected status %s, got %s%s", paymentID, status, payment.Status, errMsg)
+			return payment
 		}
 	}
 }
@@ -152,16 +148,14 @@ func waitWallet(t *testing.T, seller actor, within time.Duration, ok func(client
 		} else {
 			lastErr = err
 		}
-		select {
-		case <-ticker.C:
-			if time.Now().After(deadline) {
-				var errMsg string
-				if lastErr != nil {
-					errMsg = fmt.Sprintf(" (last fetch error: %v)", lastErr)
-				}
-				require.Failf(t, msg, "wallet: %+v%s", wallet, errMsg)
-				return wallet
+		<-ticker.C
+		if time.Now().After(deadline) {
+			var errMsg string
+			if lastErr != nil {
+				errMsg = fmt.Sprintf(" (last fetch error: %v)", lastErr)
 			}
+			require.Failf(t, msg, "wallet: %+v%s", wallet, errMsg)
+			return wallet
 		}
 	}
 }

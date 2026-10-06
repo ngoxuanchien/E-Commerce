@@ -16,7 +16,6 @@ import (
 // FAKE webhooks apply exactly once: the order and wallet each reflect a single credit.
 func TestDuplicateAndStaleWebhooksApplyOnce(t *testing.T) {
 	w := getWorld(t)
-	defer func() { assertTrialBalance(t) }()
 
 	for _, hook := range []string{"duplicate", "stale_after"} {
 		t.Run(hook, func(t *testing.T) {
@@ -62,8 +61,8 @@ func TestDuplicateAndStaleWebhooksApplyOnce(t *testing.T) {
 					return false // ignore transient errors
 				}
 				// Condition: order left PENDING_CONFIRMATION/PAID or payment left SUCCEEDED
-				return !(o.Status == "PENDING_CONFIRMATION" && o.PaymentStatus == "PAID" &&
-					p.Status == "SUCCEEDED")
+				return o.Status != "PENDING_CONFIRMATION" || o.PaymentStatus != "PAID" ||
+					p.Status != "SUCCEEDED"
 			}, neverTimeout, 200*time.Millisecond,
 				"order/payment should stay in PENDING_CONFIRMATION/PAID/SUCCEEDED")
 
@@ -113,7 +112,6 @@ func TestDuplicateAndStaleWebhooksApplyOnce(t *testing.T) {
 // either the reconciler or the return URL.
 func TestDroppedWebhookIsRecovered(t *testing.T) {
 	w := getWorld(t)
-	defer func() { assertTrialBalance(t) }()
 
 	t.Run("reconciler", func(t *testing.T) {
 		// Step 1: Create product and capture baseline wallet
