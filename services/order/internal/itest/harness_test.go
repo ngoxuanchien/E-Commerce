@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -456,22 +457,27 @@ func (l *eventLog) add(schemas map[event.Type]*jsonschema.Schema, r *kgo.Record)
 // waitTypes waits until orderID's events have the given types, in order.
 func (l *eventLog) waitTypes(t *testing.T, orderID string, want ...event.Type) []event.Envelope {
 	t.Helper()
-	var got []event.Envelope
-	require.Eventually(t, func() bool {
+	snapshot := func() ([]event.Envelope, []event.Type) {
 		l.mu.Lock()
 		defer l.mu.Unlock()
-		got = append([]event.Envelope(nil), l.byOrder[orderID]...)
-		if len(got) != len(want) {
-			return false
+		got := append([]event.Envelope(nil), l.byOrder[orderID]...)
+		types := make([]event.Type, len(got))
+		for i, e := range got {
+			types[i] = e.EventType
 		}
-		for i := range want {
-			if got[i].EventType != want[i] {
-				return false
-			}
+		return got, types
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		got, types := snapshot()
+		if slices.Equal(types, want) {
+			return got
 		}
-		return true
-	}, 15*time.Second, 50*time.Millisecond, "events of %s: want %v", orderID, want)
-	return got
+		if time.Now().After(deadline) {
+			require.Equal(t, want, types, "events of %s", orderID)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 func (r checkoutResp) mustJSON(t *testing.T) []byte {
