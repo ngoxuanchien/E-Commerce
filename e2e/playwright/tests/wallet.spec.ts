@@ -71,7 +71,11 @@ test('seller earns balance from order and can request payout to SETTLED', async 
 
     const submitButton = page.getByTestId('payout-submit');
     await expect(submitButton).toBeVisible({ timeout: 10_000 });
-    await submitButton.click();
+    const [resp] = await Promise.all([
+      page.waitForResponse(r => r.url().endsWith('/api/seller/payouts') && r.request().method() === 'POST'),
+      submitButton.click()
+    ]);
+    expect(resp.status()).toBe(201);
 
     // Assert payout row appeared (in payouts page)
     await page.goto('/seller/payouts');
