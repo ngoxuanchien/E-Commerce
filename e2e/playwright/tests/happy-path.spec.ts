@@ -85,7 +85,7 @@ test('seller opens a shop and lists a product; buyer buys from two shops; the or
   await page.goto('/orders');
   await page.getByRole('article', { name: `Đơn hàng của ${shopName}` }).getByRole('link', { name: 'Xem chi tiết' }).click();
   const receive = page.getByRole('button', { name: 'Đã nhận được hàng' });
-  if (await receive.isVisible({ timeout: 3_000 }).catch(() => false)) {
+  if (await receive.waitFor({ state: 'visible', timeout: 3_000 }).then(() => true, () => false)) {
     await receive.click();
   }
   await expect(async () => {
