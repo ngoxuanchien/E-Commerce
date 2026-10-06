@@ -79,12 +79,19 @@ test('seller opens a shop and lists a product; buyer buys from two shops; the or
   await expect(order.locator('[data-status]')).toHaveText('Đã giao');
   await logout(page, seller.fullName);
 
-  // 6. The buyer confirms receipt.
+  // 6. The buyer confirms receipt — unless the order already auto-completed
+  //    (the e2e stack runs AUTO_COMPLETE_AFTER=5s; see e2e/README.md).
   await signIn(page, buyer.account);
   await page.goto('/orders');
   await page.getByRole('article', { name: `Đơn hàng của ${shopName}` }).getByRole('link', { name: 'Xem chi tiết' }).click();
-  await page.getByRole('button', { name: 'Đã nhận được hàng' }).click();
-  await expect(page.locator('[data-status]').first()).toHaveText('Hoàn thành');
+  const receive = page.getByRole('button', { name: 'Đã nhận được hàng' });
+  if (await receive.waitFor({ state: 'visible', timeout: 3_000 }).then(() => true, () => false)) {
+    await receive.click();
+  }
+  await expect(async () => {
+    await page.reload();
+    await expect(page.locator('[data-status]').first()).toHaveText('Hoàn thành', { timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
 
   await Promise.all([sellerB.dispose(), buyer.dispose()]);
 });

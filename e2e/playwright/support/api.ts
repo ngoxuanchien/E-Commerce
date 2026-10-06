@@ -25,6 +25,7 @@ export interface Order {
   id: string;
   checkout_id: string;
   status: string;
+  payment_status?: string;
   shop: { id: string; name: string };
 }
 interface Category {
@@ -123,6 +124,70 @@ export class ApiUser {
   async status(path: string): Promise<number> {
     const auth: Record<string, string> = this.token ? { Authorization: `Bearer ${this.token}` } : {};
     return (await this.ctx.fetch(path, { headers: auth })).status();
+  }
+
+  async checkout(method: 'COD' | 'VNPAY' | 'STRIPE', shippingAddress?: {
+    full_name: string;
+    phone: string;
+    line1: string;
+    ward: string;
+    district: string;
+    province: string;
+  }): Promise<{ id: string }> {
+    const idempotencyKey = crypto.randomUUID();
+    const address = shippingAddress || {
+      full_name: 'Test Buyer',
+      phone: '0901234567',
+      line1: '12 Lý Tự Trọng',
+      ward: 'Bến Nghé',
+      district: 'Quận 1',
+      province: 'TP. Hồ Chí Minh',
+    };
+    const res = await this.call<{ checkout_id: string; orders: { id: string }[] }>(
+      'POST',
+      '/api/checkout',
+      { payment_method: method, shipping_address: address },
+      { 'Idempotency-Key': idempotencyKey },
+    );
+    return { id: res.checkout_id };
+  }
+
+  async startPayment(checkoutId: string): Promise<{ payment_id: string; hosted_url: string }> {
+    const p = await this.call<{ id: string; redirect_url: string }>(
+      'POST',
+      '/api/payments',
+      { checkout_id: checkoutId },
+      { 'Idempotency-Key': crypto.randomUUID() },
+    );
+    return { payment_id: p.id, hosted_url: p.redirect_url };
+  }
+
+  async fakeSubmit(paymentId: string, outcome: 'succeed' | 'fail'): Promise<string> {
+    const res = await this.ctx.fetch(`/api/payments/fake/checkout/${paymentId}`, {
+      method: 'POST',
+      form: { outcome },
+      maxRedirects: 0,
+    });
+    if (res.status() !== 302) throw new Error(`Expected 302, got ${res.status()}`);
+    const location = res.headers()['location'];
+    if (!location) throw new Error('No Location header in 302 response');
+    return location;
+  }
+
+  async order(id: string): Promise<Order> {
+    return this.call<Order>('GET', `/api/orders/${id}`);
+  }
+
+  async sellerAction(orderId: string, action: 'confirm' | 'ship' | 'deliver'): Promise<void> {
+    await this.call('POST', `/api/seller/orders/${orderId}/${action}`);
+  }
+
+  async complete(orderId: string): Promise<void> {
+    await this.call('POST', `/api/orders/${orderId}/complete`);
+  }
+
+  async wallet(): Promise<{ available: number; in_escrow: number; pending_payout: number }> {
+    return this.call<{ available: number; in_escrow: number; pending_payout: number }>('GET', '/api/seller/wallet');
   }
 
   dispose(): Promise<void> {

@@ -47,3 +47,38 @@ func TestDatasetFollowsSpecAndCatalogRules(t *testing.T) {
 	}
 	assert.Equal(t, map[string]bool{"PENDING_CONFIRMATION": true, "CONFIRMED": true, "SHIPPING": true, "COMPLETED": true, "CANCELLED": true}, statuses)
 }
+
+// Online orders must reference valid buyers, shops, products, and match the spec.
+func TestOnlinePlansFollowSpec(t *testing.T) {
+	require.Len(t, onlinePlans, 6, "must have 6 online order plans per spec")
+
+	// Verify index bounds and data types
+	for i, op := range onlinePlans {
+		require.Less(t, op.Buyer, len(buyers), "plan %d: buyer index out of bounds", i)
+		require.Less(t, op.Shop, len(sellers), "plan %d: shop index out of bounds", i)
+		require.Less(t, op.Product, len(sellers[op.Shop].Products), "plan %d: product index out of bounds", i)
+		assert.Contains(t, []string{"VNPAY", "STRIPE"}, op.Method, "plan %d: Method must be VNPAY or STRIPE", i)
+		assert.Contains(t, []string{"UNPAID", "PAID", "REFUNDED"}, op.WantPayment, "plan %d: WantPayment must be UNPAID, PAID, or REFUNDED", i)
+	}
+
+	// Ensure at least one COMPLETED order is on shop 0 (for seller 1 balance)
+	hasCompletedOnShop0 := false
+	for _, op := range onlinePlans {
+		if op.Shop == 0 && op.Want == "COMPLETED" {
+			hasCompletedOnShop0 = true
+			break
+		}
+	}
+	assert.True(t, hasCompletedOnShop0, "at least one COMPLETED order must be on shop 0")
+
+	// Products must not collide with P1 orderPlans
+	usedInP1 := map[string]bool{}
+	for _, p := range orderPlans {
+		key := sellers[p.Shop].Products[p.Product].Name
+		usedInP1[key] = true
+	}
+	for i, op := range onlinePlans {
+		productName := sellers[op.Shop].Products[op.Product].Name
+		assert.False(t, usedInP1[productName], "plan %d: product %q already used in P1 orders", i, productName)
+	}
+}

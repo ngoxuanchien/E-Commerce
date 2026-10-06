@@ -159,6 +159,7 @@ type HistoryEntry struct {
 	To        string  `json:"to"`
 	ActorRole string  `json:"actor_role"`
 	Note      *string `json:"note"`
+	CreatedAt string  `json:"created_at"`
 }
 
 type OrderShop struct {
@@ -167,15 +168,70 @@ type OrderShop struct {
 }
 
 type Order struct {
-	ID           string         `json:"id"`
-	CheckoutID   string         `json:"checkout_id"`
-	Status       string         `json:"status"`
-	BuyerID      string         `json:"buyer_id"`
-	Shop         OrderShop      `json:"shop"`
-	Items        []OrderItem    `json:"items"`
-	Subtotal     int64          `json:"subtotal"`
-	ShippingFee  int64          `json:"shipping_fee"`
-	Total        int64          `json:"total"`
-	CancelReason *string        `json:"cancel_reason"`
-	History      []HistoryEntry `json:"history"`
+	ID                string         `json:"id"`
+	CheckoutID        string         `json:"checkout_id"`
+	Status            string         `json:"status"`
+	BuyerID           string         `json:"buyer_id"`
+	Shop              OrderShop      `json:"shop"`
+	Items             []OrderItem    `json:"items"`
+	Subtotal          int64          `json:"subtotal"`
+	ShippingFee       int64          `json:"shipping_fee"`
+	Total             int64          `json:"total"`
+	CancelReason      *string        `json:"cancel_reason"`
+	History           []HistoryEntry `json:"history"`
+	PaymentMethod     string         `json:"payment_method"`
+	PaymentStatus     string         `json:"payment_status"`
+	PaymentDeadline   *string        `json:"payment_deadline"`
+	CommissionRateBps int            `json:"commission_rate_bps"`
+	CommissionAmount  int64          `json:"commission_amount"`
+	DeliveredAt       *string        `json:"delivered_at"`
+}
+
+// Payment represents a payment for a checkout.
+type Payment struct {
+	ID            string  `json:"id"`
+	CheckoutID    string  `json:"checkout_id"`
+	Method        string  `json:"method"`   // VNPAY | STRIPE
+	Provider      string  `json:"provider"` // vnpay | stripe | fake
+	Status        string  `json:"status"`   // PENDING | SUCCEEDED | FAILED | EXPIRED | DUPLICATE
+	Amount        int64   `json:"amount"`
+	RedirectURL   *string `json:"redirect_url"`
+	ExpiresAt     string  `json:"expires_at"`
+	FailureReason *string `json:"failure_reason"`
+}
+
+// Wallet represents a seller's wallet balance.
+type Wallet struct {
+	Available     int64  `json:"available"`
+	PendingPayout int64  `json:"pending_payout"`
+	InEscrow      int64  `json:"in_escrow"`
+	Currency      string `json:"currency"`
+}
+
+// WalletEntry represents a ledger entry in the seller's wallet.
+type WalletEntry struct {
+	ID            string  `json:"id"`
+	TransactionID string  `json:"transaction_id"`
+	Kind          string  `json:"kind"` // RELEASE | PAYOUT_REQUEST | PAYOUT_FAIL
+	Amount        int64   `json:"amount"`
+	OrderID       *string `json:"order_id"`
+	PayoutID      *string `json:"payout_id"`
+	CreatedAt     string  `json:"created_at"`
+}
+
+// Payout represents a seller's payout request.
+type Payout struct {
+	ID            string  `json:"id"`
+	Amount        int64   `json:"amount"`
+	Status        string  `json:"status"` // REQUESTED | SETTLED | FAILED
+	FailureReason *string `json:"failure_reason"`
+	RequestedAt   string  `json:"requested_at"`
+	SettledAt     *string `json:"settled_at"`
+}
+
+// FakeEvent is a webhook event for the FAKE payment provider.
+type FakeEvent struct {
+	EventID   string `json:"event_id"`
+	PaymentID string `json:"payment_id"`
+	Outcome   string `json:"outcome"`
 }

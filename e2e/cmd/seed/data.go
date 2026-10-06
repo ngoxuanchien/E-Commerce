@@ -36,6 +36,15 @@ type orderPlan struct {
 	Want                 string
 }
 
+// onlinePlan places one single-line online order (with payment) and walks it to Want.
+type onlinePlan struct {
+	Buyer, Shop, Product int
+	Method               string
+	Pay                  bool
+	Steps                []string
+	Want, WantPayment    string
+}
+
 func sku(name string, price int64, stock int) client.SkuInput {
 	return client.SkuInput{Name: name, Price: price, Stock: stock, Active: true}
 }
@@ -116,4 +125,13 @@ var orderPlans = []orderPlan{
 	{Buyer: 1, Shop: 2, Product: 0, Steps: []string{"confirm", "ship"}, Want: "SHIPPING"},
 	{Buyer: 1, Shop: 0, Product: 1, Steps: []string{"confirm", "ship", "deliver", "complete"}, Want: "COMPLETED"},
 	{Buyer: 0, Shop: 2, Product: 1, Steps: []string{"cancel"}, Want: "CANCELLED"},
+}
+
+var onlinePlans = []onlinePlan{
+	{Buyer: 1, Shop: 0, Product: 2, Method: "VNPAY", Pay: false, Steps: []string{}, Want: "AWAITING_PAYMENT", WantPayment: "UNPAID"},
+	{Buyer: 1, Shop: 0, Product: 3, Method: "VNPAY", Pay: true, Steps: []string{}, Want: "PENDING_CONFIRMATION", WantPayment: "PAID"},
+	{Buyer: 1, Shop: 1, Product: 1, Method: "STRIPE", Pay: true, Steps: []string{"confirm", "ship"}, Want: "SHIPPING", WantPayment: "PAID"},
+	{Buyer: 1, Shop: 0, Product: 4, Method: "VNPAY", Pay: true, Steps: []string{"confirm", "ship", "deliver", "complete"}, Want: "COMPLETED", WantPayment: "PAID"},
+	{Buyer: 0, Shop: 0, Product: 5, Method: "STRIPE", Pay: true, Steps: []string{"confirm", "ship", "deliver", "complete"}, Want: "COMPLETED", WantPayment: "PAID"},
+	{Buyer: 0, Shop: 0, Product: 6, Method: "VNPAY", Pay: true, Steps: []string{"confirm", "cancel"}, Want: "CANCELLED", WantPayment: "REFUNDED"},
 }

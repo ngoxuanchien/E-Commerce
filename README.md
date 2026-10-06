@@ -6,7 +6,9 @@ checkout, and every order goes through a seller/buyer lifecycle. Phase 1
 covers core buying and selling with cash on delivery (COD). It runs locally
 with Docker Compose.
 
-## What it does (P1)
+## What it does
+
+### P1: Core marketplace
 
 - Buyers register, log in, browse categories and search products in
   Vietnamese **with or without diacritics** ("ao thun" finds "Áo thun").
@@ -19,6 +21,14 @@ with Docker Compose.
 - Stock never goes negative or oversells under concurrent checkouts.
 - A checkout is traceable across gateway → order → catalog in Jaeger.
 
+### P2: Online payment and seller payouts
+
+- Pay by **VNPay sandbox** or **Stripe test mode** (FAKE provider by default for local dev).
+- Payment goes through an escrow: captured on checkout, auto-complete after delivery (72h by default), released on completion.
+- **Seller wallet** tracks available balance (after 5% commission), in-escrow (pending orders), and pending payouts.
+- Payouts are settled by the ledger service's settle job (simulates a bank transfer).
+- Reconciler handles dropped webhooks; refund worker handles cancellations and duplicate payments.
+
 ## Architecture
 
 ```mermaid
@@ -28,21 +38,34 @@ flowchart LR
   G --> I["identity-svc<br/>:8081 / gRPC :9081"]
   G --> C["catalog-svc<br/>:8082 / gRPC :9082"]
   G --> O["order-svc<br/>:8083 / gRPC :9083"]
+  G --> P["payment-svc<br/>:8084 / gRPC :9084"]
+  G --> L["ledger-svc<br/>:8085 / gRPC :9085"]
   C -- GrantRole --> I
   O -- GetSkus / ReserveStock / ReleaseStock --> C
-  O -- outbox --> K[("Kafka<br/>order.events")]
+  O -- outbox --> K[("Kafka<br/>order.events, payment.events, payout.events")]
   K -- OrderCancelled --> C
+  O -- PaymentInternal --> P
+  P -- GetCheckout --> O
+  P -- outbox --> K
+  K -- PaymentSucceeded, PaymentRefunded --> O
+  L -- outbox --> K
+  K -- PaymentSucceeded, PaymentRefunded --> L
+  K -- OrderCancelled --> P
+  K -- OrderCancelled --> L
+  P -- VNPay / Stripe / FAKE --> EX["Providers"]
   I --> PI[(identity_db)]
   C --> PC[(catalog_db)]
   C --> M[(MinIO<br/>product-images)]
   O --> PO[(order_db)]
   O --> R[(Redis<br/>carts)]
-  G & I & C & O -. OTLP .-> J[Jaeger]
+  P --> PP[(payment_db)]
+  L --> PL[(ledger_db)]
+  G & I & C & O & P & L -. OTLP .-> J[Jaeger]
 ```
 
 REST outside, gRPC inside, Kafka for events, one database per service. See
-[docs/architecture.md](docs/architecture.md) for checkout and cancellation
-sequence diagrams and the consistency design, and [docs/adr](docs/adr) for
+[docs/architecture.md](docs/architecture.md) for checkout, payment, escrow and
+cancellation sequence diagrams and the consistency design, and [docs/adr](docs/adr) for
 the decisions behind it.
 
 ## Tech choices
@@ -87,6 +110,41 @@ Password for every account: `matkhau123`
 The seed also places orders in every state (waiting for confirmation,
 confirmed, shipping, completed, cancelled) so both order pages have content.
 
+**P2 wallet summary** after a fresh seed:
+
+| Seller | Available | In escrow | Pending payout |
+|---|---|---|---|
+| Lan Trần | 286,100 ₫ | 419,000 ₫ | 0 ₫ |
+| Hùng Lê | 0 ₫ | 119,000 ₫ | 0 ₫ |
+| Mai Phạm | 0 ₫ | 0 ₫ | 0 ₫ |
+
+Seller 1 also has one settled payout from the seed data.
+
+### Switching to the real sandboxes
+
+By default, payments use the FAKE provider (no external dependencies). To test
+with **Stripe test mode** or **VNPay sandbox**:
+
+1. Copy credentials into `deploy/secrets/payment.env`:
+
+   ```bash
+   cp deploy/secrets/payment.env.example deploy/secrets/payment.env
+   # Edit and fill in: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, VNPAY_* variables
+   ```
+
+2. Set `PROVIDER_VNPAY=vnpay` and/or `PROVIDER_STRIPE=stripe` in the shell or `deploy/.env`:
+
+   ```bash
+   PROVIDER_STRIPE=stripe PROVIDER_VNPAY=vnpay make up-app
+   # or export them, then: make up-app
+   ```
+
+For step-by-step instructions and a verification checklist, see
+[docs/payments-sandbox.md](docs/payments-sandbox.md).
+
+**Note:** `make e2e` restarts the stack with fast timers. A later `make up-app`
+restores the defaults.
+
 ### URLs
 
 | What | URL |
@@ -124,24 +182,26 @@ seeds it and runs `make e2e`.
 | Path | Contents | Owner |
 |---|---|---|
 | `api/`, `proto/`, `gen/`, `pkg/`, `deploy/`, `Makefile` | Contracts, generated code, shared libraries, Compose | WS0 foundation |
-| `services/identity` | Accounts, login, JWT + JWKS, refresh rotation, roles | WS1 |
-| `services/catalog` | Shops, categories, products/SKUs, images, search, inventory | WS2 |
-| `services/order` | Cart, checkout, order lifecycle, outbox, sweeper | WS3 |
-| `services/gateway` | Routing, JWT verification, identity headers, CORS, rate limits | WS4 |
-| `web/` | Buyer storefront and seller center (React) | WS5 |
-| `e2e/`, `docs/` | Seed, end-to-end tests, documentation | WS6 |
+| `services/identity` | Accounts, login, JWT + JWKS, refresh rotation, roles | WS1, WS1' |
+| `services/catalog` | Shops, categories, products/SKUs, images, search, inventory | WS2, WS2' |
+| `services/order` | Cart, checkout, order lifecycle, outbox, sweeper | WS3, WS3' |
+| `services/gateway` | Routing, JWT verification, identity headers, CORS, rate limits | WS4, WS4' |
+| `services/payment` | Payment attempts, provider adapters, webhooks, refunds, reconcile | WS1' (P2) |
+| `services/ledger` | Double-entry ledger, escrow, seller wallet, payouts | WS2' (P2) |
+| `web/` | Buyer storefront and seller center (React) | WS5, WS5' |
+| `e2e/`, `docs/` | Seed, end-to-end tests, documentation | WS6, WS6' |
 
 Design specs live in `docs/superpowers/specs/`.
 
 ## Roadmap
 
-| Phase | Scope |
-|---|---|
-| **P1** (this) | Identity, catalog, order + cart, gateway, web |
-| P2 | Payment service (VNPay/Stripe sandbox), escrow, seller wallet, commission |
-| P3 | Reviews and ratings, notification service (email + WebSocket) |
-| P4 | Admin panel: moderation, categories, analytics |
-| P5 | Search service (Elasticsearch), buyer–seller chat, Kubernetes/Helm |
+| Phase | Scope | Status |
+|---|---|---|
+| **P1** | Identity, catalog, order + cart, gateway, web | Done |
+| **P2** (this) | Payment service (VNPay/Stripe sandbox), escrow, seller wallet, commission, payouts | Done |
+| P3 | Reviews and ratings, notification service (email + WebSocket) | —— |
+| P4 | Admin panel: moderation, categories, analytics | —— |
+| P5 | Search service (Elasticsearch), buyer–seller chat, Kubernetes/Helm | —— |
 
 ## Troubleshooting
 

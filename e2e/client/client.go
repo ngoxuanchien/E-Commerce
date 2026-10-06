@@ -15,6 +15,10 @@ import (
 	"time"
 )
 
+// requestTimeout covers RetryRateLimited's 3-minute 429 budget used by seed
+// and the tests, plus one ordinary request.
+const requestTimeout = 4 * time.Minute
+
 // Client calls the gateway as one user: it keeps that user's refresh cookie
 // in its jar and sends the current access token as a bearer token.
 type Client struct {
@@ -29,7 +33,7 @@ func New(baseURL string, rt http.RoundTripper) *Client {
 	jar, _ := cookiejar.New(nil) // cookiejar.New never fails with nil options
 	return &Client{
 		BaseURL: strings.TrimRight(baseURL, "/"),
-		HTTP:    &http.Client{Transport: rt, Jar: jar, Timeout: 30 * time.Second},
+		HTTP:    &http.Client{Transport: rt, Jar: jar, Timeout: requestTimeout},
 	}
 }
 
@@ -104,15 +108,7 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any, hdr
 	}
 
 	if resp.StatusCode >= 300 {
-		var env struct {
-			Error struct {
-				Code    string          `json:"code"`
-				Message string          `json:"message"`
-				Details json.RawMessage `json:"details"`
-			} `json:"error"`
-		}
-		_ = json.Unmarshal(data, &env) // a non-JSON body still yields an APIError with the status
-		return &APIError{Status: resp.StatusCode, Code: env.Error.Code, Message: env.Error.Message, Details: env.Error.Details}
+		return apiError(resp.StatusCode, data)
 	}
 	if out != nil && len(data) > 0 {
 		if err := json.Unmarshal(data, out); err != nil {
@@ -120,4 +116,17 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any, hdr
 		}
 	}
 	return nil
+}
+
+// apiError decodes a non-2xx response as an APIError.
+func apiError(status int, data []byte) *APIError {
+	var env struct {
+		Error struct {
+			Code    string          `json:"code"`
+			Message string          `json:"message"`
+			Details json.RawMessage `json:"details"`
+		} `json:"error"`
+	}
+	_ = json.Unmarshal(data, &env) // a non-JSON body still yields an APIError with the status
+	return &APIError{Status: status, Code: env.Error.Code, Message: env.Error.Message, Details: env.Error.Details}
 }

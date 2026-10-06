@@ -56,7 +56,13 @@ func (s *seeder) run(ctx context.Context) error {
 	if err := s.orders(ctx, shops, bs); err != nil {
 		return err
 	}
-	s.summary()
+	if err := s.onlineOrders(ctx, shops, bs); err != nil {
+		return err
+	}
+	if err := s.payout(ctx, shops[0].c); err != nil {
+		return err
+	}
+	s.summary(ctx, shops, bs)
 	return nil
 }
 
@@ -203,7 +209,7 @@ func (s *seeder) orders(ctx context.Context, shops []sellerState, bs []*client.C
 	return nil
 }
 
-func (s *seeder) summary() {
+func (s *seeder) summary(ctx context.Context, shops []sellerState, bs []*client.Client) {
 	_, _ = fmt.Fprintln(s.out, "\nDemo accounts (password: "+password+")")
 	w := tabwriter.NewWriter(s.out, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "ROLE\tEMAIL\tNAME\tSHOP")
@@ -214,6 +220,28 @@ func (s *seeder) summary() {
 		_, _ = fmt.Fprintf(w, "buyer\t%s\t%s\t-\n", a.Email, a.FullName)
 	}
 	_ = w.Flush()
+
+	// Wallet table (log in again to refresh token if needed)
+	_, _ = fmt.Fprintln(s.out, "\nWALLET")
+	w = tabwriter.NewWriter(s.out, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(w, "SELLER\tAVAILABLE\tIN_ESCROW\tPENDING_PAYOUT")
+	for i, sd := range sellers {
+		c := shops[i].c
+		wallet, err := c.Wallet(ctx)
+		if err != nil {
+			// Try refreshing token in case it expired
+			if _, refreshErr := c.Refresh(ctx); refreshErr == nil {
+				wallet, err = c.Wallet(ctx)
+			}
+		}
+		if err != nil {
+			_, _ = fmt.Fprintf(w, "%s\tn/a\tn/a\tn/a\n", sd.Account.FullName)
+		} else {
+			_, _ = fmt.Fprintf(w, "%s\t%d ₫\t%d ₫\t%d ₫\n", sd.Account.FullName, wallet.Available, wallet.InEscrow, wallet.PendingPayout)
+		}
+	}
+	_ = w.Flush()
+
 	_, _ = fmt.Fprintln(s.out, "\nWeb: http://localhost:3000  Gateway: http://localhost:8080  Jaeger: http://localhost:16686  MinIO console: http://localhost:9001")
 }
 
