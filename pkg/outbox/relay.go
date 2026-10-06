@@ -25,9 +25,14 @@ type RelayConfig struct {
 	Logger    *slog.Logger
 }
 
+// relayLockKey is the transaction-scoped advisory lock that lets only one
+// relay per database publish a batch at a time ("outbox" in ASCII).
+const relayLockKey int64 = 0x6f7574626f78
+
 // Relay moves committed outbox rows to Kafka. Several replicas may run at
-// once: rows are claimed with FOR UPDATE SKIP LOCKED. Delivery is
-// at-least-once (a crash after publishing but before commit re-sends).
+// once: each batch takes relayLockKey first, so batches never overlap and
+// rows of one key reach Kafka in creation order. Delivery is at-least-once
+// (a crash after publishing but before commit re-sends).
 type Relay struct {
 	pool *pgxpool.Pool
 	pub  Publisher
@@ -68,10 +73,21 @@ func (r *Relay) Run(ctx context.Context) error {
 
 // ProcessBatch publishes up to BatchSize unpublished rows in creation order
 // and marks them published, all in one transaction. It returns how many rows
-// were published. On publish failure nothing is marked.
+// were published. On publish failure nothing is marked. If another relay is
+// mid-batch on the same outbox, it publishes nothing and returns 0.
 func (r *Relay) ProcessBatch(ctx context.Context) (int, error) {
 	var published int
 	err := pgxx.WithTx(ctx, r.pool, func(tx pgx.Tx) error {
+		// One batch at a time per database: with SKIP LOCKED alone, a second
+		// relay could publish a newer row of a key while the first is still
+		// publishing an older one, reordering that key's events.
+		var leader bool
+		if err := tx.QueryRow(ctx, `SELECT pg_try_advisory_xact_lock($1)`, relayLockKey).Scan(&leader); err != nil {
+			return fmt.Errorf("relay lock: %w", err)
+		}
+		if !leader {
+			return nil
+		}
 		rows, err := tx.Query(ctx, `
 			SELECT id, topic, msg_key, payload, headers
 			FROM outbox

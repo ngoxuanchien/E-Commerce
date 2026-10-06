@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -189,4 +190,60 @@ func TestRunDrainsUntilCancelled(t *testing.T) {
 	}, 5*time.Second, 20*time.Millisecond)
 	cancel()
 	assert.NoError(t, <-done)
+}
+
+// orderedPublisher records payloads from several relays in publish order.
+// While entered is non-nil, the first Publish call signals entered and waits for
+// release before recording.
+type orderedPublisher struct {
+	mu       sync.Mutex
+	payloads []string
+	entered  chan struct{}
+	release  chan struct{}
+}
+
+func (p *orderedPublisher) Publish(_ context.Context, msgs ...kafkax.Message) error {
+	if p.entered != nil {
+		entered := p.entered
+		p.entered = nil
+		close(entered)
+		<-p.release
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, m := range msgs {
+		p.payloads = append(p.payloads, string(m.Value))
+	}
+	return nil
+}
+
+// Two relays share one outbox (two replicas, or two Apps in a test). A
+// relay that is still publishing an older row of a key must not be
+// overtaken by another relay publishing a newer row of the same key,
+// or consumers see the order's events out of order (ADR-0003).
+func TestConcurrentRelaysKeepPerKeyOrder(t *testing.T) {
+	ctx := context.Background()
+	pool := newPool(t)
+	write(t, pool, ctx, outbox.Message{Topic: "t", Key: "order-1", Payload: []byte(`{"n":1}`)}, false)
+
+	blocking := &orderedPublisher{entered: make(chan struct{}), release: make(chan struct{})}
+	entered := blocking.entered
+	relayA := outbox.NewRelay(pool, blocking, outbox.RelayConfig{Logger: discard})
+	doneA := make(chan error, 1)
+	go func() { _, err := relayA.ProcessBatch(ctx); doneA <- err }()
+	<-entered // relay A holds row 1 and is publishing it
+
+	write(t, pool, ctx, outbox.Message{Topic: "t", Key: "order-1", Payload: []byte(`{"n":2}`)}, false)
+	relayB := outbox.NewRelay(pool, blocking, outbox.RelayConfig{Logger: discard})
+	_, err := relayB.ProcessBatch(ctx)
+	require.NoError(t, err)
+
+	close(blocking.release)
+	require.NoError(t, <-doneA)
+	_, err = relayB.ProcessBatch(ctx) // drain whatever relay B had to leave
+	require.NoError(t, err)
+
+	blocking.mu.Lock()
+	defer blocking.mu.Unlock()
+	assert.Equal(t, []string{`{"n": 1}`, `{"n": 2}`}, blocking.payloads, "jsonb payloads, in write order")
 }

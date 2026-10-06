@@ -19,7 +19,11 @@ rolled back.
 - A relay in the same binary polls unpublished rows with `FOR UPDATE SKIP
   LOCKED` (batch 100, every 500 ms). It publishes them to the Kafka topic
   `order.events` (3 partitions, key = `order_id`, so events for one order
-  stay ordered), then sets `published_at`.
+  stay ordered), then sets `published_at`. Each batch first takes a
+  transaction-scoped advisory lock, so when several relays share one outbox
+  (replicas, or two app instances in a test) only one publishes at a time;
+  `SKIP LOCKED` alone would let a second relay publish a newer event of an
+  order before the first relay's older one.
 - The writer's `traceparent` is stored with the row and sent as a Kafka
   header, so consumers continue the same trace.
 - Delivery is at-least-once. Consumers are idempotent: catalog's
